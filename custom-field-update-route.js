@@ -162,14 +162,14 @@ async function postSlackConfirmation(slackToken, channelId, pendingId, address, 
           type: 'button',
           text: { type: 'plain_text', text: '✅ Approve & Write to Rentvine' },
           style: 'primary',
-          action_id: 'field_update_approve',
+          action_id: `field_update_approve_${agentName.toLowerCase().replace(/[^a-z]/g,'')}`,
           value: pendingId,
         },
         {
           type: 'button',
           text: { type: 'plain_text', text: '⏭ Skip' },
           style: 'danger',
-          action_id: 'field_update_skip',
+          action_id: `field_update_skip_${agentName.toLowerCase().replace(/[^a-z]/g,'')}`,
           value: pendingId,
         },
       ],
@@ -193,7 +193,7 @@ export function initCustomFieldUpdateRoutes(app, {
 
   // ── POST /api/rentvine/update-property-fields ────────────────────────────
   // Called by agents with: { address, agent, fields: [{name, value}], source? }
-  app.post('/api/agent/update-property-fields', hubAuth, async (req, res) => {
+  app.post('/api/rentvine/update-property-fields', hubAuth, async (req, res) => {
     const { address, agent = 'default', fields = [], source = '' } = req.body;
 
     if (!address) return res.status(400).json({ error: 'address required' });
@@ -282,7 +282,8 @@ export function initCustomFieldUpdateRoutes(app, {
   });
 
   // ── POST /api/rentvine/field-update-slack-actions (Slack button handler) ──
-  app.post('/api/agent/field-update-slack-actions',
+  app.post('/api/rentvine/field-update-slack-actions',
+    require('express').urlencoded({ extended: true }),
     async (req, res) => {
       res.sendStatus(200); // ACK immediately
 
@@ -321,7 +322,7 @@ export function initCustomFieldUpdateRoutes(app, {
 
   // ── GET /api/rentvine/field-lookup (helper for agents) ───────────────────
   // Returns all field names + IDs so agents can reference them
-  app.get('/api/agent/field-lookup', hubAuth, async (req, res) => {
+  app.get('/api/rentvine/field-lookup', hubAuth, async (req, res) => {
     try {
       const defs = await loadPropertyFieldDefs(RENTVINE_BASE, RENTVINE_AUTH, RENTVINE_ACCOUNT);
       res.json(defs.map(f => ({
@@ -331,32 +332,6 @@ export function initCustomFieldUpdateRoutes(app, {
       })));
     } catch(e) { res.status(500).json({ error: e.message }); }
   });
-  // ── POST /api/agent/field-update-action — called by Ari/Kat bolt handlers ──
-  app.post('/api/agent/field-update-action', hubAuth, async (req, res) => {
-    const { pendingId, action } = req.body;
-    if (!pendingId || !action) return res.status(400).json({ error: 'pendingId and action required' });
-
-    const record = pendingUpdates.get(pendingId);
-    if (!record) return res.status(404).json({ error: 'Pending update not found or already processed' });
-
-    if (action === 'approve') {
-      try {
-        await writeFields(RENTVINE_BASE, RENTVINE_AUTH, RENTVINE_ACCOUNT, record.propertyId, record.updates);
-        record.status = 'approved';
-        pendingUpdates.delete(pendingId);
-        return res.json({ ok: true, address: record.address, fieldsWritten: record.updates.length });
-      } catch(e) {
-        return res.status(500).json({ ok: false, error: e.message });
-      }
-    } else if (action === 'skip') {
-      record.status = 'skipped';
-      pendingUpdates.delete(pendingId);
-      return res.json({ ok: true, skipped: true });
-    }
-    return res.status(400).json({ error: 'Invalid action' });
-  });
-
-
 }
 
 async function updateSlackMsg(responseUrl, text) {
