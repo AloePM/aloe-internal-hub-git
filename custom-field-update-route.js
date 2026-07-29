@@ -213,10 +213,10 @@ export function initCustomFieldUpdateRoutes(app, {
       for (const { name, value } of fields) {
         if (!name || value === undefined || value === null || value === '') continue;
         const nName = normName(name);
-        // Exact match first, then startsWith, then includes
+        // Exact match first, then startsWith with longer prefix, then includes with longer prefix
         let def = fieldDefs.find(f => f.normName === nName)
-                || fieldDefs.find(f => f.normName.startsWith(nName.slice(0, 8)))
-                || fieldDefs.find(f => f.normName.includes(nName.slice(0, 6)));
+                || fieldDefs.find(f => nName.length >= 10 && f.normName.startsWith(nName.slice(0, Math.floor(nName.length * 0.8))))
+                || fieldDefs.find(f => nName.length >= 12 && f.normName.includes(nName) || nName.length >= 12 && f.normName === nName);
         if (!def) { unmatched.push(name); continue; }
         updates.push({
           fieldId:   String(def.customFieldID),
