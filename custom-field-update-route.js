@@ -331,6 +331,30 @@ export function initCustomFieldUpdateRoutes(app, {
       })));
     } catch(e) { res.status(500).json({ error: e.message }); }
   });
+  // ── POST /api/agent/field-update-action — called by Ari bolt handler ────
+  app.post('/api/agent/field-update-action', hubAuth, async (req, res) => {
+    const { pendingId, action } = req.body;
+    if (!pendingId || !action) return res.status(400).json({ error: 'pendingId and action required' });
+    const record = pendingUpdates.get(pendingId);
+    if (!record) return res.status(404).json({ error: 'Pending update not found or already processed' });
+    if (action === 'approve') {
+      try {
+        await writeFields(RENTVINE_BASE, RENTVINE_AUTH, RENTVINE_ACCOUNT, record.propertyId, record.updates);
+        record.status = 'approved';
+        pendingUpdates.delete(pendingId);
+        return res.json({ ok: true, address: record.address, fieldsWritten: record.updates.length });
+      } catch(e) {
+        return res.status(500).json({ ok: false, error: e.message });
+      }
+    } else if (action === 'skip') {
+      record.status = 'skipped';
+      pendingUpdates.delete(pendingId);
+      return res.json({ ok: true, skipped: true });
+    }
+    return res.status(400).json({ error: 'Invalid action' });
+  });
+
+
 }
 
 async function updateSlackMsg(responseUrl, text) {
