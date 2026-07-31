@@ -4261,7 +4261,7 @@ app.post('/webhook/quo', express.json(), async (req, res) => {
     const event = payload.event || payload.type || '';
     if (!event.includes('message')) return res.json({ ok: true, skipped: true });
 
-    const msg = payload.data || payload.message || payload;
+    const msg = (payload.data && payload.data.object) || payload.message || payload;
     const direction = msg.direction || '';
     const from = msg.from || msg.participant || '';
     const body = msg.body || msg.content || msg.text || '';
@@ -4270,7 +4270,7 @@ app.post('/webhook/quo', express.json(), async (req, res) => {
     const inboxNumber = msg.to || msg.inboxNumber || '';
 
     // Only care about inbound messages with attachments OR invoice/quote keywords
-    const isInbound = direction === 'inbound' || direction === 'in';
+    const isInbound = direction === 'incoming' || direction === 'inbound' || direction === 'in';
     const lowerBody = body.toLowerCase();
     const isInvoice = lowerBody.includes('invoice') || lowerBody.includes('total') || lowerBody.includes('amount due') || lowerBody.includes('payment');
     const isQuote = lowerBody.includes('quote') || lowerBody.includes('estimate') || lowerBody.includes('proposal');
@@ -4302,7 +4302,7 @@ app.post('/webhook/quo', express.json(), async (req, res) => {
       vendorName,
     };
 
-    await fetch('http://34.16.238.69:3001/webhook/quo', {
+    await fetch('http://34.16.157.83:3001/webhook/quo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(ariPayload),
