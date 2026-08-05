@@ -17,9 +17,9 @@
 <div><div class="topbar-title">Agent Training</div><div class="topbar-sub">Roleplay live against an agent's real current playbook</div></div>
 <div class="badge">🔒 No real messages, texts, or writes sent</div>
 </div>
-<div class="content">
+<div class="content" style="height:calc(100vh - 105px)">
 <div class="agent-list" id="agentList"></div>
-<div class="chat-area">
+<div class="chat-area" style="flex:1">
 <div class="chat-header">
 <div class="lbl" id="chatLbl">Select an agent</div>
 <select class="cp-select" id="cpSelect">
@@ -34,10 +34,6 @@
 <button class="btn btn-primary" id="sendBtn" onclick="send()" disabled>Send</button>
 <button class="btn btn-ghost" onclick="resetChat()">Reset</button>
 </div>
-</div>
-<div class="playbook-panel">
-<div class="lbl" style="margin-bottom:10px">Live Playbook Loaded</div>
-<div class="playbook-box" id="playbookBox">Select an agent to view what it's currently working from.</div>
 </div>
 </div>
 </div>
@@ -60,16 +56,7 @@ async function selectAgent(agentId, btn){
   document.getElementById('chatInput').disabled = false;
   document.getElementById('sendBtn').disabled = false;
   document.getElementById('chatBox').innerHTML = '<div class="msg-empty">Send a message to start.</div>';
-  document.getElementById('playbookBox').textContent = 'Loading...';
-  try {
-    const r = await fetch('/api/agents/train/context/' + agentId);
-    const d = await r.json();
-    document.getElementById('playbookBox').textContent = d.playbook || 'No playbook found for this agent.';
-  } catch(e) {
-    document.getElementById('playbookBox').textContent = 'Error loading playbook.';
-  }
 }
-
 function renderChat(){
   const box = document.getElementById('chatBox');
   if (history.length === 0){ box.innerHTML = '<div class="msg-empty">Send a message to start.</div>'; return; }
