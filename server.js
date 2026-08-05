@@ -5338,7 +5338,7 @@ app.post('/api/five-day-notice-charge', async (req, res) => {
     if (!aptlyResp.ok) throw new Error(`Aptly board fetch failed: ${aptlyResp.status}`);
     const aptlyData  = await aptlyResp.json();
     const allCards   = aptlyData?.data || aptlyData?.items || [];
-    const delinquent = allCards.filter(c => c.Stage === DELINQUENT_STAGE);
+    const delinquent = allCards.filter(c => c.stage === DELINQUENT_STAGE);
     console.log(`[5-day] ${delinquent.length} delinquent cards of ${allCards.length} total`);
 
     const leasesResp = await fetch(
@@ -5357,8 +5357,8 @@ app.post('/api/five-day-notice-charge', async (req, res) => {
     }
 
     for (const card of delinquent) {
-      const address    = card['Mirror Address']?.standardAddress || card.Title || '';
-      const tenantName = card.Tenants?.[0]?.name || card.Leases?.[0]?.name || 'Unknown';
+      const address    = (card.location || [])[0]?.name || card.name || '';
+      const tenantName = (card.relatedContacts || [])[0]?.name || card.name || 'Unknown';
       const streetNorm = norm(address.split(',')[0]);
       let leaseID = addrMap[streetNorm];
       if (!leaseID) {
