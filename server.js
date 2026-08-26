@@ -3848,97 +3848,123 @@ app.get('/api/walkthrough-schedule', async (req, res) => {
 });
 
 // ---- Move-Out Charge Recon ----
-async function fetchMoveOutChargeRecon(allPropsArg) {
+async function fetchMoveOutChargeRecon() {
   try {
-    const cutoff = new Date(Date.now() - 30*86400000).toISOString().slice(0,10);
+    const windowStart = new Date(Date.now() - 90*86400000).toISOString().slice(0,10);
+    const windowEnd = new Date().toISOString().slice(0,10);
+    const glWindowStart = new Date(Date.now() - 120*86400000).toISOString().slice(0,10);
 
-    // Build propertyID -> streetNum map
-    const propIdToStreet = {};
-    if (allPropsArg && allPropsArg.length) {
-      allPropsArg.forEach(function(item) {
-        const p = item.property || item;
-        const pid = String(p.propertyID || p.id || '');
-        const addr = (p.address || '').toLowerCase();
-        const numMatch = addr.match(/^(\d+)/);
-        if (pid && numMatch) propIdToStreet[pid] = numMatch[1];
-      });
-    }
-    console.log('ChargeRecon: propertyID map has', Object.keys(propIdToStreet).length, 'entries');
-
-    // 1. Tenant charges (6000 / account 135) from lease-charges report - last 30 days
-    const MOVEOUT_PAT = /clean|repair|paint|carpet|trash|removal|touch.?up|damage|flooring|patch|drywall|haul|junk|debris|rekey|lock/i;
-    const EXCLUDE_PAT = /rent|rbp|resident benefit|insurance|late fee|hoa|admin|utility|pool|pest|landscap|lease break|security deposit|mgmt|renewal/i;
-    const chargeReport = {
-      displayColumns: ['leaseID', 'unitAddress', 'datePosted', 'amount', 'description'],
+    // 1. Real move-outs in the last 90 days, straight from the Lease report's moveOutDate field.
+    const leaseReport = {
+      displayColumns: ['leaseID', 'propertyID', 'unitID', 'unitAddress', 'portfolio', 'primaryTenantName', 'moveInDate', 'moveOutDate'],
       filters: [
-        { name: 'primaryLeaseStatusID', comparator: 'in', values: [3] },
-        { name: 'datePosted', comparator: 'last30Days' }
+        { name: 'moveOutDate', comparator: 'betweenDate', startDate: windowStart, endDate: windowEnd }
+      ]
+    };
+    const lUrl = RENTVINE_BASE + '/reports/lease?exportTypeID=1&json=' + encodeURIComponent(JSON.stringify(leaseReport));
+    const lRes = await fetch(lUrl, { headers: { Authorization: 'Basic ' + RENTVINE_AUTH } });
+    const moveOuts = [];
+    const leaseIDs = [];
+    const propertyIDs = [];
+    if (lRes.ok) {
+      const ld = await lRes.json();
+      const rows = ld.rows || [];
+      console.log('ChargeRecon: lease report returned', rows.length, 'move-outs in the last 90 days');
+      rows.forEach(function(row) {
+        const d = row.data || {};
+        if (!d.leaseID || !d.propertyID) return;
+        moveOuts.push({
+          leaseID: d.leaseID,
+          propertyID: d.propertyID,
+          unitID: d.unitID || '',
+          addr: d.unitAddress || '',
+          portfolio: d.portfolio || '',
+          tenant: d.primaryTenantName || '',
+          moveIn: d.moveInDate || '',
+          moveOut: d.moveOutDate || ''
+        });
+        leaseIDs.push(d.leaseID);
+        propertyIDs.push(d.propertyID);
+      });
+    } else {
+      console.error('ChargeRecon: lease report error', lRes.status);
+    }
+
+    if (!moveOuts.length) return { moveOuts: [] };
+
+    // 2. Tenant charges - exact account 135 (6000), exact lease IDs. No keyword guessing.
+    const chargeReport = {
+      displayColumns: ['leaseID', 'datePosted', 'amount', 'description'],
+      filters: [
+        { name: 'leaseID', comparator: 'in', values: leaseIDs },
+        { name: 'chargeAccountID', comparator: 'equals', value: 135 }
       ]
     };
     const cUrl = RENTVINE_BASE + '/reports/lease-charges?exportTypeID=1&json=' + encodeURIComponent(JSON.stringify(chargeReport));
     const cRes = await fetch(cUrl, { headers: { Authorization: 'Basic ' + RENTVINE_AUTH } });
-    const tenantCharges = {};
+    const chargesByLease = {};
     if (cRes.ok) {
       const cd = await cRes.json();
       const rows = cd.rows || [];
-      console.log('ChargeRecon: lease-charges returned', rows.length, 'rows');
+      console.log('ChargeRecon: lease-charges (6000) returned', rows.length, 'rows');
       rows.forEach(function(row) {
         const d = row.data || {};
-        const desc = d.description || '';
+        const lid = d.leaseID;
+        if (!lid) return;
         const amt = parseFloat(d.amount || 0);
-        if (!MOVEOUT_PAT.test(desc) || EXCLUDE_PAT.test(desc)) return;
-        if (amt <= 0 || amt > 5000) return;
-        const addr = (d.unitAddress || '').toLowerCase();
-        const numMatch = addr.match(/^(\d+)/);
-        const key = numMatch ? numMatch[1] : '';
-        if (!key) return;
-        if (!tenantCharges[key]) tenantCharges[key] = [];
-        tenantCharges[key].push({ date: d.datePosted || '', amount: amt, description: desc.slice(0,80) });
+        if (amt <= 0) return;
+        if (!chargesByLease[lid]) chargesByLease[lid] = [];
+        chargesByLease[lid].push({ date: d.datePosted || '', amount: amt, description: (d.description || '').slice(0,80) });
       });
     } else {
       console.error('ChargeRecon: lease-charges error', cRes.status);
     }
-    console.log('ChargeRecon: tenant charges for', Object.keys(tenantCharges).length, 'properties');
 
-    // 2. Property bills (6070-1 acct 74 = Tenant Cleaning, 6070-2 acct 75 = Tenant Repair Charges) - last 30 days
+    // 3. Property bills - exact property IDs, exact accounts 74/75, accrual basis so unpaid bills are included.
     const glReport = {
-      displayColumns: ['propertyID', 'propertyAddress', 'datePosted', 'debit', 'description', 'accountName'],
+      displayColumns: ['propertyID', 'datePosted', 'debit', 'description', 'accountName'],
       filters: [
+        { name: 'property', comparator: 'in', values: propertyIDs },
         { name: 'account', comparator: 'in', values: [74, 75] },
-        { name: 'datePosted', comparator: 'last30Days' }
+        { name: 'datePosted', comparator: 'betweenDate', startDate: glWindowStart, endDate: windowEnd },
+        { name: 'accountingBasis', comparator: 'basisAccrual' }
       ]
     };
     const gUrl = RENTVINE_BASE + '/reports/general-ledger?exportTypeID=1&json=' + encodeURIComponent(JSON.stringify(glReport));
     const gRes = await fetch(gUrl, { headers: { Authorization: 'Basic ' + RENTVINE_AUTH } });
-    const propertyBills = {};
+    const billsByProperty = {};
     if (gRes.ok) {
       const gd = await gRes.json();
       const rows = gd.rows || [];
-      console.log('ChargeRecon: general-ledger returned', rows.length, 'rows for accts 74/75');
+      console.log('ChargeRecon: general-ledger (6070-1/2) returned', rows.length, 'rows');
       rows.forEach(function(row) {
         const d = row.data || {};
-        const pid = String(d.propertyID || '');
-        const key = propIdToStreet[pid] || '';
-        if (!key) return;
+        const pid = d.propertyID;
+        if (!pid) return;
         const amt = parseFloat(d.debit || 0);
         if (amt <= 0) return;
         const acctName = (d.accountName || '').indexOf('Cleaning') >= 0 ? '6070-1 Tenant Cleaning' : '6070-2 Tenant Repair Charges';
-        if (!propertyBills[key]) propertyBills[key] = [];
-        propertyBills[key].push({ date: d.datePosted || '', amount: amt, description: (d.description || '').slice(0,80), account: acctName, propertyAddress: d.propertyAddress || '' });
+        if (!billsByProperty[pid]) billsByProperty[pid] = [];
+        billsByProperty[pid].push({ date: d.datePosted || '', amount: amt, description: (d.description || '').slice(0,80), account: acctName });
       });
     } else {
       console.error('ChargeRecon: general-ledger error', gRes.status);
     }
-    console.log('ChargeRecon: bills for', Object.keys(propertyBills).length, 'properties');
 
-    return { tenantCharges, propertyBills };
+    // 4. Assemble one record per move-out, itemized charges and bills attached directly
+    moveOuts.forEach(function(m) {
+      m.charges = chargesByLease[m.leaseID] || [];
+      m.bills = billsByProperty[m.propertyID] || [];
+    });
+
+    console.log('ChargeRecon: assembled', moveOuts.length, 'move-out records for the last 90 days');
+    return { moveOuts: moveOuts };
   } catch(e) {
     console.error('fetchMoveOutChargeRecon error:', e.message);
-    return { tenantCharges: {}, propertyBills: {} };
+    return { moveOuts: [] };
   }
 }
 
-// ── Suppressed Fee Analysis ──
 app.get('/suppressed-fees', (req, res) => res.sendFile(new URL('./suppressed-fees.html', import.meta.url).pathname));
 
 // ── Property Map ──────────────────────────────────────────────────────────
