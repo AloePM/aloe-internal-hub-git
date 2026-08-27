@@ -1607,75 +1607,130 @@ function renderMoveOuts() {
   html += '<div id="recon-section"></div>';
   html += '</div>';
   document.getElementById('app').innerHTML = html;
-  if (!D._moveOutCharges) {
+  function renderReconSection(data) {
+    var recon = document.getElementById('recon-section');
+    if (!recon) return;
+    var moveOuts = (data && data.moveOuts) || [];
+    if (!moveOuts.length) {
+      recon.innerHTML = '<div class="trend-section-label" style="margin-top:20px">6000 vs 6070 Charge Reconciliation \u2014 Move-Outs, Last 90 Days</div><div style="padding:12px;color:var(--muted);font-size:12px">No move-outs found in the last 90 days.</div>';
+      return;
+    }
+    function usFedHolidays(year) {
+      function nthWeekday(month, weekday, n) {
+        var d = new Date(year, month, 1); var count = 0;
+        while (true) { if (d.getDay()===weekday){count++; if(count===n) return d.toISOString().slice(0,10);} d.setDate(d.getDate()+1); }
+      }
+      function lastWeekday(month, weekday) {
+        var d = new Date(year, month+1, 0);
+        while (d.getDay()!==weekday) d.setDate(d.getDate()-1);
+        return d.toISOString().slice(0,10);
+      }
+      return new Set([year+'-01-01', nthWeekday(0,1,3), nthWeekday(1,1,3), lastWeekday(4,1), year+'-06-19', year+'-07-04', nthWeekday(8,1,1), nthWeekday(9,1,2), year+'-11-11', nthWeekday(10,4,4), year+'-12-25']);
+    }
+    function businessDaysUntil14th(moveOutStr) {
+      if (!moveOutStr) return null;
+      var start = new Date(moveOutStr.slice(0,10)+'T00:00:00');
+      var hThis = usFedHolidays(start.getFullYear());
+      var hNext = usFedHolidays(start.getFullYear()+1);
+      var cursor = new Date(start); var count=0; var deadline=null;
+      while (count<14) {
+        cursor.setDate(cursor.getDate()+1);
+        var iso = cursor.toISOString().slice(0,10);
+        var isWeekend = cursor.getDay()===0||cursor.getDay()===6;
+        var isHoliday = hThis.has(iso)||hNext.has(iso);
+        if (!isWeekend && !isHoliday) count++;
+        if (count===14) deadline = new Date(cursor);
+      }
+      var today = new Date(); today.setHours(0,0,0,0);
+      return Math.round((deadline-today)/86400000);
+    }
+    function matchItems(charges, bills) {
+      var usedC=charges.map(function(){return false;}); var usedB=bills.map(function(){return false;});
+      var cGroup=charges.map(function(){return null;}); var bGroup=bills.map(function(){return null;});
+      var gid=0; var capped = charges.length>10||bills.length>10;
+      for (var i=0;i<charges.length;i++){ for (var j=0;j<bills.length;j++){ if(!usedC[i]&&!usedB[j]&&Math.abs(Math.abs(charges[i].amount)-Math.abs(bills[j].amount))<0.01){ usedC[i]=true; usedB[j]=true; cGroup[i]=gid; bGroup[j]=gid; gid++; } } }
+      if (!capped) {
+        function subsetSum(items, used, target) {
+          var n=items.length;
+          for (var mask=1; mask<(1<<n); mask++){
+            var sum=0, idxs=[];
+            for (var b=0;b<n;b++){ if((mask&(1<<b))&&!used[b]){ sum+=Math.abs(items[b].amount); idxs.push(b);} }
+            if (idxs.length>1 && Math.abs(sum-target)<0.01) return idxs;
+          }
+          return null;
+        }
+        bills.forEach(function(bill,j){ if(usedB[j])return; var idxs=subsetSum(charges,usedC,Math.abs(bill.amount)); if(idxs){ idxs.forEach(function(i){usedC[i]=true;cGroup[i]=gid;}); usedB[j]=true; bGroup[j]=gid; gid++; } });
+        charges.forEach(function(charge,i){ if(usedC[i])return; var idxs=subsetSum(bills,usedB,Math.abs(charge.amount)); if(idxs){ idxs.forEach(function(j){usedB[j]=true;bGroup[j]=gid;}); usedC[i]=true; cGroup[i]=gid; gid++; } });
+      }
+      return {cGroup:cGroup, bGroup:bGroup, capped:capped};
+    }
+    function leaseLen(moveIn, moveOut) {
+      if (!moveIn || !moveOut) return '--';
+      var a = new Date(moveIn.slice(0,10)+'T00:00:00'); var b = new Date(moveOut.slice(0,10)+'T00:00:00');
+      var months = (b.getFullYear()-a.getFullYear())*12 + (b.getMonth()-a.getMonth());
+      return months + ' mo';
+    }
+    function statusFor(m, match) {
+      if (match.capped) return {label:'Needs review', color:'#b45309'};
+      var leftoverC = m.charges.filter(function(c,i){return match.cGroup[i]===null;}).reduce(function(a,c){return a+Math.abs(c.amount);},0);
+      var leftoverB = m.bills.filter(function(b,j){return match.bGroup[j]===null;}).reduce(function(a,b){return a+Math.abs(b.amount);},0);
+      if (leftoverC===0 && leftoverB===0) return {label:'Matched', color:'var(--teal2)'};
+      if (leftoverC>leftoverB) return {label:'Up-charged tenant', color:'#c0392b'};
+      if (leftoverB>leftoverC) return {label:'Under-charged', color:'#b45309'};
+      return {label:'Needs review', color:'#b45309'};
+    }
+
+    var rhtml = '<div class="trend-section-label" style="margin-top:20px">6000 vs 6070 Charge Reconciliation \u2014 Move-Outs, Last 90 Days</div>';
+    moveOuts.forEach(function(m) {
+      var charges = m.charges || [];
+      var bills = m.bills || [];
+      var match = matchItems(charges, bills);
+      var st = statusFor(m, match);
+      var days = businessDaysUntil14th(m.moveOut);
+      var clockHtml = days===null ? '--' : (days<0 ? '<span style="color:#c0392b;font-weight:700">'+Math.abs(days)+' days overdue</span>' : (days<=3 ? '<span style="color:#b45309;font-weight:700">'+days+' days left</span>' : '<span style="color:var(--muted)">'+days+' days left</span>'));
+      var tcTotal = charges.reduce(function(a,c){return a+Math.abs(c.amount);},0);
+      var pbTotal = bills.reduce(function(a,b){return a+Math.abs(b.amount);},0);
+
+      rhtml += '<div class="card" style="margin-bottom:14px">';
+      rhtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:2px solid var(--rule)">';
+      rhtml += '<div><div style="font-size:14px;font-weight:700">'+(m.addr||'--')+'</div>';
+      rhtml += '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(m.portfolio||'--')+' &middot; '+(m.tenant||'--')+' &middot; '+leaseLen(m.moveIn,m.moveOut)+' lease &middot; Move-out '+(m.moveOut?m.moveOut.slice(0,10):'--')+' &middot; 14-day clock: '+clockHtml+'</div></div>';
+      rhtml += '<div style="text-align:right"><span style="font-size:11px;color:'+st.color+';font-weight:700;background:var(--card2);padding:3px 8px;border-radius:6px">'+st.label+'</span><div style="margin-top:4px"><span style="font-size:11px;color:var(--blue);font-weight:700">6000: $'+Number(tcTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span><span style="font-size:11px;color:var(--muted);margin:0 8px">/</span><span style="font-size:11px;color:var(--teal2);font-weight:700">6070: $'+Number(pbTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div></div></div>';
+      rhtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+
+      rhtml += '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue);margin-bottom:8px">6000 \u2014 Tenant Charges</div>';
+      if (!charges.length) { rhtml += '<div style="padding:12px;background:var(--card2);border-radius:6px;color:var(--muted);font-size:12px">No charges found</div>'; }
+      else {
+        charges.forEach(function(c,ci){
+          var matched = match.cGroup[ci]!==null;
+          rhtml += '<div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:6px;margin-bottom:4px;font-size:12px;background:'+(matched?'rgba(60,195,225,0.12)':'rgba(192,57,43,0.12)')+'"><span>'+c.description+'</span><span style="font-weight:700">$'+Number(Math.abs(c.amount)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
+        });
+        rhtml += '<div style="display:flex;justify-content:space-between;padding:6px 8px;font-weight:700;border-top:1px solid var(--rule);margin-top:4px"><span>Total</span><span style="color:var(--blue)">$'+Number(tcTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
+      }
+      rhtml += '</div>';
+
+      rhtml += '<div>';
+      rhtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--teal2);margin-bottom:6px">6070-1/2 \u2014 Bills</div>';
+      if (!bills.length) { rhtml += '<div style="padding:8px;background:var(--card2);border-radius:6px;color:var(--muted);font-size:12px">No bills found</div>'; }
+      else {
+        bills.forEach(function(b,bi){
+          var matched = match.bGroup[bi]!==null;
+          var tag = b.account && b.account.indexOf('Cleaning')>=0 ? '6070-1' : '6070-2';
+          rhtml += '<div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:6px;margin-bottom:4px;font-size:12px;background:'+(matched?'rgba(60,195,225,0.12)':'rgba(192,57,43,0.12)')+'"><span>['+tag+'] '+b.description+'</span><span style="font-weight:700">$'+Number(Math.abs(b.amount)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
+        });
+        rhtml += '<div style="display:flex;justify-content:space-between;padding:6px 8px;font-weight:700;border-top:1px solid var(--rule);margin-top:4px"><span>Total</span><span style="color:var(--teal2)">$'+Number(pbTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
+      }
+      rhtml += '</div></div></div>';
+    });
+    recon.innerHTML = rhtml;
+  }
+  if (D._moveOutCharges) {
+    renderReconSection(D._moveOutCharges);
+  } else {
     fetch('/api/moveout-charges').then(function(r){return r.json();}).then(function(data){
       D._moveOutCharges = data;
-      var _recent = recentMoveOuts.slice(); var _acct = accountingMoveOuts.slice();
-      // Re-render only the recon section without full re-render
-      var recon = document.getElementById('recon-section');
-      if (recon) {
-        var reconData2 = D._moveOutCharges || {};
-        var rows2 = [];
-        _recent.concat(_acct).forEach(function(m) {
-          var addrNum = (m.address||'').match(/^(\d+)/);
-          var key = addrNum ? addrNum[1] : '';
-          if (!key) return;
-          var bills = (reconData2.propertyBills && reconData2.propertyBills[key]) || [];
-          if (!bills.length) return;
-          var moTime = m.moveOutDate ? new Date(m.moveOutDate).getTime() : null;
-          var fb = moTime ? bills.filter(function(b){ var bt=b.date?new Date(b.date).getTime():0; return bt>=moTime-5*86400000&&bt<=moTime+30*86400000; }) : bills;
-          if (fb.length && !rows2.find(function(r){return r.key===key;})) rows2.push({address:m.address,moveOutDate:m.moveOutDate,bills:fb,key:key});
-        });
-        if (rows2.length) {
-          var rhtml = '<div class="trend-section-label" style="margin-top:20px">6000 vs 6070 Charge Reconciliation — by Property</div>';
-          var reconData2 = D._moveOutCharges || {};
-          rows2.forEach(function(r) {
-            var charges = (reconData2.tenantCharges && reconData2.tenantCharges[r.key]) || [];
-            var moTime = r.moveOutDate ? new Date(r.moveOutDate).getTime() : null;
-            var filteredCharges = moTime ? charges.filter(function(c){ var ct=c.date?new Date(c.date).getTime():0; return ct>=moTime-5*86400000&&ct<=moTime+30*86400000; }) : charges;
-            var tcTotal = filteredCharges.reduce(function(a,c){return a+Math.abs(c.amount);},0);
-            var cleaning = r.bills.filter(function(b){return b.account&&b.account.indexOf('Cleaning')>=0;});
-            var repairs = r.bills.filter(function(b){return b.account&&b.account.indexOf('Repair')>=0;});
-            var cleanTotal = cleaning.reduce(function(a,b){return a+Math.abs(b.amount);},0);
-            var repairTotal = repairs.reduce(function(a,b){return a+Math.abs(b.amount);},0);
-            var pbTotal = cleanTotal + repairTotal;
-            rhtml += '<div class="card" style="margin-bottom:14px">';
-            rhtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid var(--rule)">';
-            rhtml += '<div><div style="font-size:14px;font-weight:700">'+r.address+'</div>';
-            rhtml += '<div style="font-size:11px;color:var(--muted);margin-top:2px">Move-out: '+(r.moveOutDate?r.moveOutDate.slice(0,10):'--')+'</div></div>';
-            rhtml += '<div style="text-align:right"><span style="font-size:11px;color:var(--blue);font-weight:700">6000: $'+Number(tcTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span><span style="font-size:11px;color:var(--muted);margin:0 8px">/</span><span style="font-size:11px;color:var(--teal2);font-weight:700">6070: $'+Number(pbTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div></div>';
-            rhtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
-            // LEFT: 6000 Tenant Charges
-            rhtml += '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue);margin-bottom:8px">6000 — Tenant Charges</div>';
-            if (!filteredCharges.length) { rhtml += '<div style="padding:12px;background:var(--card2);border-radius:6px;color:var(--muted);font-size:12px">No charges found</div>'; }
-            else {
-              rhtml += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--blue-d)"><th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--blue)">Description</th><th style="padding:5px 8px;text-align:right;font-size:10px;color:var(--blue)">Amount</th><th style="padding:5px 8px;text-align:center;font-size:10px;color:var(--blue)">Date</th></tr></thead><tbody>';
-              filteredCharges.forEach(function(c,ci){ rhtml += '<tr style="border-bottom:1px solid var(--rule)'+(ci%2===1?';background:var(--card2)':'')+'"><td style="padding:6px 8px">'+c.description+'</td><td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--blue)">$'+Number(Math.abs(c.amount)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td><td style="padding:6px 8px;text-align:center;font-size:10px;color:var(--muted)">'+(c.date?c.date.slice(0,10):'')+'</td></tr>'; });
-              rhtml += '<tr style="background:var(--blue-d)"><td style="padding:6px 8px;font-weight:700">Total</td><td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--blue)">$'+Number(tcTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td><td></td></tr></tbody></table>';
-            }
-            rhtml += '</div>';
-            // RIGHT: 6070-1 + 6070-2
-            rhtml += '<div>';
-            rhtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--teal2);margin-bottom:6px">6070-1 — Tenant Cleaning</div>';
-            if (!cleaning.length) { rhtml += '<div style="padding:8px;background:var(--card2);border-radius:6px;color:var(--muted);font-size:12px;margin-bottom:10px">No cleaning bills</div>'; }
-            else {
-              rhtml += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px"><thead><tr style="background:var(--teal-dim)"><th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--teal2)">Description</th><th style="padding:5px 8px;text-align:right;font-size:10px;color:var(--teal2)">Amount</th><th style="padding:5px 8px;text-align:center;font-size:10px;color:var(--teal2)">Date</th></tr></thead><tbody>';
-              cleaning.forEach(function(b,bi){ rhtml += '<tr style="border-bottom:1px solid var(--rule)'+(bi%2===1?';background:var(--card2)':'')+'"><td style="padding:6px 8px">'+b.description+'</td><td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--teal2)">$'+Number(Math.abs(b.amount)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td><td style="padding:6px 8px;text-align:center;font-size:10px;color:var(--muted)">'+(b.date?b.date.slice(0,10):'')+'</td></tr>'; });
-              rhtml += '<tr style="background:var(--teal-dim)"><td style="padding:6px 8px;font-weight:700">Total</td><td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--teal2)">$'+Number(cleanTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td><td></td></tr></tbody></table>';
-            }
-            rhtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue);margin-bottom:6px">6070-2 — Tenant Repair Charges</div>';
-            if (!repairs.length) { rhtml += '<div style="padding:8px;background:var(--card2);border-radius:6px;color:var(--muted);font-size:12px">No repair bills</div>'; }
-            else {
-              rhtml += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--blue-d)"><th style="padding:5px 8px;text-align:left;font-size:10px;color:var(--blue)">Description</th><th style="padding:5px 8px;text-align:right;font-size:10px;color:var(--blue)">Amount</th><th style="padding:5px 8px;text-align:center;font-size:10px;color:var(--blue)">Date</th></tr></thead><tbody>';
-              repairs.forEach(function(b,bi){ rhtml += '<tr style="border-bottom:1px solid var(--rule)'+(bi%2===1?';background:var(--card2)':'')+'"><td style="padding:6px 8px">'+b.description+'</td><td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--blue)">$'+Number(Math.abs(b.amount)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td><td style="padding:6px 8px;text-align:center;font-size:10px;color:var(--muted)">'+(b.date?b.date.slice(0,10):'')+'</td></tr>'; });
-              rhtml += '<tr style="background:var(--blue-d)"><td style="padding:6px 8px;font-weight:700">Total</td><td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--blue)">$'+Number(repairTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td><td></td></tr></tbody></table>';
-            }
-            rhtml += '</div></div></div>';
-          });
-          recon.innerHTML = rhtml;
-        }
-      }
-    }).catch(function(){ D._moveOutCharges = {}; });
+      renderReconSection(data);
+    }).catch(function(){ D._moveOutCharges = {moveOuts: []}; renderReconSection(D._moveOutCharges); });
   }
 }
 
