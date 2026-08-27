@@ -3853,11 +3853,12 @@ async function fetchMoveOutChargeRecon() {
     const windowStart = new Date(Date.now() - 90*86400000).toISOString().slice(0,10);
     const windowEnd = new Date().toISOString().slice(0,10);
     const glWindowStart = new Date(Date.now() - 120*86400000).toISOString().slice(0,10);
+    const leaseCols = ['leaseID', 'propertyID', 'unitID', 'unitAddress', 'portfolioID', 'primaryTenantName', 'moveInDate', 'moveOutDate', 'expectedMoveOutDate', 'closedDate'];
 
     // 1. Real move-outs in the last 90 days - anchored on closedDate, not moveOutDate.
     //    moveOutDate is often left blank even on fully closed leases; closedDate is reliable.
     const leaseReport = {
-      displayColumns: ['leaseID', 'propertyID', 'unitID', 'unitAddress', 'portfolioID', 'primaryTenantName', 'moveInDate', 'moveOutDate', 'expectedMoveOutDate', 'closedDate'],
+      displayColumns: leaseCols,
       filters: [
         { name: 'closedDate', comparator: 'betweenDate', startDate: windowStart, endDate: windowEnd }
       ]
@@ -3865,9 +3866,6 @@ async function fetchMoveOutChargeRecon() {
     const lUrl = RENTVINE_BASE + '/reports/lease?exportTypeID=1&json=' + encodeURIComponent(JSON.stringify(leaseReport));
     const lRes = await fetch(lUrl, { headers: { Authorization: 'Basic ' + RENTVINE_AUTH } });
     const moveOuts = [];
-    const leaseIDs = [];
-    const propertyIDs = [];
-    const portfolioIDs = [];
     if (lRes.ok) {
       const ld = await lRes.json();
       const rows = ld.rows || [];
@@ -3875,30 +3873,67 @@ async function fetchMoveOutChargeRecon() {
       rows.forEach(function(row) {
         const d = row.data || {};
         if (!d.leaseID || !d.propertyID) return;
-        const pid = d.portfolioID || '';
         moveOuts.push({
           leaseID: d.leaseID,
           propertyID: d.propertyID,
           unitID: d.unitID || '',
           addr: d.unitAddress || '',
-          portfolioID: pid,
+          portfolioID: d.portfolioID || '',
           portfolio: '',
           tenant: d.primaryTenantName || '',
           moveIn: d.moveInDate || '',
           moveOut: d.moveOutDate || d.expectedMoveOutDate || d.closedDate || '',
           closedDate: d.closedDate || ''
         });
-        leaseIDs.push(d.leaseID);
-        propertyIDs.push(d.propertyID);
-        if (pid) portfolioIDs.push(pid);
       });
     } else {
       console.error('ChargeRecon: lease report error', lRes.status);
     }
 
-    if (!moveOuts.length) return { moveOuts: [] };
+    // 1a. Upcoming move-outs - still Active, notice given, not yet actually moved out or closed.
+    const upcomingReport = {
+      displayColumns: leaseCols,
+      filters: [
+        { name: 'primaryLeaseStatusID', comparator: 'equals', value: 2 },
+        { name: 'isMovingOut', comparator: 'equals', value: true },
+        { name: 'expectedMoveOutDate', comparator: 'isNotEmpty' }
+      ]
+    };
+    const uUrl = RENTVINE_BASE + '/reports/lease?exportTypeID=1&json=' + encodeURIComponent(JSON.stringify(upcomingReport));
+    const uRes = await fetch(uUrl, { headers: { Authorization: 'Basic ' + RENTVINE_AUTH } });
+    const upcoming = [];
+    if (uRes.ok) {
+      const ud = await uRes.json();
+      const rows = ud.rows || [];
+      console.log('ChargeRecon: upcoming move-outs (notice given, not yet closed) -', rows.length, 'leases');
+      rows.forEach(function(row) {
+        const d = row.data || {};
+        if (!d.leaseID || !d.propertyID) return;
+        upcoming.push({
+          leaseID: d.leaseID,
+          propertyID: d.propertyID,
+          unitID: d.unitID || '',
+          addr: d.unitAddress || '',
+          portfolioID: d.portfolioID || '',
+          portfolio: '',
+          tenant: d.primaryTenantName || '',
+          moveIn: d.moveInDate || '',
+          expectedMoveOut: d.expectedMoveOutDate || ''
+        });
+      });
+      upcoming.sort(function(a, b) { return (a.expectedMoveOut || '').localeCompare(b.expectedMoveOut || ''); });
+    } else {
+      console.error('ChargeRecon: upcoming move-outs report error', uRes.status);
+    }
 
-    // 1b. Resolve portfolio names in bulk (mirrors the existing properties/export pagination pattern).
+    if (!moveOuts.length && !upcoming.length) return { moveOuts: [], upcoming: [] };
+
+    const allRecords = moveOuts.concat(upcoming);
+    const leaseIDs = allRecords.map(function(m) { return m.leaseID; });
+    const propertyIDs = allRecords.map(function(m) { return m.propertyID; });
+    const portfolioIDs = allRecords.map(function(m) { return m.portfolioID; }).filter(Boolean);
+
+    // 1b. Resolve portfolio names individually by ID (bulk /portfolios/export returns 404 in this account).
     const portfolioNames = {};
     try {
       const uniquePortfolioIDs = Array.from(new Set(portfolioIDs.map(String))).filter(Boolean);
@@ -3906,14 +3941,8 @@ async function fetchMoveOutChargeRecon() {
       for (const pid of uniquePortfolioIDs) {
         try {
           const pfRes = await fetch(RENTVINE_BASE + '/portfolios/' + pid, { headers: { Authorization: 'Basic ' + RENTVINE_AUTH } });
-          if (pfRes.status !== 200) {
-            console.log('ChargeRecon: portfolio', pid, 'fetch status', pfRes.status);
-            continue;
-          }
+          if (pfRes.status !== 200) continue;
           const pfData = await pfRes.json();
-          if (uniquePortfolioIDs.indexOf(pid) === 0) {
-            console.log('ChargeRecon: sample portfolio response', JSON.stringify(pfData).slice(0, 400));
-          }
           const p = pfData.portfolio || pfData;
           portfolioNames[pid] = p.name || p.portfolioName || '';
         } catch (pfItemErr) {
@@ -3924,11 +3953,11 @@ async function fetchMoveOutChargeRecon() {
     } catch (pfErr) {
       console.error('ChargeRecon: portfolio lookup failed, continuing without names', pfErr.message);
     }
-    moveOuts.forEach(function(m) {
+    allRecords.forEach(function(m) {
       m.portfolio = portfolioNames[String(m.portfolioID)] || '';
     });
 
-    // 2. Tenant charges - exact account 135 (6000), exact lease IDs. No keyword guessing.
+    // 2. Tenant charges - exact account 135 (6000), exact lease IDs (both closed and upcoming). No keyword guessing.
     const chargeReport = {
       displayColumns: ['leaseID', 'datePosted', 'amount', 'description'],
       filters: [
@@ -3956,7 +3985,7 @@ async function fetchMoveOutChargeRecon() {
       console.error('ChargeRecon: lease-charges error', cRes.status);
     }
 
-    // 3. Property bills - exact property IDs, exact accounts 74/75, accrual basis so unpaid bills are included.
+    // 3. Property bills - exact property IDs (both closed and upcoming), exact accounts 74/75, accrual basis so unpaid bills are included.
     const glReport = {
       displayColumns: ['propertyID', 'datePosted', 'debit', 'description', 'accountName'],
       filters: [
@@ -3987,17 +4016,17 @@ async function fetchMoveOutChargeRecon() {
       console.error('ChargeRecon: general-ledger error', gRes.status);
     }
 
-    // 4. Assemble one record per move-out, itemized charges and bills attached directly
-    moveOuts.forEach(function(m) {
+    // 4. Assemble - itemized charges and bills attached directly to each record, closed or upcoming.
+    allRecords.forEach(function(m) {
       m.charges = chargesByLease[m.leaseID] || [];
       m.bills = billsByProperty[m.propertyID] || [];
     });
 
-    console.log('ChargeRecon: assembled', moveOuts.length, 'move-out records for the last 90 days');
-    return { moveOuts: moveOuts };
+    console.log('ChargeRecon: assembled', moveOuts.length, 'closed move-outs and', upcoming.length, 'upcoming move-outs');
+    return { moveOuts: moveOuts, upcoming: upcoming };
   } catch(e) {
     console.error('fetchMoveOutChargeRecon error:', e.message);
-    return { moveOuts: [] };
+    return { moveOuts: [], upcoming: [] };
   }
 }
 
