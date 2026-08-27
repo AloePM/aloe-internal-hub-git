@@ -1605,6 +1605,7 @@ function renderMoveOuts() {
   }
 
   html += '<div id="recon-section"></div>';
+  html += '<div id="recon-upcoming-section"></div>';
   html += '</div>';
   document.getElementById('app').innerHTML = html;
   function renderReconSection(data) {
@@ -1723,6 +1724,60 @@ function renderMoveOuts() {
       rhtml += '</div></div></div>';
     });
     recon.innerHTML = rhtml;
+
+    var upcoming = (data && data.upcoming) || [];
+    var upcomingEl = document.getElementById('recon-upcoming-section');
+    if (upcomingEl) {
+      if (!upcoming.length) {
+        upcomingEl.innerHTML = '<div class="trend-section-label" style="margin-top:20px">Upcoming Move-Outs \u2014 Pre-Closeout Checklist</div><div style="padding:12px;color:var(--muted);font-size:12px">No upcoming move-outs.</div>';
+      } else {
+        var uhtml = '<div class="trend-section-label" style="margin-top:20px">Upcoming Move-Outs \u2014 Pre-Closeout Checklist</div>';
+        upcoming.forEach(function(m) {
+          var charges = m.charges || [];
+          var bills = m.bills || [];
+          var match = matchItems(charges, bills);
+          var st = statusFor(m, match);
+          var today = new Date(); today.setHours(0,0,0,0);
+          var expDate = m.expectedMoveOut ? new Date(m.expectedMoveOut.slice(0,10)+'T00:00:00') : null;
+          var daysUntil = expDate ? Math.round((expDate-today)/86400000) : null;
+          var countdownHtml = daysUntil===null ? '--' : (daysUntil<0 ? '<span style="color:#b45309;font-weight:700">'+Math.abs(daysUntil)+' days past expected move-out</span>' : (daysUntil<=7 ? '<span style="color:#b45309;font-weight:700">'+daysUntil+' days until expected move-out</span>' : '<span style="color:var(--muted)">'+daysUntil+' days until expected move-out</span>'));
+          var tcTotal = charges.reduce(function(a,c){return a+Math.abs(c.amount);},0);
+          var pbTotal = bills.reduce(function(a,b){return a+Math.abs(b.amount);},0);
+
+          uhtml += '<div class="card" style="margin-bottom:14px">';
+          uhtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:2px solid var(--rule)">';
+          uhtml += '<div><div style="font-size:14px;font-weight:700">'+(m.addr||'--')+'</div>';
+          uhtml += '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(m.portfolio||'--')+' &middot; '+(m.tenant||'--')+' &middot; Move-in '+(m.moveIn?m.moveIn.slice(0,10):'--')+' &middot; Expected move-out '+(m.expectedMoveOut?m.expectedMoveOut.slice(0,10):'--')+' &middot; '+countdownHtml+'</div></div>';
+          uhtml += '<div style="text-align:right"><span style="font-size:11px;color:'+st.color+';font-weight:700;background:var(--card2);padding:3px 8px;border-radius:6px">'+st.label+'</span><div style="margin-top:4px"><span style="font-size:11px;color:var(--blue);font-weight:700">6000: $'+Number(tcTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span><span style="font-size:11px;color:var(--muted);margin:0 8px">/</span><span style="font-size:11px;color:var(--teal2);font-weight:700">6070: $'+Number(pbTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div></div></div>';
+          uhtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+
+          uhtml += '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue);margin-bottom:8px">6000 \u2014 Tenant Charges (so far)</div>';
+          if (!charges.length) { uhtml += '<div style="padding:12px;background:var(--card2);border-radius:6px;color:var(--muted);font-size:12px">No charges posted yet</div>'; }
+          else {
+            charges.forEach(function(c,ci){
+              var matched = match.cGroup[ci]!==null;
+              uhtml += '<div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:6px;margin-bottom:4px;font-size:12px;background:'+(matched?'rgba(60,195,225,0.12)':'rgba(192,57,43,0.12)')+'"><span>'+c.description+'</span><span style="font-weight:700">$'+Number(Math.abs(c.amount)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
+            });
+            uhtml += '<div style="display:flex;justify-content:space-between;padding:6px 8px;font-weight:700;border-top:1px solid var(--rule);margin-top:4px"><span>Total</span><span style="color:var(--blue)">$'+Number(tcTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
+          }
+          uhtml += '</div>';
+
+          uhtml += '<div>';
+          uhtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--teal2);margin-bottom:6px">6070-1/2 \u2014 Bills (so far)</div>';
+          if (!bills.length) { uhtml += '<div style="padding:8px;background:var(--card2);border-radius:6px;color:var(--muted);font-size:12px">No bills posted yet</div>'; }
+          else {
+            bills.forEach(function(b,bi){
+              var matched = match.bGroup[bi]!==null;
+              var tag = b.account && b.account.indexOf('Cleaning')>=0 ? '6070-1' : '6070-2';
+              uhtml += '<div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:6px;margin-bottom:4px;font-size:12px;background:'+(matched?'rgba(60,195,225,0.12)':'rgba(192,57,43,0.12)')+'"><span>['+tag+'] '+b.description+'</span><span style="font-weight:700">$'+Number(Math.abs(b.amount)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
+            });
+            uhtml += '<div style="display:flex;justify-content:space-between;padding:6px 8px;font-weight:700;border-top:1px solid var(--rule);margin-top:4px"><span>Total</span><span style="color:var(--teal2)">$'+Number(pbTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
+          }
+          uhtml += '</div></div></div>';
+        });
+        upcomingEl.innerHTML = uhtml;
+      }
+    }
   }
   if (D._moveOutCharges) {
     renderReconSection(D._moveOutCharges);
