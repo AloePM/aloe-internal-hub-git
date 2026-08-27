@@ -3901,19 +3901,24 @@ async function fetchMoveOutChargeRecon() {
     // 1b. Resolve portfolio names in bulk (mirrors the existing properties/export pagination pattern).
     const portfolioNames = {};
     try {
-      for (let pg = 1; pg <= 5; pg++) {
-        const pfRes = await fetch(RENTVINE_BASE + '/portfolios/export?pageSize=200&page=' + pg, { headers: { Authorization: 'Basic ' + RENTVINE_AUTH } });
-        console.log('ChargeRecon: portfolio fetch page', pg, 'status', pfRes.status);
-        if (!pfRes.ok) break;
-        const pfData = await pfRes.json();
-        console.log('ChargeRecon: portfolio raw response sample', JSON.stringify(pfData).slice(0, 500));
-        const batch = Array.isArray(pfData) ? pfData : (pfData.data || []);
-        batch.forEach(function(item) {
-          const p = item.portfolio || item;
-          const pid = String(p.portfolioID || p.id || '');
-          if (pid) portfolioNames[pid] = p.name || p.portfolioName || '';
-        });
-        if (batch.length < 200) break;
+      const uniquePortfolioIDs = Array.from(new Set(portfolioIDs.map(String))).filter(Boolean);
+      console.log('ChargeRecon: fetching', uniquePortfolioIDs.length, 'unique portfolios individually');
+      for (const pid of uniquePortfolioIDs) {
+        try {
+          const pfRes = await fetch(RENTVINE_BASE + '/portfolios/' + pid, { headers: { Authorization: 'Basic ' + RENTVINE_AUTH } });
+          if (pfRes.status !== 200) {
+            console.log('ChargeRecon: portfolio', pid, 'fetch status', pfRes.status);
+            continue;
+          }
+          const pfData = await pfRes.json();
+          if (uniquePortfolioIDs.indexOf(pid) === 0) {
+            console.log('ChargeRecon: sample portfolio response', JSON.stringify(pfData).slice(0, 400));
+          }
+          const p = pfData.portfolio || pfData;
+          portfolioNames[pid] = p.name || p.portfolioName || '';
+        } catch (pfItemErr) {
+          console.log('ChargeRecon: portfolio', pid, 'fetch threw', pfItemErr.message);
+        }
       }
       console.log('ChargeRecon: portfolio map has', Object.keys(portfolioNames).length, 'entries');
     } catch (pfErr) {
