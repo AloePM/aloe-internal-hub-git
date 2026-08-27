@@ -3903,8 +3903,10 @@ async function fetchMoveOutChargeRecon() {
     try {
       for (let pg = 1; pg <= 5; pg++) {
         const pfRes = await fetch(RENTVINE_BASE + '/portfolios/export?pageSize=200&page=' + pg, { headers: { Authorization: 'Basic ' + RENTVINE_AUTH } });
+        console.log('ChargeRecon: portfolio fetch page', pg, 'status', pfRes.status);
         if (!pfRes.ok) break;
         const pfData = await pfRes.json();
+        console.log('ChargeRecon: portfolio raw response sample', JSON.stringify(pfData).slice(0, 500));
         const batch = Array.isArray(pfData) ? pfData : (pfData.data || []);
         batch.forEach(function(item) {
           const p = item.portfolio || item;
