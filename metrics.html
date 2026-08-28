@@ -1727,13 +1727,13 @@ function renderMoveOuts() {
     });
     recon.innerHTML = rhtml;
 
-    var upcoming = ((data && data.upcoming) || []).concat(unresolvedClosed);
+    var upcoming = unresolvedClosed;
     var upcomingEl = document.getElementById('recon-upcoming-section');
     if (upcomingEl) {
       if (!upcoming.length) {
-        upcomingEl.innerHTML = '<div class="trend-section-label" style="margin-top:20px">Upcoming Move-Outs \u2014 Pre-Closeout Checklist</div><div style="padding:12px;color:var(--muted);font-size:12px">No upcoming move-outs.</div>';
+        upcomingEl.innerHTML = '<div class="trend-section-label" style="margin-top:20px">Closed Move-Outs \u2014 Pending Disposition</div><div style="padding:12px;color:var(--muted);font-size:12px">No upcoming move-outs.</div>';
       } else {
-        var uhtml = '<div class="trend-section-label" style="margin-top:20px">Upcoming Move-Outs \u2014 Pre-Closeout Checklist</div>';
+        var uhtml = '<div class="trend-section-label" style="margin-top:20px">Closed Move-Outs \u2014 Pending Disposition</div>';
         upcoming.forEach(function(m) {
           var charges = m.charges || [];
           var bills = m.bills || [];

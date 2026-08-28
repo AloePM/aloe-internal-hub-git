@@ -3890,45 +3890,11 @@ async function fetchMoveOutChargeRecon() {
       console.error('ChargeRecon: lease report error', lRes.status);
     }
 
-    // 1a. Upcoming move-outs - still Active, notice given, not yet actually moved out or closed.
-    const upcomingReport = {
-      displayColumns: leaseCols,
-      filters: [
-        { name: 'primaryLeaseStatusID', comparator: 'equals', value: 2 },
-        { name: 'isMovingOut', comparator: 'equals', value: true },
-        { name: 'expectedMoveOutDate', comparator: 'isNotEmpty' }
-      ]
-    };
-    const uUrl = RENTVINE_BASE + '/reports/lease?exportTypeID=1&json=' + encodeURIComponent(JSON.stringify(upcomingReport));
-    const uRes = await fetch(uUrl, { headers: { Authorization: 'Basic ' + RENTVINE_AUTH } });
     const upcoming = [];
-    if (uRes.ok) {
-      const ud = await uRes.json();
-      const rows = ud.rows || [];
-      console.log('ChargeRecon: upcoming move-outs (notice given, not yet closed) -', rows.length, 'leases');
-      rows.forEach(function(row) {
-        const d = row.data || {};
-        if (!d.leaseID || !d.propertyID) return;
-        upcoming.push({
-          leaseID: d.leaseID,
-          propertyID: d.propertyID,
-          unitID: d.unitID || '',
-          addr: d.unitAddress || '',
-          portfolioID: d.portfolioID || '',
-          portfolio: '',
-          tenant: d.primaryTenantName || '',
-          moveIn: d.moveInDate || '',
-          expectedMoveOut: d.expectedMoveOutDate || ''
-        });
-      });
-      upcoming.sort(function(a, b) { return (a.expectedMoveOut || '').localeCompare(b.expectedMoveOut || ''); });
-    } else {
-      console.error('ChargeRecon: upcoming move-outs report error', uRes.status);
-    }
 
-    if (!moveOuts.length && !upcoming.length) return { moveOuts: [], upcoming: [] };
+    if (!moveOuts.length) return { moveOuts: [], upcoming: [] };
 
-    const allRecords = moveOuts.concat(upcoming);
+    const allRecords = moveOuts;
     const leaseIDs = allRecords.map(function(m) { return m.leaseID; });
     const propertyIDs = allRecords.map(function(m) { return m.propertyID; });
     const portfolioIDs = allRecords.map(function(m) { return m.portfolioID; }).filter(Boolean);
