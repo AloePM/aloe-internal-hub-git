@@ -1682,11 +1682,13 @@ function renderMoveOuts() {
     }
 
     var rhtml = '<div class="trend-section-label" style="margin-top:20px">6000 vs 6070 Charge Reconciliation \u2014 Move-Outs, Last 90 Days</div>';
+    var unresolvedClosed = [];
     moveOuts.forEach(function(m) {
       var charges = m.charges || [];
       var bills = m.bills || [];
       var match = matchItems(charges, bills);
       var st = statusFor(m, match);
+      if (st.label !== 'Matched') unresolvedClosed.push(m);
       var days = businessDaysUntil14th(m.moveOut);
       var clockHtml = days===null ? '--' : (days<0 ? '<span style="color:#c0392b;font-weight:700">'+Math.abs(days)+' days overdue</span>' : (days<=3 ? '<span style="color:#b45309;font-weight:700">'+days+' days left</span>' : '<span style="color:var(--muted)">'+days+' days left</span>'));
       var tcTotal = charges.reduce(function(a,c){return a+Math.abs(c.amount);},0);
@@ -1725,7 +1727,7 @@ function renderMoveOuts() {
     });
     recon.innerHTML = rhtml;
 
-    var upcoming = (data && data.upcoming) || [];
+    var upcoming = ((data && data.upcoming) || []).concat(unresolvedClosed);
     var upcomingEl = document.getElementById('recon-upcoming-section');
     if (upcomingEl) {
       if (!upcoming.length) {
@@ -1738,16 +1740,18 @@ function renderMoveOuts() {
           var match = matchItems(charges, bills);
           var st = statusFor(m, match);
           var today = new Date(); today.setHours(0,0,0,0);
+          var isClosedUnresolved = !m.expectedMoveOut;
           var expDate = m.expectedMoveOut ? new Date(m.expectedMoveOut.slice(0,10)+'T00:00:00') : null;
           var daysUntil = expDate ? Math.round((expDate-today)/86400000) : null;
-          var countdownHtml = daysUntil===null ? '--' : (daysUntil<0 ? '<span style="color:#b45309;font-weight:700">'+Math.abs(daysUntil)+' days past expected move-out</span>' : (daysUntil<=7 ? '<span style="color:#b45309;font-weight:700">'+daysUntil+' days until expected move-out</span>' : '<span style="color:var(--muted)">'+daysUntil+' days until expected move-out</span>'));
+          var countdownHtml = isClosedUnresolved ? '<span style="color:#c0392b;font-weight:700">Closed \u2014 needs reconciliation</span>' : (daysUntil===null ? '--' : (daysUntil<0 ? '<span style="color:#b45309;font-weight:700">'+Math.abs(daysUntil)+' days past expected move-out</span>' : (daysUntil<=7 ? '<span style="color:#b45309;font-weight:700">'+daysUntil+' days until expected move-out</span>' : '<span style="color:var(--muted)">'+daysUntil+' days until expected move-out</span>')));
           var tcTotal = charges.reduce(function(a,c){return a+Math.abs(c.amount);},0);
           var pbTotal = bills.reduce(function(a,b){return a+Math.abs(b.amount);},0);
 
           uhtml += '<div class="card" style="margin-bottom:14px">';
           uhtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:2px solid var(--rule)">';
           uhtml += '<div><div style="font-size:14px;font-weight:700">'+(m.addr||'--')+'</div>';
-          uhtml += '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(m.portfolio||'--')+' &middot; '+(m.tenant||'--')+' &middot; Move-in '+(m.moveIn?m.moveIn.slice(0,10):'--')+' &middot; Expected move-out '+(m.expectedMoveOut?m.expectedMoveOut.slice(0,10):'--')+' &middot; '+countdownHtml+'</div></div>';
+          var dateLabel = isClosedUnresolved ? ('Closed '+(m.closedDate?m.closedDate.slice(0,10):(m.moveOut?m.moveOut.slice(0,10):'--'))) : ('Expected move-out '+(m.expectedMoveOut?m.expectedMoveOut.slice(0,10):'--'));
+          uhtml += '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(m.portfolio||'--')+' &middot; '+(m.tenant||'--')+' &middot; Move-in '+(m.moveIn?m.moveIn.slice(0,10):'--')+' &middot; '+dateLabel+' &middot; '+countdownHtml+'</div></div>';
           uhtml += '<div style="text-align:right"><span style="font-size:11px;color:'+st.color+';font-weight:700;background:var(--card2);padding:3px 8px;border-radius:6px">'+st.label+'</span><div style="margin-top:4px"><span style="font-size:11px;color:var(--blue);font-weight:700">6000: $'+Number(tcTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span><span style="font-size:11px;color:var(--muted);margin:0 8px">/</span><span style="font-size:11px;color:var(--teal2);font-weight:700">6070: $'+Number(pbTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div></div></div>';
           uhtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
 
