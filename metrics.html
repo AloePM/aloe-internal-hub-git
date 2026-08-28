@@ -1727,7 +1727,7 @@ function renderMoveOuts() {
     });
     recon.innerHTML = rhtml;
 
-    var upcoming = unresolvedClosed;
+    var upcoming = unresolvedClosed.slice().sort(function(a,b){ return (a.moveOut||a.closedDate||'').localeCompare(b.moveOut||b.closedDate||''); });
     var upcomingEl = document.getElementById('recon-upcoming-section');
     if (upcomingEl) {
       if (!upcoming.length) {
