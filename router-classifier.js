@@ -65,7 +65,10 @@ export function createShadowClassifier({ anthropic, SLACK_TOKEN, ROUTER_SHADOW_C
       messages: [{ role: 'user', content: userContent }]
     });
 
-    const rawText = (resp.content || []).map(block => block.text || '').join('').trim();
+    let rawText = (resp.content || []).map(block => block.text || '').join('').trim();
+    // Claude sometimes wraps JSON in a markdown code fence despite being told not to --
+    // strip it defensively rather than relying solely on the model following instructions.
+    rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
 
     let parsed;
     try {
