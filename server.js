@@ -12,6 +12,7 @@ import multer from 'multer';
 
 import { initPlaidRoutes } from './plaid-integration.js';
 import { initCustomFieldUpdateRoutes } from './custom-field-update-route.js';
+import { createShadowClassifier } from './router-classifier.js';
 
 const app = express();
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
@@ -482,6 +483,7 @@ const ZINSPECTOR_API_KEY  = process.env.ZINSPECTOR_API_KEY;
 const SLACK_TOKEN         = process.env.SLACK_TOKEN;
 const KB_URL              = process.env.KB_URL || 'https://kb.aloepm.com';
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+const shadowClassify = createShadowClassifier({ anthropic, SLACK_TOKEN, ROUTER_SHADOW_CHANNEL_ID: 'C0BTCF1CYE7' });
 const RENTVINE_BASE = `https://${RENTVINE_ACCOUNT}.rentvine.com/api/manager`;
 const RENTVINE_AUTH = Buffer.from(`${RENTVINE_API_KEY}:${RENTVINE_API_SECRET}`).toString('base64');
 
@@ -4328,6 +4330,9 @@ app.post('/webhook/quo', express.json(), async (req, res) => {
 
     // Only care about inbound messages with attachments OR invoice/quote keywords
     const isInbound = direction === 'incoming' || direction === 'inbound' || direction === 'in';
+    if (isInbound) {
+      shadowClassify({ from, messageText: body, threadId: `${inboxNumber}_${from}` }).catch(() => {});
+    }
     const lowerBody = body.toLowerCase();
     const isInvoice = lowerBody.includes('invoice') || lowerBody.includes('total') || lowerBody.includes('amount due') || lowerBody.includes('payment');
     const isQuote = lowerBody.includes('quote') || lowerBody.includes('estimate') || lowerBody.includes('proposal');
