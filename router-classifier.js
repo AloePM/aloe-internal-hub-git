@@ -52,6 +52,13 @@ function truncate(str, maxLen) {
   return str.length > maxLen ? str.slice(0, maxLen) + '...' : str;
 }
 
+// In-memory thread stickiness: phone number -> last-known category.
+// SHADOW MODE ONLY -- this is intentionally simple (not persisted to GCS),
+// so it resets on every Cloud Run restart/new instance. Fine for observing
+// classifier accuracy; must move to persisted storage before this ever
+// drives live routing (agreed 2026-08-29).
+const threadCategoryMemory = new Map();
+
 export function createShadowClassifier({ anthropic, SLACK_TOKEN, ROUTER_SHADOW_CHANNEL_ID }) {
   async function classifyMessage(messageText, threadContext) {
     const userContent = threadContext
@@ -108,7 +115,21 @@ export function createShadowClassifier({ anthropic, SLACK_TOKEN, ROUTER_SHADOW_C
 
   return async function shadowClassify({ from, messageText, threadId, threadContext }) {
     try {
+      const memoryKey = threadId || from;
+      const cached = threadCategoryMemory.get(memoryKey);
+
+      if (cached) {
+        await postToShadowSlack({
+          from, messageText, threadId,
+          category: cached.category,
+          confidence: cached.confidence,
+          reasoning: '(sticky -- already classified this thread, reused previous category rather than re-classifying)',
+        });
+        return;
+      }
+
       const { category, confidence, reasoning } = await classifyMessage(messageText, threadContext);
+      threadCategoryMemory.set(memoryKey, { category, confidence });
       await postToShadowSlack({ from, messageText, threadId, category, confidence, reasoning });
     } catch (err) {
       console.error('[router-classifier] shadowClassify error:', err.message);
