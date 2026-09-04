@@ -728,6 +728,7 @@ async function getApplicantsCards() {
         if ('amount' in v) return '$' + v.amount;
         if ('name' in v) return v.name;
         if ('value' in v) return v.value;
+        if ('status' in v) return v.status;
       }
       return String(v);
     };
