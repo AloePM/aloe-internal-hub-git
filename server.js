@@ -731,19 +731,11 @@ async function getApplicantsCards() {
       }
       return String(v);
     };
-    const mapped = {
+        const mapped = {
       _cardId: card.cardId,
       'Title': card.name || '',
       'Stage': card.stage || '',
-      'Application Complete': card.appInputCompleted || card.readyToReview || '',
-      'appApproved': card.appApproved || false,
       'Created At': card.createdAt || '',
-      'Primary Applicant': extractName(card.appPrimaryApplicant),
-      'Application Location': extractName(card.appLocation),
-      'Household': card.appHousehold || '',
-      'Move-In Date': card.appMoveInDate || '',
-      'Total Household Mo. Income': card.appIncome ? '$' + card.appIncome.amount : '',
-      'Avg. Household Credit': card.appCreditRating || '',
       'comments': Array.isArray(card.comments) ? card.comments.map(function(c) {
         return { by: c.userName || c.name || 'Unknown', note: c.content || c.text || '', date: (c.createdAt || '').slice(0, 10) };
       }) : [],
@@ -754,6 +746,15 @@ async function getApplicantsCards() {
     return mapped;
   });
 }
+
+app.get('/api/aptly/applications-rich', async function(req, res) {
+  try {
+    const applications = await getApplicantsCards();
+    res.json({ applications: applications, total: applications.length });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 async function ziFetch(path, params = {}) {
   if (!ZINSPECTOR_API_KEY) return { error: 'ZINSPECTOR_API_KEY not set' };
