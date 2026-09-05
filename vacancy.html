@@ -7,6 +7,7 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -225,6 +226,38 @@ function buildWeeklyActivity(leads, listDate) {
   return weeks;
 }
 
+function buildWeeklySourceActivity(leads, cutoffDate) {
+  if (!cutoffDate || !leads || leads.length === 0) return { weeks: [], sourceTotals: {} };
+  const knownSources = ['Zillow', 'Realtor.com', 'Homes.com', 'Apartments.com', 'RentMarketplace', 'Zumper'];
+  const normalizeSource = (s) => {
+    const found = knownSources.find(k => (s || '').toLowerCase().includes(k.toLowerCase()));
+    return found || 'Other';
+  };
+  const start = new Date(cutoffDate);
+  start.setHours(0,0,0,0);
+  const now = new Date();
+  const totalWeeks = Math.ceil((now - start) / (7 * 86400000)) || 1;
+  const weeks = [];
+  const sourceTotals = {};
+  for (let w = 0; w < totalWeeks; w++) {
+    const wStart = new Date(start.getTime() + w * 7 * 86400000);
+    const wEnd = new Date(wStart.getTime() + 7 * 86400000);
+    const weekLeads = leads.filter(l => {
+      const d = new Date(l.createdAt || l.date || '');
+      return d >= wStart && d < wEnd;
+    });
+    weeks.push({
+      week: w + 1,
+      label: `Wk ${w+1} (${wStart.toLocaleDateString('en-US',{month:'numeric',day:'numeric'})})`,
+      total: weekLeads.length,
+    });
+    weekLeads.forEach(l => {
+      const src = normalizeSource(l.source);
+      sourceTotals[src] = (sourceTotals[src] || 0) + 1;
+    });
+  }
+  return { weeks, sourceTotals };
+}
 const STAGE_COLORS = {
   'Tour Completed': 'stage-completed',
   'Scheduled Tour': 'stage-scheduled',
@@ -242,6 +275,73 @@ const TABS = [
   { id: "commercial", label: "🏢 Commercial Comps" },
 ];
 
+function WeeklyLeadsChart({ weeklySourceActivity, weeklyChartId, donutChartId }) {
+  const lineRef = React.useRef(null);
+  const donutRef = React.useRef(null);
+  const lineChartInstance = React.useRef(null);
+  const donutChartInstance = React.useRef(null);
+  React.useEffect(() => {
+    if (!weeklySourceActivity || !weeklySourceActivity.weeks || weeklySourceActivity.weeks.length === 0) return;
+    const weeks = weeklySourceActivity.weeks;
+    const sourceTotals = weeklySourceActivity.sourceTotals || {};
+    const sourceColors = { 'Zillow': '#2a78d6', 'Realtor.com': '#eb6834', 'Homes.com': '#1baf7a', 'Apartments.com': '#eda100', 'RentMarketplace': '#e87ba4', 'Zumper': '#6250d6', 'Other': '#e34948' };
+    if (lineChartInstance.current) lineChartInstance.current.destroy();
+    if (donutChartInstance.current) donutChartInstance.current.destroy();
+    if (lineRef.current) {
+      lineChartInstance.current = new Chart(lineRef.current, {
+        type: 'line',
+        data: {
+          labels: weeks.map(w => w.label),
+          datasets: [{ data: weeks.map(w => w.total), borderColor: '#2a78d6', backgroundColor: '#2a78d6', tension: 0.3, pointRadius: 3, pointBackgroundColor: '#2a78d6' }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+          scales: { x: { grid: { display: false }, ticks: { font: { size: 10 } } }, y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } }, grid: { color: '#e1e0d9' } } } }
+      });
+    }
+    const sourceLabels = Object.keys(sourceTotals);
+    if (donutRef.current && sourceLabels.length > 0) {
+      donutChartInstance.current = new Chart(donutRef.current, {
+        type: 'doughnut',
+        data: { labels: sourceLabels, datasets: [{ data: sourceLabels.map(s => sourceTotals[s]), backgroundColor: sourceLabels.map(s => sourceColors[s] || '#888780') }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: '65%' }
+      });
+    }
+    return () => {
+      if (lineChartInstance.current) lineChartInstance.current.destroy();
+      if (donutChartInstance.current) donutChartInstance.current.destroy();
+    };
+  }, [weeklySourceActivity]);
+  if (!weeklySourceActivity || !weeklySourceActivity.weeks || weeklySourceActivity.weeks.length === 0) {
+    return <div style={{fontSize:12,color:'var(--text3)'}}>No lead activity yet</div>;
+  }
+  const sourceTotals = weeklySourceActivity.sourceTotals || {};
+  const sourceColors = { 'Zillow': '#2a78d6', 'Realtor.com': '#eb6834', 'Homes.com': '#1baf7a', 'Apartments.com': '#eda100', 'RentMarketplace': '#e87ba4', 'Zumper': '#6250d6', 'Other': '#e34948' };
+  return (
+    <div>
+      <div style={{display:'grid',gridTemplateColumns:'1.4fr 1fr',gap:12,alignItems:'center'}}>
+        <div>
+          <div style={{fontSize:10,color:'var(--text3)',marginBottom:4}}>Leads / week</div>
+          <div style={{position:'relative',width:'100%',height:100}}>
+            <canvas ref={lineRef} role="img" aria-label="Weekly lead volume trend"></canvas>
+          </div>
+        </div>
+        <div>
+          <div style={{fontSize:10,color:'var(--text3)',marginBottom:4}}>Source mix</div>
+          <div style={{position:'relative',width:'100%',height:100}}>
+            <canvas ref={donutRef} role="img" aria-label="Lead source breakdown"></canvas>
+          </div>
+        </div>
+      </div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:6}}>
+        {Object.keys(sourceTotals).map(s => (
+          <span key={s} style={{fontSize:10,color:'var(--text3)',display:'flex',alignItems:'center',gap:3}}>
+            <span style={{width:8,height:8,borderRadius:2,background:sourceColors[s]||'#888780'}}></span>{s} {sourceTotals[s]}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 function App() {
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
@@ -321,12 +421,24 @@ function App() {
       const baths = u.baths || '';
       const sqft = u.totalArea || 0;
 
+      // "Date listed" = 60 days before the current vacancy began (matches Aloe PM's
+      // pre-marketing practice), derived from the unit's stageHistory. Falls back to
+      // availableDate if no stageHistory Vacant entry exists. Never negative.
       let dom = 0, listDate = null;
       try {
-        if (u.availableDate) {
-          const avail = new Date(u.availableDate);
+        const history = Array.isArray(u.stageHistory) ? u.stageHistory : [];
+        const vacantEntries = history.filter(h => h && h.stage === 'Vacant' && h.stageUpdatedAt);
+        let cutoff = null;
+        if (vacantEntries.length > 0) {
+          const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
+          cutoff = new Date(new Date(mostRecentVacant.stageUpdatedAt).getTime() - 60 * 86400000);
+        } else if (u.availableDate) {
+          cutoff = new Date(u.availableDate);
+        }
+        if (cutoff) {
           const now = new Date();
-          if (avail < now) { dom = Math.floor((now - avail) / 86400000); listDate = u.availableDate; }
+          dom = Math.max(0, Math.floor((now - cutoff) / 86400000));
+          listDate = cutoff.toISOString();
         }
       } catch(e) {}
 
@@ -349,18 +461,9 @@ function App() {
       // Use the most recent "Vacant" transition from stageHistory minus 60 days as the cutoff,
       // so applications from the pre-marketing window count but prior leasing cycles don't.
       // Falls back to availableDate if stageHistory has no Vacant entry.
-      let appCutoffDate = null;
-      try {
-        const history = Array.isArray(u.stageHistory) ? u.stageHistory : [];
-        const vacantEntries = history.filter(h => h && h.stage === 'Vacant' && h.stageUpdatedAt);
-        if (vacantEntries.length > 0) {
-          const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
-          const vacantDate = new Date(mostRecentVacant.stageUpdatedAt);
-          appCutoffDate = new Date(vacantDate.getTime() - 60 * 86400000);
-        } else if (listDate) {
-          appCutoffDate = new Date(listDate);
-        }
-      } catch(e) { appCutoffDate = listDate ? new Date(listDate) : null; }
+      // listDate is already the vacancy-cycle cutoff (computed above from stageHistory)
+      const appCutoffDate = listDate ? new Date(listDate) : null;
+      const weeklySourceActivity = buildWeeklySourceActivity(propLeads, appCutoffDate);
       const propApplications = streetNum ? safeApplications.filter(a => {
         try {
           const loc = (a['Application Location'] || '');
@@ -425,7 +528,7 @@ function App() {
         dom, listDate,
         leads: totalLeads, showings: scheduledTours + completedTours,
         scheduledTours, completedTours, canceledTours, applied,
-        appFunnel, appFunnelActive,
+        appFunnel, appFunnelActive, weeklySourceActivity,
         weeklyActivity, tourLeads,
         petInfo, owner: safeStr(owner),
         availableDate: u.availableDate ? new Date(u.availableDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'TBD',
@@ -669,6 +772,7 @@ function App() {
                 const applied = u.applied||0;
                 const appFunnelActive = u.appFunnelActive||0;
                 const appFunnel = u.appFunnel||{approved:0,denied:0,cancelled:0};
+                const weeklySourceActivity = u.weeklySourceActivity||null;
                 const lostPerDay = rent>0?(rent/30).toFixed(2):'0.00';
                 const compRent = u.compRent||0;
                 const premiumAmt = rent - compRent;
@@ -706,6 +810,8 @@ function App() {
                         <div className="market-row"><span className="market-label">Approved</span><span className="market-value" style={{color:'var(--green)'}}>{appFunnel.approved}</span></div>
                         <div className="market-row"><span className="market-label">Denied</span><span className="market-value" style={{color:'var(--red)'}}>{appFunnel.denied}</span></div>
                         <div className="market-row"><span className="market-label">Cancelled</span><span className="market-value" style={{color:'var(--text3)'}}>{appFunnel.cancelled}</span></div>
+                        <div style={{marginTop:10}} className="detail-section">Lead Activity</div>
+                        <WeeklyLeadsChart weeklySourceActivity={weeklySourceActivity} />
                         <div className="market-row"><span className="market-label">Days Listed</span><span className="market-value">{dom>0?dom:'&lt; 1'}</span></div>
                         <div className="market-row"><span className="market-label">Available</span><span className="market-value">{u.availableDate||'TBD'}</span></div>
                         <div style={{marginTop:10}} className="detail-section">Vacancy Cost</div>
