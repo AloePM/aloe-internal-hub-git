@@ -358,6 +358,7 @@ function App() {
   const [commercialType, setCommercialType] = useState('all');
   const [commercialTxn, setCommercialTxn] = useState('lease');
   const [expanded, setExpanded] = useState(null);
+  const [ownerView, setOwnerView] = useState(false);
 
   async function fetchAll() {
     setLoading(true); setError(null);
@@ -760,6 +761,10 @@ function App() {
         {!loading && tab==='reports' && d && (
           <div>
             <div className="page-hdr"><div className="page-title">Owner Reports</div><div className="page-sub">{(d.units||[]).length} listings</div></div>
+            <label style={{display:'flex',alignItems:'center',gap:6,fontSize:13,color:'var(--text2)',marginBottom:12,cursor:'pointer'}}>
+              <input type="checkbox" checked={ownerView} onChange={e=>setOwnerView(e.target.checked)} />
+              Owner view (hide prospect names)
+            </label>
             {(d.units||[]).map((u,idx)=>{
               try {
                 const level = (u.level||'low').toLowerCase();
@@ -854,7 +859,7 @@ function App() {
                         {tours.length>0?tours.slice(0,4).map((t,ti)=>(
                           <div key={ti} style={{marginBottom:8,paddingBottom:6,borderBottom:ti<Math.min(tours.length,4)-1?'1px solid var(--border)':'none'}}>
                             <div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}>
-                              <span style={{fontSize:12,fontWeight:600,color:'var(--text)'}}>{t.contact||'Unknown'}</span>
+                              <span style={{fontSize:12,fontWeight:600,color:'var(--text)'}}>{ownerView?'Prospect':(t.contact||'Unknown')}</span>
                               <span className={'tour-stage '+(STAGE_COLORS[t.stage]||'stage-nurturing')}>{t.stage||'—'}</span>
                             </div>
                             {t.date&&<div style={{fontSize:10,color:'var(--text3)'}}>{t.date}</div>}
