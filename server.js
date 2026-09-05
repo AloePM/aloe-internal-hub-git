@@ -357,7 +357,7 @@ app.get('/api/aptly/leads-rich', async function(req, res) {
     if (Array.isArray(schema)) schema.forEach(function(f) { schemaMap[f.key] = f.label; });
     let allLeads = [], page = 0;
     while (page < 5) {
-      const r = await fetch(`https://core-api.getaptly.com/api/board/4EMDSYKirhQaNdQKz?page=${page}&pageSize=100`, { headers: { 'x-token': token } });
+      const r = await fetch(`https://core-api.getaptly.com/api/board/4EMDSYKirhQaNdQKz?page=${page}&pageSize=100&includeArchived=true`, { headers: { 'x-token': token } });
       if (!r.ok) break;
       const data = await r.json();
       const batch = Array.isArray(data) ? data : (data && data.data) || [];
