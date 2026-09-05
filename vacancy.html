@@ -278,15 +278,37 @@ function App() {
         }
       } catch(e) { richLeads = []; }
 
-      const processed = processData(publishedUnits, richLeads);
+      // Fetch applications from applications-rich route (schema-mapped from core API)
+      let richApplications = [];
+      try {
+        const appsRes = await fetch('/api/aptly/applications-rich').then(r => r.json());
+        if (appsRes && Array.isArray(appsRes.applications)) {
+          richApplications = appsRes.applications;
+        }
+      } catch(e) { richApplications = []; }
+
+      const processed = processData(publishedUnits, richLeads, richApplications);
       setData({ ...processed, totalInPortfolio: unitsRes.total || 0 });
       setLastRefresh(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
   }
 
-  function processData(units, allLeads) {
+  function processData(units, allLeads, allApplications) {
     try {
+    const safeApplications = Array.isArray(allApplications) ? allApplications : [];
+    const bucketAppStatus = (status) => {
+      const s = (status || '').toLowerCase();
+      if (/incomplete/.test(s) && /all/.test(s)) return 'started';
+      if (/partially/.test(s)) return 'inProgress';
+      if (/pending screening/.test(s)) return 'screeningReady';
+      if (/screening incomplete/.test(s)) return 'screeningInProgress';
+      if (/pending decision/.test(s)) return 'awaitingDecision';
+      if (/approved/.test(s)) return 'approved';
+      if (/denied/.test(s)) return 'denied';
+      if (/closed|cancel/.test(s)) return 'cancelled';
+      return 'other';
+    };
     const safeLeads = Array.isArray(allLeads) ? allLeads : [];
     const normalize = s => { try { return (s||'').toLowerCase().replace(/[^a-z0-9]/g,'').substring(0,12); } catch(e) { return ''; } };
 
@@ -322,6 +344,39 @@ function App() {
       const completedTours = propLeads.filter(l => /tour completed/i.test(l.stage||'')).length;
       const canceledTours = propLeads.filter(l => /canceled|no show/i.test(l.stage||'')).length;
       const applied = propLeads.filter(l => /applied/i.test(l.stage||'')).length;
+      // Match applications to this property by street number (same pattern as leads)
+      // Homes are typically listed for marketing ~60 days before the current vacancy date.
+      // Use the most recent "Vacant" transition from stageHistory minus 60 days as the cutoff,
+      // so applications from the pre-marketing window count but prior leasing cycles don't.
+      // Falls back to availableDate if stageHistory has no Vacant entry.
+      let appCutoffDate = null;
+      try {
+        const history = Array.isArray(u.stageHistory) ? u.stageHistory : [];
+        const vacantEntries = history.filter(h => h && h.stage === 'Vacant' && h.stageUpdatedAt);
+        if (vacantEntries.length > 0) {
+          const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
+          const vacantDate = new Date(mostRecentVacant.stageUpdatedAt);
+          appCutoffDate = new Date(vacantDate.getTime() - 60 * 86400000);
+        } else if (listDate) {
+          appCutoffDate = new Date(listDate);
+        }
+      } catch(e) { appCutoffDate = listDate ? new Date(listDate) : null; }
+      const propApplications = streetNum ? safeApplications.filter(a => {
+        try {
+          const loc = (a['Application Location'] || '');
+          if (!loc || !loc.includes(streetNum)) return false;
+          if (!appCutoffDate) return true;
+          const createdAt = a['Created At'] ? new Date(a['Created At']) : null;
+          if (!createdAt || isNaN(createdAt)) return true;
+          return createdAt >= appCutoffDate;
+        } catch(e) { return false; }
+      }) : [];
+      const appFunnel = { started: 0, inProgress: 0, screeningReady: 0, screeningInProgress: 0, awaitingDecision: 0, approved: 0, denied: 0, cancelled: 0, other: 0 };
+      propApplications.forEach(a => {
+        const bucket = bucketAppStatus(a['Status']);
+        appFunnel[bucket] = (appFunnel[bucket] || 0) + 1;
+      });
+      const appFunnelActive = appFunnel.started + appFunnel.inProgress + appFunnel.screeningReady + appFunnel.screeningInProgress + appFunnel.awaitingDecision;
 
       // Weekly activity — wrapped safely
       let weeklyActivity = [];
@@ -370,6 +425,7 @@ function App() {
         dom, listDate,
         leads: totalLeads, showings: scheduledTours + completedTours,
         scheduledTours, completedTours, canceledTours, applied,
+        appFunnel, appFunnelActive,
         weeklyActivity, tourLeads,
         petInfo, owner: safeStr(owner),
         availableDate: u.availableDate ? new Date(u.availableDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'TBD',
@@ -611,6 +667,8 @@ function App() {
                 const scheduledTours = u.scheduledTours||0;
                 const canceledTours = u.canceledTours||0;
                 const applied = u.applied||0;
+                const appFunnelActive = u.appFunnelActive||0;
+                const appFunnel = u.appFunnel||{approved:0,denied:0,cancelled:0};
                 const lostPerDay = rent>0?(rent/30).toFixed(2):'0.00';
                 const compRent = u.compRent||0;
                 const premiumAmt = rent - compRent;
@@ -643,7 +701,11 @@ function App() {
                         <div className="market-row"><span className="market-label">Tours Scheduled</span><span className="market-value" style={{color:'var(--blue)'}}>{scheduledTours}</span></div>
                         <div className="market-row"><span className="market-label">Canceled/No Show</span><span className="market-value" style={{color:'var(--red)'}}>{canceledTours}</span></div>
                         <div className="market-row"><span className="market-label">Tours / Week</span><span className="market-value">{toursPerWk}</span></div>
-                        <div className="market-row"><span className="market-label">Applications</span><span className="market-value" style={{color:'var(--purple)'}}>{applied}</span></div>
+                        <div className="market-row"><span className="market-label">Applications Started</span><span className="market-value" style={{color:'var(--purple)'}}>{appFunnel.started + appFunnel.inProgress}</span></div>
+                        <div className="market-row"><span className="market-label">In Screening</span><span className="market-value" style={{color:'var(--blue)'}}>{appFunnel.screeningReady + appFunnel.screeningInProgress + appFunnel.awaitingDecision}</span></div>
+                        <div className="market-row"><span className="market-label">Approved</span><span className="market-value" style={{color:'var(--green)'}}>{appFunnel.approved}</span></div>
+                        <div className="market-row"><span className="market-label">Denied</span><span className="market-value" style={{color:'var(--red)'}}>{appFunnel.denied}</span></div>
+                        <div className="market-row"><span className="market-label">Cancelled</span><span className="market-value" style={{color:'var(--text3)'}}>{appFunnel.cancelled}</span></div>
                         <div className="market-row"><span className="market-label">Days Listed</span><span className="market-value">{dom>0?dom:'&lt; 1'}</span></div>
                         <div className="market-row"><span className="market-label">Available</span><span className="market-value">{u.availableDate||'TBD'}</span></div>
                         <div style={{marginTop:10}} className="detail-section">Vacancy Cost</div>
@@ -1242,7 +1304,11 @@ function OwnerReport({ u }) {
             <div className="market-row"><span className="market-label">Tours Scheduled</span><span className="market-value" style={{color:'var(--blue)'}}>{u.scheduledTours||0}</span></div>
             <div className="market-row"><span className="market-label">Canceled / No Show</span><span className="market-value" style={{color:'var(--red)'}}>{u.canceledTours||0}</span></div>
             <div className="market-row"><span className="market-label">Tours / Week</span><span className="market-value">{toursPerWeek}</span></div>
-            <div className="market-row"><span className="market-label">Applications</span><span className="market-value" style={{color:'var(--purple)'}}>{u.applied||0}</span></div>
+            <div className="market-row"><span className="market-label">Applications Started</span><span className="market-value" style={{color:'var(--purple)'}}>{(u.appFunnel?.started||0) + (u.appFunnel?.inProgress||0)}</span></div>
+            <div className="market-row"><span className="market-label">In Screening</span><span className="market-value" style={{color:'var(--blue)'}}>{(u.appFunnel?.screeningReady||0) + (u.appFunnel?.screeningInProgress||0) + (u.appFunnel?.awaitingDecision||0)}</span></div>
+            <div className="market-row"><span className="market-label">Approved</span><span className="market-value" style={{color:'var(--green)'}}>{u.appFunnel?.approved||0}</span></div>
+            <div className="market-row"><span className="market-label">Denied</span><span className="market-value" style={{color:'var(--red)'}}>{u.appFunnel?.denied||0}</span></div>
+            <div className="market-row"><span className="market-label">Cancelled</span><span className="market-value" style={{color:'var(--text3)'}}>{u.appFunnel?.cancelled||0}</span></div>
             <div className="market-row"><span className="market-label">Days Listed</span><span className="market-value">{(u.dom||0)>0?u.dom:'< 1'}</span></div>
             <div className="market-row"><span className="market-label">Available Date</span><span className="market-value">{u.availableDate||'TBD'}</span></div>
             <div style={{marginTop:12}} className="detail-section">Vacancy Impact</div>
