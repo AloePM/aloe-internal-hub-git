@@ -452,6 +452,7 @@ app.get('/api/aptly/units', async function(req, res) {
         portfolio: Array.isArray(u.portfolio) ? u.portfolio.map(function(p) { return { name: strVal(p) }; }) : [],
         stage: u.stage || '',
         marketingName: strVal(u.marketingName),
+        stageHistory: Array.isArray(u.stageHistory) ? u.stageHistory : [],
       };
     });
     res.json({ units: sanitized, total: allCards.length, published: sanitized.length });
@@ -712,7 +713,7 @@ async function getApplicantsCards() {
   let allCards = [];
   let page = 0;
   while (true) {
-    const data = await unitsFetch('/api/board/MJxaStgENouWrNEKd', { page, pageSize: 50 });
+    const data = await unitsFetch('/api/board/MJxaStgENouWrNEKd', { page, pageSize: 50, includeArchived: true });
     const batch = Array.isArray(data) ? data : (data && data.data) ? data.data : (data && data.cards) ? data.cards : [];
     if (batch.length === 0) break;
     allCards = allCards.concat(batch);
