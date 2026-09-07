@@ -388,16 +388,26 @@ function App() {
         }
       } catch(e) { richApplications = []; }
 
-      const processed = processData(publishedUnits, richLeads, richApplications);
+      // Fetch rent history (weekly price-change tracking, keyed by cardId)
+      let rentHistory = {};
+      try {
+        const rentRes = await fetch('/api/rent-history').then(r => r.json());
+        if (rentRes && rentRes.history) {
+          rentHistory = rentRes.history;
+        }
+      } catch(e) { rentHistory = {}; }
+
+      const processed = processData(publishedUnits, richLeads, richApplications, rentHistory);
       setData({ ...processed, totalInPortfolio: unitsRes.total || 0 });
       setLastRefresh(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
   }
 
-  function processData(units, allLeads, allApplications) {
+  function processData(units, allLeads, allApplications, allRentHistory) {
     try {
     const safeApplications = Array.isArray(allApplications) ? allApplications : [];
+    const safeRentHistory = allRentHistory || {};
     const bucketAppStatus = (status) => {
       const s = (status || '').toLowerCase();
       if (/incomplete/.test(s) && /all/.test(s)) return 'started';
@@ -440,6 +450,22 @@ function App() {
           const now = new Date();
           dom = Math.max(0, Math.floor((now - cutoff) / 86400000));
           listDate = cutoff.toISOString();
+        }
+      } catch(e) {}
+      // Actual vacancy tracking: days since the unit truly went Vacant (no active
+      // lease), separate from the 60-day pre-marketing listDate above. Used to show
+      // owners real cumulative dollars lost, not just a flat monthly estimate.
+      let daysVacant = 0, vacancyStartDate = null, isCurrentlyVacant = false;
+      try {
+        const history = Array.isArray(u.stageHistory) ? u.stageHistory : [];
+        const vacantEntries = history.filter(h => h && h.stage === 'Vacant' && h.stageUpdatedAt);
+        if (vacantEntries.length > 0) {
+          const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
+          const vacantDate = new Date(mostRecentVacant.stageUpdatedAt);
+          const now = new Date();
+          daysVacant = Math.max(0, Math.floor((now - vacantDate) / 86400000));
+          vacancyStartDate = vacantDate.toISOString();
+          isCurrentlyVacant = (u.stage === 'Vacant');
         }
       } catch(e) {}
 
@@ -530,12 +556,15 @@ function App() {
         leads: totalLeads, showings: scheduledTours + completedTours,
         scheduledTours, completedTours, canceledTours, applied,
         appFunnel, appFunnelActive, weeklySourceActivity,
+        rentTimeline: (safeRentHistory[u.cardId] && safeRentHistory[u.cardId].entries) || [],
         weeklyActivity, tourLeads,
         petInfo, owner: safeStr(owner),
         availableDate: u.availableDate ? new Date(u.availableDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'TBD',
         rentReady: !!u.rentReady, lockboxNumber: safeStr(u.lockboxNumber),
         virtualTour: safeStr(u.virtualTourUrl), applicationUrl: safeStr(u.applicationUrl),
         ...risk, lostPerDay: rent > 0 ? +(rent / 30).toFixed(2) : 0, lostPerMonth: rent,
+        daysVacant, vacancyStartDate, isCurrentlyVacant,
+        totalLostSoFar: isCurrentlyVacant ? +((rent / 30) * daysVacant).toFixed(2) : 0,
       };
       } catch(unitErr) {
         // Return a safe stub if a unit crashes
@@ -821,7 +850,25 @@ function App() {
                         <div className="market-row"><span className="market-label">Available</span><span className="market-value">{u.availableDate||'TBD'}</span></div>
                         <div style={{marginTop:10}} className="detail-section">Vacancy Cost</div>
                         <div className="market-row"><span className="market-label">Lost/Day</span><span style={{color:'var(--red)',fontWeight:700}}>${lostPerDay}</span></div>
-                        <div className="market-row"><span className="market-label">Lost/Month</span><span style={{color:'var(--red)',fontWeight:700}}>${rent.toLocaleString()}</span></div>
+                        {u.isCurrentlyVacant ? (
+                          <>
+                            <div className="market-row"><span className="market-label">Days Actually Vacant</span><span className="market-value">{u.daysVacant}</span></div>
+                            <div className="market-row"><span className="market-label">Total Lost So Far</span><span style={{color:'var(--red)',fontWeight:700}}>${(u.totalLostSoFar||0).toLocaleString()}</span></div>
+                          </>
+                        ) : (
+                          <div className="market-row"><span className="market-label" style={{fontSize:10}}>Lost/Month (est.)</span><span className="market-value" style={{fontSize:11}}>${rent.toLocaleString()}</span></div>
+                        )}
+                        {u.rentTimeline && u.rentTimeline.length > 0 && (
+                          <>
+                            <div style={{marginTop:10}} className="detail-section">Rent History</div>
+                            {u.rentTimeline.map((entry, ei) => (
+                              <div key={ei} className="market-row">
+                                <span className="market-label" style={{fontSize:11}}>{new Date(entry.date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
+                                <span className="market-value" style={{fontSize:12}}>${entry.rent.toLocaleString()}{ei>0 && entry.note ? ' ('+entry.note+')' : ''}</span>
+                              </div>
+                            ))}
+                          </>
+                        )}
                       </div>
 
                       {/* Col 2: Market */}
