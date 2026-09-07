@@ -197,6 +197,88 @@ async function writeWOSyncHistory(dateStr, data) {
   if (!r.ok) throw new Error('GCS write ' + r.status + ': ' + await r.text());
 }
 
+const _rentHistoryFile = 'rent-history.json';
+let _rentHistoryCache = null;
+async function readRentHistory() {
+  if (_rentHistoryCache) return _rentHistoryCache;
+  try {
+    const token = await getGCSToken();
+    const r = await fetch(`https://storage.googleapis.com/storage/v1/b/${_vendorBucket}/o/${_rentHistoryFile}?alt=media`, {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!r.ok) {
+      if (r.status === 404) { _rentHistoryCache = {}; return _rentHistoryCache; }
+      throw new Error('GCS read ' + r.status);
+    }
+    _rentHistoryCache = await r.json();
+    return _rentHistoryCache;
+  } catch(e) {
+    console.error('Rent history read failed:', e.message);
+    return {};
+  }
+}
+async function writeRentHistory(data) {
+  _rentHistoryCache = data;
+  const token = await getGCSToken();
+  const body = JSON.stringify(data, null, 2);
+  const r = await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${_vendorBucket}/o?uploadType=media&name=${_rentHistoryFile}`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body
+  });
+  if (!r.ok) throw new Error('GCS write ' + r.status + ': ' + await r.text());
+}
+// Checks all published units against stored rent history; records a new entry
+// per cardId whenever current rent differs from the last recorded entry (or
+// no entry exists yet, in which case it seeds one using the unit's actual
+// vacancy-start date as the best available "date listed" proxy).
+async function checkRentChanges() {
+  const history = await readRentHistory();
+  let changed = false;
+  try {
+    const unitsRes = await fetch('http://localhost:' + PORT + '/api/aptly/units').then(r => r.json());
+    const units = (unitsRes.units || []).filter(u => u.publishedForRent === true || u.syndicate === true);
+    for (const u of units) {
+      const cardId = u.cardId;
+      if (!cardId) continue;
+      const currentRent = u.marketRent ? (typeof u.marketRent === 'object' ? parseFloat(u.marketRent.amount || 0) : parseFloat(u.marketRent || 0)) : 0;
+      if (!currentRent) continue;
+      if (!history[cardId]) {
+        let seedDate = new Date().toISOString();
+        try {
+          const vacantEntries = (u.stageHistory || []).filter(h => h && h.stage === 'Vacant' && h.stageUpdatedAt);
+          if (vacantEntries.length > 0) {
+            const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
+            seedDate = mostRecentVacant.stageUpdatedAt;
+          }
+        } catch(e) {}
+        history[cardId] = { street: u.street || '', entries: [{ date: seedDate, rent: currentRent, note: 'Initial recorded rent' }] };
+        changed = true;
+      } else {
+        const entries = history[cardId].entries || [];
+        const lastRent = entries.length > 0 ? entries[entries.length - 1].rent : null;
+        if (lastRent !== null && lastRent !== currentRent) {
+          entries.push({ date: new Date().toISOString(), rent: currentRent, note: currentRent < lastRent ? 'Reduced' : 'Increased' });
+          history[cardId].entries = entries;
+          changed = true;
+        }
+        history[cardId].street = u.street || history[cardId].street;
+      }
+    }
+    if (changed) await writeRentHistory(history);
+  } catch(e) {
+    console.error('checkRentChanges failed:', e.message);
+  }
+  return history;
+}
+app.get('/api/rent-history', async (req, res) => {
+  try {
+    const history = await checkRentChanges();
+    res.json({ history });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 app.post('/api/kat/check-letter-hash', async (req, res) => {
   if (req.headers['x-hub-token'] !== process.env.HUB_INTERNAL_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   try {
@@ -1732,7 +1814,23 @@ function scheduleSettlementAlert() {
   }, msUntilNext7am());
   console.log('Settlement alert: scheduled daily at 7am AZ time');
 }
+function scheduleRentHistoryCheck() {
+  function msUntilNext6am() {
+    const now = new Date();
+    const az = new Date(now.toLocaleString('en-US', { timeZone: 'America/Phoenix' }));
+    const next = new Date(az);
+    next.setHours(6, 0, 0, 0);
+    if (az >= next) next.setDate(next.getDate() + 1);
+    return next - az;
+  }
+  setTimeout(function tick() {
+    checkRentChanges().catch(e => console.error('Rent history check error:', e.message));
+    setTimeout(tick, 24 * 60 * 60 * 1000);
+  }, msUntilNext6am());
+  console.log('Rent history check: scheduled daily at 6am AZ time');
+}
 scheduleSettlementAlert();
+scheduleRentHistoryCheck();
 
 // Add a manual trigger endpoint for testing
 app.get('/api/settlement-alert/test', async (req, res) => {
