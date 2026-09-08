@@ -548,6 +548,22 @@ app.get('/api/aptly/list-property-rich', async function(req, res) {
     res.status(500).json({ error: e.message });
   }
 });
+app.post('/api/rent-history/backfill', hubAuth, async function(req, res) {
+  try {
+    const history = await readRentHistory();
+    const updates = req.body || {};
+    let count = 0;
+    for (const cardId of Object.keys(updates)) {
+      const existingStreet = (history[cardId] && history[cardId].street) || '';
+      history[cardId] = { street: existingStreet, entries: updates[cardId] };
+      count++;
+    }
+    await writeRentHistory(history);
+    res.json({ success: true, propertiesUpdated: count });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 app.get('/api/aptly/leads-rich', async function(req, res) {
   try {
     const token = process.env.APTLY_UNITS_TOKEN || process.env.APTLY_TOKEN || '';
