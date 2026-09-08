@@ -519,11 +519,16 @@ app.get('/api/owners/email-preview/:contactID', async function(req, res) {
 app.get('/api/aptly/list-property-rich', async function(req, res) {
   try {
     const token = process.env.APTLY_UNITS_TOKEN || process.env.APTLY_TOKEN || '';
+    const schemaRes = await fetch('https://core-api.getaptly.com/api/schema/qfBzBxfooJtfTQncd', { headers: { 'x-token': token } });
+    const schema = await schemaRes.json();
+    const schemaMap = {};
+    if (Array.isArray(schema)) schema.forEach(function(f) { schemaMap[f.key] = f.label; });
     let allCards = [], page = 0;
     while (page < 10) {
       const url = new URL('https://core-api.getaptly.com/api/board/qfBzBxfooJtfTQncd');
       url.searchParams.set('page', page);
       url.searchParams.set('pageSize', 100);
+      url.searchParams.set('includeArchived', 'true');
       const r = await fetch(url.toString(), { headers: { 'x-token': token, 'Accept': 'application/json' } });
       if (!r.ok) break;
       const data = await r.json();
@@ -533,7 +538,12 @@ app.get('/api/aptly/list-property-rich', async function(req, res) {
       if (batch.length < 100) break;
       page++;
     }
-    res.json({ cards: allCards, total: allCards.length });
+    const mapped = allCards.map(function(c) {
+      const m = { cardId: c.cardId, stage: c.stage, name: c.name };
+      Object.keys(c).forEach(function(k) { if (schemaMap[k]) m[schemaMap[k]] = c[k]; });
+      return m;
+    });
+    res.json({ cards: mapped, total: mapped.length });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
@@ -2022,11 +2032,11 @@ function computeVacancyDates(unit, listedDateMap) {
 function buildListedDateMap(listPropertyCards) {
   const map = {};
   for (const card of listPropertyCards) {
-    if (card.Stage !== 'On Market') continue;
-    const units = Array.isArray(card.Units) ? card.Units : [];
+    if (card.stage !== 'On Market') continue;
+    const units = Array.isArray(card.unit) ? card.unit : [];
     const unitCardId = units[0] && units[0]._id;
     if (!unitCardId) continue;
-    const dateListed = card['Date Listed'] || card['Stage Changed'];
+    const dateListed = card['Date Listed'];
     if (!dateListed) continue;
     map[unitCardId] = dateListed;
   }
