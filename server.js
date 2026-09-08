@@ -2118,16 +2118,20 @@ function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap,
     sourceCounts[src] = (sourceCounts[src] || 0) + 1;
   });
 
+  const nowForShowings = new Date();
   const showings = leadsInCycle.filter(l => Array.isArray(l.showingInfo) && l.showingInfo.length > 0).map(l => {
     const info = l.showingInfo[0] || {};
     const rawStatus = (info.showingStatus || '').toLowerCase();
+    const startDate = info.start ? new Date(info.start) : null;
     let realStatus;
-    if (rawStatus === 'cancelled' || rawStatus === 'denied') {
-      realStatus = 'cancelled';
-    } else if (l.tourAtDoorCodeDate) {
+    if (l.tourAtDoorCodeDate) {
       realStatus = 'completed';
-    } else {
+    } else if (rawStatus === 'cancelled' || rawStatus === 'denied') {
+      realStatus = 'cancelled';
+    } else if (startDate && startDate > nowForShowings) {
       realStatus = 'scheduled';
+    } else {
+      realStatus = 'noshow';
     }
     return {
       contact: l.contact,
@@ -2135,7 +2139,7 @@ function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap,
       status: realStatus,
       completedDate: l.tourAtDoorCodeDate || null
     };
-  });
+  }).filter(function(s) { return s.status === 'completed' || s.status === 'scheduled' || s.status === 'cancelled'; });
 
   const matchedApps = matchByStreetNumber(address, allApplications, a => a['Application Location'] || '');
   const appsInCycle = filterToCurrentCycle(matchedApps, cutoff, a => a['Created At']);
@@ -2204,6 +2208,7 @@ function renderPropertyCard(unit, data, footnoteFlags, idx) {
   if (data.vacancyDateBasis === 'previous_tenant') footnoteFlags.usesFootnote1 = true;
   else footnoteFlags.usesFootnote2 = true;
   footnoteFlags.usesFootnote3 = true;
+  footnoteFlags.usesFootnote4 = true;
 
   const f = data.funnel;
   let appsHtml;
@@ -2215,7 +2220,7 @@ function renderPropertyCard(unit, data, footnoteFlags, idx) {
       '<div><span style="font-weight:600; color:#222;">' + f.inScreening + '</span> <span style="color:#888; font-size:12px;">In screening</span></div>' +
       '<div><span style="font-weight:600; color:#0F6E56;">' + f.approved + '</span> <span style="color:#888; font-size:12px;">Approved</span></div>' +
       '<div><span style="font-weight:600; color:#D85A30;">' + f.denied + '</span> <span style="color:#888; font-size:12px;">Denied</span></div>' +
-      '<div><span style="font-weight:600; color:#888;">' + f.cancelled + '</span> <span style="color:#888; font-size:12px;">Cancelled</span></div>' +
+      '<div><span style="font-weight:600; color:#888;">' + f.cancelled + '</span> <span style="color:#888; font-size:12px;">Cancelled<sup style="color:#4BB4D2;">4</sup></span></div>' +
     '</div>';
   }
 
@@ -2287,7 +2292,8 @@ function renderOwnerEmail(reportDataList) {
   let footnoteBlock = '<div class="footnote-block">';
   if (footnoteFlags.usesFootnote1) footnoteBlock += '<sup>1</sup> Based on the date the previous tenant moved out.<br>';
   if (footnoteFlags.usesFootnote2) footnoteBlock += '<sup>2</sup> This is a new listing with no prior tenant, so this is the date the home was first listed.<br>';
-  if (footnoteFlags.usesFootnote3) footnoteBlock += "<sup>3</sup> Reflects leads from sources we actively track. It doesn't include phone calls that came in without an online inquiry, showings arranged directly through an outside realtor or MLS, or interest from listing sites we don't track \u2014 so actual interest may be higher than shown here.";
+  if (footnoteFlags.usesFootnote3) footnoteBlock += "<sup>3</sup> Reflects leads from sources we actively track. It doesn't include phone calls that came in without an online inquiry, showings arranged directly through an outside realtor or MLS, or interest from listing sites we don't track \u2014 so actual interest may be higher than shown here.<br>";
+  if (footnoteFlags.usesFootnote4) footnoteBlock += "<sup>4</sup> Cancelled applications and leads that go quiet typically mean the person is no longer interested \u2014 they may have changed their mind, applied for the wrong property by mistake, never finished the application, or become unresponsive.";
   footnoteBlock += '</div>';
 
   const styleBlock = '<style>' +
