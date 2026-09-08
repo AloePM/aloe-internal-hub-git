@@ -501,7 +501,7 @@ app.get('/api/owners/email-preview/:contactID', async function(req, res) {
       fetch('http://localhost:' + PORT + '/api/aptly/applications-rich').then(function(r) { return r.json(); }),
       fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich').then(function(r) { return r.json(); })
     ]);
-    const allLeads = Array.isArray(leadsRes) ? leadsRes : [];
+    const allLeads = Array.isArray(leadsRes) ? leadsRes : (leadsRes.leads || []);
     const allApplications = Array.isArray(appsRes) ? appsRes : [];
     const listedDateMap = buildListedDateMap(listPropRes.cards || []);
 
