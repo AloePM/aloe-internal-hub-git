@@ -539,7 +539,7 @@ app.get('/api/aptly/list-property-rich', async function(req, res) {
       page++;
     }
     const mapped = allCards.map(function(c) {
-      const m = { cardId: c.cardId, stage: c.stage, name: c.name, Units: c.unit };
+      const m = { cardId: c.cardId, stage: c.stage, name: c.name, unit: c.unit };
       Object.keys(c).forEach(function(k) { if (schemaMap[k]) m[schemaMap[k]] = c[k]; });
       return m;
     });
