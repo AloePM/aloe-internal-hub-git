@@ -496,17 +496,18 @@ app.get('/api/owners/email-preview/:contactID', async function(req, res) {
     const group = grouped.groups[req.params.contactID];
     if (!group) return res.status(404).send('No vacant properties found for contactID ' + req.params.contactID);
 
-    const [leadsRes, appsRes, listPropRes] = await Promise.all([
+    const [leadsRes, appsRes, listPropRes, rentHistory] = await Promise.all([
       fetch('http://localhost:' + PORT + '/api/aptly/leads-rich').then(function(r) { return r.json(); }),
       fetch('http://localhost:' + PORT + '/api/aptly/applications-rich').then(function(r) { return r.json(); }),
-      fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich').then(function(r) { return r.json(); })
+      fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich').then(function(r) { return r.json(); }),
+      readRentHistory()
     ]);
     const allLeads = Array.isArray(leadsRes) ? leadsRes : (leadsRes.leads || []);
     const allApplications = Array.isArray(appsRes) ? appsRes : (appsRes.applications || []);
     const listedDateMap = buildListedDateMap(listPropRes.cards || []);
 
     const reportDataList = group.properties.map(function(u) {
-      return { unit: u, data: buildPropertyReportData(u, allLeads, allApplications, listedDateMap) };
+      return { unit: u, data: buildPropertyReportData(u, allLeads, allApplications, listedDateMap, rentHistory) };
     }).filter(function(x) { return x.data; });
 
     const html = renderOwnerEmail(reportDataList);
@@ -2101,7 +2102,7 @@ function bucketAppStatus(status) {
   return 'other';
 }
 
-function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap) {
+function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap, rentHistory) {
   const vacancy = computeVacancyDates(unit, listedDateMap);
   if (!vacancy) return null;
   const address = unit.street || unit.marketingName || '';
@@ -2138,13 +2139,17 @@ function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap)
     cancelled: rawFunnel.cancelled + rawFunnel.other
   };
 
+  const historyEntry = rentHistory ? rentHistory[unit.cardId] : null;
+  const rentHistoryEntries = (historyEntry && Array.isArray(historyEntry.entries)) ? historyEntry.entries : [];
+
   return {
     ...vacancy,
     address,
     leadsTotal: leadsInCycle.length,
     sourceCounts,
     showings,
-    funnel
+    funnel,
+    rentHistoryEntries
   };
 }
 
@@ -2167,6 +2172,14 @@ function renderReductionTable() {
   return '<table style="width:100%; margin-top:10px; border-collapse:collapse; font-size:12px;">' +
     '<tr style="border-bottom:1px solid #EFD9AE;"><td style="padding:4px 0; color:#412402; font-weight:600;">Reduction/mo</td><td style="padding:4px 0; text-align:right; color:#412402; font-weight:600;">Cost over 1 year</td></tr>' +
     rows + '</table>';
+}
+
+function renderRentHistorySection(entries) {
+  if (!entries || entries.length === 0) return '';
+  const rows = entries.map(function(e) {
+    return '<div class="rent-history-line">' + formatDate(e.date) + ' &mdash; $' + (e.rent || 0).toLocaleString() + '/mo (' + (e.note || '') + ')</div>';
+  }).join('');
+  return '<div class="section-title">Rent history</div><div class="section-body">' + rows + '</div>';
 }
 
 function renderPropertyCard(unit, data, footnoteFlags, idx) {
@@ -2227,7 +2240,8 @@ function renderPropertyCard(unit, data, footnoteFlags, idx) {
         '<div class="stat"><div class="label">Days listed</div><div class="value">' + data.dom + '</div></div>' +
       '</div>' +
       '<p class="vacancy-footnote">Vacant since ' + formatDate(data.vacancyStartDate) + '<sup>' + vacantSinceLabel + '</sup></p>' +
-      '<div class="section-title">Applications this cycle</div>' + appsHtml +
+      renderRentHistorySection(data.rentHistoryEntries) +
+    '<div class="section-title">Applications this cycle</div>' + appsHtml +
       '<div class="section-title">Leads &amp; sources (' + data.leadsTotal + ' total)<sup style="color:#4BB4D2;">3</sup></div>' +
       '<div class="section-body">' + leadsLine + '</div>' +
       '<div class="section-title">Showings</div>' + showingsHtml +
@@ -2269,7 +2283,7 @@ function renderOwnerEmail(reportDataList) {
     '.property-head{background:#F8FAFC;padding:14px 18px;border-bottom:1px solid #E5E9E9;}.property-head h2{margin:0;font-size:15px;color:#222;}.property-head span{font-size:13px;color:#666;}' +
     '.property-body{padding:16px 18px;}.stat-row{display:flex;gap:20px;margin-bottom:6px;flex-wrap:wrap;}.stat{flex:1;min-width:120px;}' +
     '.stat .label{font-size:11px;color:#B4C3C3;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:2px;}.stat .value{font-size:20px;font-weight:600;color:#222;}.stat .value.cost{color:#D85A30;}' +
-    '.vacancy-footnote{font-size:11px;color:#999;margin:0 0 16px;}' +
+    '.vacancy-footnote{font-size:11px;color:#999;margin:0 0 16px;}'+'.rent-history-line{font-size:13px;color:#555;padding:3px 0;}' +
     '.section-title{font-size:12px;font-weight:600;color:#4BB4D2;text-transform:uppercase;letter-spacing:0.03em;margin:16px 0 6px;}' +
     '.section-body{font-size:14px;color:#444;line-height:1.6;}.funnel-empty{font-size:13px;color:#888;font-style:italic;}' +
     '.persuasion{background:#FAEEDA;border-left:3px solid #EF9F27;padding:12px 16px;margin-top:16px;font-size:13px;color:#633806;}.persuasion b{color:#412402;}' +
