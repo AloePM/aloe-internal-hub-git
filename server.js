@@ -496,15 +496,17 @@ app.get('/api/owners/email-preview/:contactID', async function(req, res) {
     const group = grouped.groups[req.params.contactID];
     if (!group) return res.status(404).send('No vacant properties found for contactID ' + req.params.contactID);
 
-    const [leadsRes, appsRes] = await Promise.all([
+    const [leadsRes, appsRes, listPropRes] = await Promise.all([
       fetch('http://localhost:' + PORT + '/api/aptly/leads-rich').then(function(r) { return r.json(); }),
-      fetch('http://localhost:' + PORT + '/api/aptly/applications-rich').then(function(r) { return r.json(); })
+      fetch('http://localhost:' + PORT + '/api/aptly/applications-rich').then(function(r) { return r.json(); }),
+      fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich').then(function(r) { return r.json(); })
     ]);
     const allLeads = Array.isArray(leadsRes) ? leadsRes : [];
     const allApplications = Array.isArray(appsRes) ? appsRes : [];
+    const listedDateMap = buildListedDateMap(listPropRes.cards || []);
 
     const reportDataList = group.properties.map(function(u) {
-      return { unit: u, data: buildPropertyReportData(u, allLeads, allApplications) };
+      return { unit: u, data: buildPropertyReportData(u, allLeads, allApplications, listedDateMap) };
     }).filter(function(x) { return x.data; });
 
     const html = renderOwnerEmail(reportDataList);
@@ -512,6 +514,28 @@ app.get('/api/owners/email-preview/:contactID', async function(req, res) {
     res.send(html);
   } catch(e) {
     res.status(500).send('Error: ' + e.message);
+  }
+});
+app.get('/api/aptly/list-property-rich', async function(req, res) {
+  try {
+    const token = process.env.APTLY_UNITS_TOKEN || process.env.APTLY_TOKEN || '';
+    let allCards = [], page = 0;
+    while (page < 10) {
+      const url = new URL('https://core-api.getaptly.com/api/board/qfBzBxfooJtfTQncd');
+      url.searchParams.set('page', page);
+      url.searchParams.set('pageSize', 100);
+      const r = await fetch(url.toString(), { headers: { 'x-token': token, 'Accept': 'application/json' } });
+      if (!r.ok) break;
+      const data = await r.json();
+      const batch = Array.isArray(data) ? data : (data && data.data) || [];
+      if (batch.length === 0) break;
+      allCards = allCards.concat(batch);
+      if (batch.length < 100) break;
+      page++;
+    }
+    res.json({ cards: allCards, total: allCards.length });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
   }
 });
 app.get('/api/aptly/leads-rich', async function(req, res) {
@@ -1949,34 +1973,34 @@ function scheduleRentHistoryCheck() {
   console.log('Rent history check: scheduled daily at 6am AZ time');
 }
 
-function computeVacancyDates(unit) {
-  const history = Array.isArray(unit.stageHistory) ? unit.stageHistory : [];
-  const hadPreviousTenant = history.some(h => h && h.stage === 'Occupied');
-  const vacantEntries = history.filter(h => h && h.stage === 'Vacant' && h.stageUpdatedAt);
+function computeVacancyDates(unit, listedDateMap) {
+  const mapEntry = listedDateMap ? listedDateMap[unit.cardId] : null;
 
-  let vacancyStartDate = null, vacancyDateBasis = null, listDate = null;
+  let vacancyStartDate = null, vacancyDateBasis = null, usedFallback = false;
 
-  if (hadPreviousTenant && vacantEntries.length > 0) {
-    const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
-    vacancyStartDate = new Date(mostRecentVacant.stageUpdatedAt);
-    vacancyDateBasis = 'previous_tenant';
-    listDate = new Date(vacancyStartDate.getTime() - 60 * 86400000);
-  } else if (unit.availableDate) {
-    vacancyStartDate = new Date(unit.availableDate);
-    vacancyDateBasis = 'new_listing';
-    listDate = vacancyStartDate;
-  } else if (vacantEntries.length > 0) {
-    const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
-    vacancyStartDate = new Date(mostRecentVacant.stageUpdatedAt);
-    vacancyDateBasis = 'new_listing';
-    listDate = vacancyStartDate;
+  if (mapEntry) {
+    vacancyStartDate = new Date(mapEntry);
+    vacancyDateBasis = 'listed_on_market';
   } else {
-    return null;
+    // Fallback for any property not found on the List Property board (should be rare) —
+    // use the unit's own Vacant stageHistory transition, or availableDate as a last resort.
+    // Flagged via usedFallback so gaps are visible rather than silently trusted.
+    usedFallback = true;
+    const history = Array.isArray(unit.stageHistory) ? unit.stageHistory : [];
+    const vacantEntries = history.filter(h => h && h.stage === 'Vacant' && h.stageUpdatedAt);
+    if (vacantEntries.length > 0) {
+      const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
+      vacancyStartDate = new Date(mostRecentVacant.stageUpdatedAt);
+    } else if (unit.availableDate) {
+      vacancyStartDate = new Date(unit.availableDate);
+    } else {
+      return null;
+    }
+    vacancyDateBasis = 'estimated';
   }
 
   const now = new Date();
   const daysVacant = Math.max(0, Math.floor((now - vacancyStartDate) / 86400000));
-  const dom = Math.max(0, Math.floor((now - listDate) / 86400000));
   const rent = unit.marketRent ? (typeof unit.marketRent === 'object' ? parseFloat(unit.marketRent.amount || 0) : parseFloat(unit.marketRent || 0)) : 0;
   const lostPerDay = rent > 0 ? rent / 30 : 0;
   const lostSoFar = Math.round(lostPerDay * daysVacant);
@@ -1984,14 +2008,29 @@ function computeVacancyDates(unit) {
   return {
     vacancyStartDate: vacancyStartDate.toISOString(),
     vacancyDateBasis,
-    listDate: listDate.toISOString(),
+    usedFallback,
+    listDate: vacancyStartDate.toISOString(),
     daysVacant,
-    dom,
+    dom: daysVacant,
     rent,
     lostPerDay: Math.round(lostPerDay * 100) / 100,
     lostSoFar,
-    showPersuasion: dom > 60
+    showPersuasion: daysVacant > 60
   };
+}
+
+function buildListedDateMap(listPropertyCards) {
+  const map = {};
+  for (const card of listPropertyCards) {
+    if (card.Stage !== 'On Market') continue;
+    const units = Array.isArray(card.Units) ? card.Units : [];
+    const unitCardId = units[0] && units[0]._id;
+    if (!unitCardId) continue;
+    const dateListed = card['Date Listed'] || card['Stage Changed'];
+    if (!dateListed) continue;
+    map[unitCardId] = dateListed;
+  }
+  return map;
 }
 
 function matchByStreetNumber(address, items, getAddressFn) {
@@ -2026,8 +2065,8 @@ function bucketAppStatus(status) {
   return 'other';
 }
 
-function buildPropertyReportData(unit, allLeads, allApplications) {
-  const vacancy = computeVacancyDates(unit);
+function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap) {
+  const vacancy = computeVacancyDates(unit, listedDateMap);
   if (!vacancy) return null;
   const address = unit.street || unit.marketingName || '';
   const cutoff = new Date(vacancy.listDate);
@@ -2097,9 +2136,9 @@ function renderReductionTable() {
 function renderPropertyCard(unit, data, footnoteFlags, idx) {
   const address = escapeHtml(unit.street || unit.marketingName || 'Unknown address');
   const cityLine = (unit.beds || '?') + ' bed / ' + (unit.baths || '?') + ' bath &middot; Listed at $' + (data.rent || 0).toLocaleString() + '/mo';
-  const vacantSinceLabel = data.vacancyDateBasis === 'previous_tenant' ? '1' : '2';
-  if (data.vacancyDateBasis === 'previous_tenant') footnoteFlags.usesFootnote1 = true;
-  else footnoteFlags.usesFootnote2 = true;
+  const vacantSinceLabel = data.usedFallback ? '2' : '1';
+  if (data.usedFallback) footnoteFlags.usesFootnote2 = true;
+  else footnoteFlags.usesFootnote1 = true;
   footnoteFlags.usesFootnote3 = true;
 
   const f = data.funnel;
@@ -2176,8 +2215,8 @@ function renderOwnerEmail(reportDataList) {
   }
 
   let footnoteBlock = '<div class="footnote-block">';
-  if (footnoteFlags.usesFootnote1) footnoteBlock += '<sup>1</sup> Based on the date the previous tenant moved out.<br>';
-  if (footnoteFlags.usesFootnote2) footnoteBlock += '<sup>2</sup> This is a new listing with no prior tenant, so this is the date the home was first listed.<br>';
+  if (footnoteFlags.usesFootnote1) footnoteBlock += '<sup>1</sup> The date this home went live on the market.<br>';
+  if (footnoteFlags.usesFootnote2) footnoteBlock += '<sup>2</sup> Estimated \u2014 this property could not be matched to a confirmed listing date.<br>';
   if (footnoteFlags.usesFootnote3) footnoteBlock += "<sup>3</sup> Reflects leads from sources we actively track. It doesn't include phone calls that came in without an online inquiry, showings arranged directly through an outside realtor or MLS, or interest from listing sites we don't track \u2014 so actual interest may be higher than shown here.";
   footnoteBlock += '</div>';
 
