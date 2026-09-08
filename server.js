@@ -608,6 +608,12 @@ app.get('/api/aptly/leads-rich', async function(req, res) {
         source: m['Source'] || '',
         showingInfo: m['Requested Showing Information'] || '',
         tourAtDoorCodeDate: c.tourAtDoorCodeDate || '',
+        interestLevel: m['Interest Level'] || '',
+        propertyIssues: m['Property Issues'] || '',
+        tourQuestions: m['Tour Questions'] || '',
+        whatWouldItTake: m['What would it take for you to apply today?'] || '',
+        likes: m['What did you like about the property?'] || '',
+        dislikes: m['What did you dislike about the property?'] || '',
         moveDate: m['Move Date'] || '',
         income: m['Household Income'] || '',
         pets: m['Pets'] || '',
@@ -2161,6 +2167,29 @@ function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap,
   const historyEntry = rentHistory ? rentHistory[unit.cardId] : null;
   const rentHistoryEntries = (historyEntry && Array.isArray(historyEntry.entries)) ? historyEntry.entries : [];
 
+  const weeklyActivity = buildWeeklyActivity(leadsInCycle, vacancy.listDate);
+
+  const tourFeedback = leadsInCycle.filter(l => Array.isArray(l.showingInfo) && l.showingInfo.length > 0).map(l => {
+    const info = l.showingInfo[0] || {};
+    const rawStatus = (info.showingStatus || '').toLowerCase();
+    let statusLabel;
+    if (l.tourAtDoorCodeDate) statusLabel = 'Tour Completed';
+    else if (rawStatus === 'cancelled' || rawStatus === 'denied') statusLabel = 'Cancelled';
+    else statusLabel = 'Scheduled Tour';
+    const hasFeedback = l.interestLevel || l.propertyIssues || l.tourQuestions || l.whatWouldItTake || l.likes || l.dislikes;
+    return {
+      status: statusLabel,
+      date: l.tourAtDoorCodeDate || info.start || l.createdAt,
+      hasFeedback: !!hasFeedback,
+      interestLevel: l.interestLevel,
+      likes: l.likes,
+      dislikes: l.dislikes,
+      whatWouldItTake: l.whatWouldItTake,
+      propertyIssues: l.propertyIssues,
+      tourQuestions: l.tourQuestions
+    };
+  });
+
   return {
     ...vacancy,
     address,
@@ -2168,8 +2197,34 @@ function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap,
     sourceCounts,
     showings,
     funnel,
-    rentHistoryEntries
+    rentHistoryEntries,
+    weeklyActivity,
+    tourFeedback
   };
+}
+
+function buildWeeklyActivity(leads, listDate) {
+  if (!listDate || !leads) return [];
+  const start = new Date(listDate);
+  start.setHours(0,0,0,0);
+  const now = new Date();
+  const totalWeeks = Math.ceil((now - start) / (7 * 86400000)) || 1;
+  const weeks = [];
+  for (let w = 0; w < totalWeeks; w++) {
+    const wStart = new Date(start.getTime() + w * 7 * 86400000);
+    const wEnd = new Date(wStart.getTime() + 7 * 86400000);
+    const weekLeads = leads.filter(l => {
+      const d = new Date(l.createdAt || '');
+      return d >= wStart && d < wEnd;
+    });
+    const tours = weekLeads.filter(l => Array.isArray(l.showingInfo) && l.showingInfo.length > 0);
+    weeks.push({
+      label: 'Wk ' + (w + 1) + ' (' + wStart.toLocaleDateString('en-US', {month:'numeric', day:'numeric'}) + ')',
+      leads: weekLeads.length,
+      tours: tours.length
+    });
+  }
+  return weeks.slice(-8);
 }
 
 function escapeHtml(s) {
@@ -2199,6 +2254,34 @@ function renderRentHistorySection(entries) {
     return '<div class="rent-history-line">' + formatDate(e.date) + ' &mdash; $' + (e.rent || 0).toLocaleString() + '/mo (' + (e.note || '') + ')</div>';
   }).join('');
   return '<div class="section-title">Rent history</div><div class="section-body">' + rows + '</div>';
+}
+
+function renderWeeklyActivitySection(weeks) {
+  if (!weeks || weeks.length === 0) return '';
+  const rows = weeks.map(function(w) {
+    return '<div class="rent-history-line">' + w.label + ' &mdash; ' + w.leads + 'L / ' + w.tours + ' tours</div>';
+  }).join('');
+  return '<div class="section-title">Activity by week (last 8 weeks)</div><div class="section-body">' + rows + '</div>';
+}
+
+function renderTourFeedbackSection(feedback) {
+  if (!feedback || feedback.length === 0) return '';
+  const rows = feedback.map(function(f) {
+    let detail;
+    if (f.hasFeedback) {
+      const parts = [];
+      if (f.interestLevel) parts.push('Interest: ' + escapeHtml(f.interestLevel));
+      if (f.likes) parts.push('Liked: ' + escapeHtml(f.likes));
+      if (f.dislikes) parts.push('Disliked: ' + escapeHtml(f.dislikes));
+      if (f.whatWouldItTake) parts.push('What it would take: ' + escapeHtml(f.whatWouldItTake));
+      if (f.propertyIssues) parts.push('Issues noted: ' + escapeHtml(f.propertyIssues));
+      detail = parts.join(' &middot; ');
+    } else {
+      detail = 'N/A \u2014 no follow-up feedback provided';
+    }
+    return '<div class="rent-history-line"><b>Prospect</b> &mdash; ' + f.status + ' (' + formatDate(f.date) + ')<br><span style="color:#888; font-size:12px;">' + detail + '</span></div>';
+  }).join('');
+  return '<div class="section-title">Tour feedback</div><div class="section-body">' + rows + '</div>';
 }
 
 function renderPropertyCard(unit, data, footnoteFlags, idx) {
@@ -2270,6 +2353,8 @@ function renderPropertyCard(unit, data, footnoteFlags, idx) {
       '<div class="section-title">Leads &amp; sources (' + data.leadsTotal + ' total)<sup style="color:#4BB4D2;">3</sup></div>' +
       '<div class="section-body">' + leadsLine + '</div>' +
       '<div class="section-title">Showings</div>' + showingsHtml +
+      renderWeeklyActivitySection(data.weeklyActivity) +
+      renderTourFeedbackSection(data.tourFeedback) +
       persuasionHtml +
     '</div></div>';
 }
