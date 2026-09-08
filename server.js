@@ -1984,33 +1984,42 @@ function scheduleRentHistoryCheck() {
 }
 
 function computeVacancyDates(unit, listedDateMap) {
-  const mapEntry = listedDateMap ? listedDateMap[unit.cardId] : null;
+  const history = Array.isArray(unit.stageHistory) ? unit.stageHistory : [];
+  const hadPreviousTenant = history.some(h => h && h.stage === 'Occupied');
+  const vacantEntries = history.filter(h => h && h.stage === 'Vacant' && h.stageUpdatedAt);
 
-  let vacancyStartDate = null, vacancyDateBasis = null, usedFallback = false;
+  let vacancyStartDate = null, vacancyDateBasis = null;
 
-  if (mapEntry) {
-    vacancyStartDate = new Date(mapEntry);
-    vacancyDateBasis = 'listed_on_market';
+  if (hadPreviousTenant && vacantEntries.length > 0) {
+    const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
+    vacancyStartDate = new Date(mostRecentVacant.stageUpdatedAt);
+    vacancyDateBasis = 'previous_tenant';
+  } else if (unit.availableDate) {
+    vacancyStartDate = new Date(unit.availableDate);
+    vacancyDateBasis = 'new_listing';
+  } else if (vacantEntries.length > 0) {
+    const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
+    vacancyStartDate = new Date(mostRecentVacant.stageUpdatedAt);
+    vacancyDateBasis = 'new_listing';
   } else {
-    // Fallback for any property not found on the List Property board (should be rare) —
-    // use the unit's own Vacant stageHistory transition, or availableDate as a last resort.
-    // Flagged via usedFallback so gaps are visible rather than silently trusted.
-    usedFallback = true;
-    const history = Array.isArray(unit.stageHistory) ? unit.stageHistory : [];
-    const vacantEntries = history.filter(h => h && h.stage === 'Vacant' && h.stageUpdatedAt);
-    if (vacantEntries.length > 0) {
-      const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
-      vacancyStartDate = new Date(mostRecentVacant.stageUpdatedAt);
-    } else if (unit.availableDate) {
-      vacancyStartDate = new Date(unit.availableDate);
-    } else {
-      return null;
-    }
-    vacancyDateBasis = 'estimated';
+    return null;
+  }
+
+  const mapEntry = listedDateMap ? listedDateMap[unit.cardId] : null;
+  let listedDate, usedListedFallback;
+  if (mapEntry) {
+    listedDate = new Date(mapEntry);
+    usedListedFallback = false;
+  } else {
+    // Rare: property not found on the List Property board. Fall back to the vacancy
+    // start date rather than guessing further.
+    listedDate = vacancyStartDate;
+    usedListedFallback = true;
   }
 
   const now = new Date();
   const daysVacant = Math.max(0, Math.floor((now - vacancyStartDate) / 86400000));
+  const dom = Math.max(0, Math.floor((now - listedDate) / 86400000));
   const rent = unit.marketRent ? (typeof unit.marketRent === 'object' ? parseFloat(unit.marketRent.amount || 0) : parseFloat(unit.marketRent || 0)) : 0;
   const lostPerDay = rent > 0 ? rent / 30 : 0;
   const lostSoFar = Math.round(lostPerDay * daysVacant);
@@ -2018,14 +2027,15 @@ function computeVacancyDates(unit, listedDateMap) {
   return {
     vacancyStartDate: vacancyStartDate.toISOString(),
     vacancyDateBasis,
-    usedFallback,
-    listDate: vacancyStartDate.toISOString(),
+    listedDate: listedDate.toISOString(),
+    usedListedFallback,
+    listDate: listedDate.toISOString(),
     daysVacant,
-    dom: daysVacant,
+    dom,
     rent,
     lostPerDay: Math.round(lostPerDay * 100) / 100,
     lostSoFar,
-    showPersuasion: daysVacant > 60
+    showPersuasion: dom > 60
   };
 }
 
@@ -2146,9 +2156,9 @@ function renderReductionTable() {
 function renderPropertyCard(unit, data, footnoteFlags, idx) {
   const address = escapeHtml(unit.street || unit.marketingName || 'Unknown address');
   const cityLine = (unit.beds || '?') + ' bed / ' + (unit.baths || '?') + ' bath &middot; Listed at $' + (data.rent || 0).toLocaleString() + '/mo';
-  const vacantSinceLabel = data.usedFallback ? '2' : '1';
-  if (data.usedFallback) footnoteFlags.usesFootnote2 = true;
-  else footnoteFlags.usesFootnote1 = true;
+  const vacantSinceLabel = data.vacancyDateBasis === 'previous_tenant' ? '1' : '2';
+  if (data.vacancyDateBasis === 'previous_tenant') footnoteFlags.usesFootnote1 = true;
+  else footnoteFlags.usesFootnote2 = true;
   footnoteFlags.usesFootnote3 = true;
 
   const f = data.funnel;
@@ -2225,8 +2235,8 @@ function renderOwnerEmail(reportDataList) {
   }
 
   let footnoteBlock = '<div class="footnote-block">';
-  if (footnoteFlags.usesFootnote1) footnoteBlock += '<sup>1</sup> The date this home went live on the market.<br>';
-  if (footnoteFlags.usesFootnote2) footnoteBlock += '<sup>2</sup> Estimated \u2014 this property could not be matched to a confirmed listing date.<br>';
+  if (footnoteFlags.usesFootnote1) footnoteBlock += '<sup>1</sup> Based on the date the previous tenant moved out.<br>';
+  if (footnoteFlags.usesFootnote2) footnoteBlock += '<sup>2</sup> This is a new listing with no prior tenant, so this is the date the home was first listed.<br>';
   if (footnoteFlags.usesFootnote3) footnoteBlock += "<sup>3</sup> Reflects leads from sources we actively track. It doesn't include phone calls that came in without an online inquiry, showings arranged directly through an outside realtor or MLS, or interest from listing sites we don't track \u2014 so actual interest may be higher than shown here.";
   footnoteBlock += '</div>';
 
