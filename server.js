@@ -152,6 +152,38 @@ async function writeVendors(data) {
   if (!r.ok) throw new Error('GCS write ' + r.status + ': ' + await r.text());
 }
 
+const _ownerMapFile = 'owner-map.json';
+let _ownerMapCache = null;
+
+async function readOwnerMap() {
+  if (_ownerMapCache) return _ownerMapCache;
+  try {
+    const token = await getGCSToken();
+    const r = await fetch(`https://storage.googleapis.com/storage/v1/b/${_vendorBucket}/o/${_ownerMapFile}?alt=media`, {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!r.ok) throw new Error('GCS read ' + r.status);
+    _ownerMapCache = await r.json();
+    return _ownerMapCache;
+  } catch(e) {
+    console.error('Owner map GCS read failed, starting empty:', e.message);
+    _ownerMapCache = {};
+    return _ownerMapCache;
+  }
+}
+
+async function writeOwnerMap(data) {
+  _ownerMapCache = data;
+  const token = await getGCSToken();
+  const body = JSON.stringify(data, null, 2);
+  const r = await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${_vendorBucket}/o?uploadType=media&name=${_ownerMapFile}`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body
+  });
+  if (!r.ok) throw new Error('GCS write ' + r.status + ': ' + await r.text());
+}
+
 const _hoaLetterHashFile = 'hoa-letter-hashes.json';
 let _hoaLetterHashCache = null;
 async function readHOALetterHashes() {
@@ -430,6 +462,31 @@ app.get('/api/pet-policy', async function(req, res) {
     res.status(500).json({ error: e.message });
   }
 });
+app.get('/api/owners/vacant-summary', async function(req, res) {
+  try {
+    const unitsRes = await fetch('http://localhost:' + PORT + '/api/aptly/units').then(r => r.json());
+    const units = unitsRes.units || [];
+    const ownerMap = await readOwnerMap();
+    const result = groupVacantPropertiesByOwner(units, ownerMap);
+    res.json(result);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+app.post('/api/owners/refresh-map', hubAuth, async function(req, res) {
+  try {
+    const map = await getPropertyOwnerMap();
+    await writeOwnerMap(map);
+    const propertyCount = Object.keys(map).length;
+    const ownerIds = new Set();
+    Object.values(map).forEach(function(entry) {
+      (entry.owners || []).forEach(function(o) { ownerIds.add(String(o.contactID)); });
+    });
+    res.json({ success: true, properties: propertyCount, owners: ownerIds.size });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 app.get('/api/aptly/leads-rich', async function(req, res) {
   try {
     const token = process.env.APTLY_UNITS_TOKEN || process.env.APTLY_TOKEN || '';
@@ -514,6 +571,8 @@ app.get('/api/aptly/units', async function(req, res) {
     const sanitized = published.map(function(u) {
       return {
         cardId: u.cardId || '',
+        rentvinePropertyId: u.rentvinePropertyId || '',
+        rentvineId: u.rentvineId || '',
         street: u.street || '',
         city: u.city || (u.address && typeof u.address === 'object' ? u.address.city : '') || '',
         beds: u.beds || 0,
@@ -725,6 +784,38 @@ async function rvFetch(path, params = {}, method = 'GET', body = null) {
     return { error: 'Rentvine ' + r.status + ': ' + txt.slice(0, 100) };
   }
   return r.json();
+}
+
+async function getPropertyOwnerMap() {
+  const map = {};
+  let page = 1;
+  const pageSize = 100;
+  while (true) {
+    const data = await rvFetch('/properties/export', { page, pageSize });
+    if (data && data.error) {
+      console.error('getPropertyOwnerMap: Rentvine error, stopping at page', page, '-', data.error);
+      break;
+    }
+    const batch = Array.isArray(data) ? data : [];
+    if (batch.length === 0) break;
+    for (const row of batch) {
+      const p = row.property || {};
+      const pf = row.portfolio || {};
+      if (!p.propertyID) continue;
+      map[String(p.propertyID)] = {
+        portfolioID: pf.portfolioID || null,
+        portfolioName: pf.name || '',
+        owners: Array.isArray(pf.owners) ? pf.owners.map(o => ({
+          contactID: o.contactID,
+          name: o.name || '',
+          email: o.email || ''
+        })) : []
+      };
+    }
+    if (batch.length < pageSize) break;
+    page++;
+  }
+  return map;
 }
 
 async function aptlyFetch(path, params = {}) {
@@ -1825,9 +1916,32 @@ function scheduleRentHistoryCheck() {
   }
   setTimeout(function tick() {
     checkRentChanges().catch(e => console.error('Rent history check error:', e.message));
+    getPropertyOwnerMap().then(writeOwnerMap).catch(e => console.error('Owner map refresh error:', e.message));
     setTimeout(tick, 24 * 60 * 60 * 1000);
   }, msUntilNext6am());
   console.log('Rent history check: scheduled daily at 6am AZ time');
+}
+
+function groupVacantPropertiesByOwner(units, ownerMap) {
+  const groups = {};
+  const unmatched = [];
+  const vacant = units.filter(u => u.stage === 'Vacant');
+  for (const u of vacant) {
+    const propId = u.rentvinePropertyId ? String(u.rentvinePropertyId) : '';
+    const entry = propId ? ownerMap[propId] : null;
+    if (!entry || !Array.isArray(entry.owners) || entry.owners.length === 0) {
+      unmatched.push({ cardId: u.cardId, street: u.street, rentvinePropertyId: u.rentvinePropertyId || null });
+      continue;
+    }
+    for (const owner of entry.owners) {
+      const key = String(owner.contactID);
+      if (!groups[key]) {
+        groups[key] = { contactID: owner.contactID, ownerName: owner.name, ownerEmail: owner.email, properties: [] };
+      }
+      groups[key].properties.push(u);
+    }
+  }
+  return { groups, unmatched };
 }
 scheduleSettlementAlert();
 scheduleRentHistoryCheck();
