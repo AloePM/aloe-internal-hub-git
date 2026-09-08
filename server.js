@@ -1922,6 +1922,130 @@ function scheduleRentHistoryCheck() {
   console.log('Rent history check: scheduled daily at 6am AZ time');
 }
 
+function computeVacancyDates(unit) {
+  const history = Array.isArray(unit.stageHistory) ? unit.stageHistory : [];
+  const hadPreviousTenant = history.some(h => h && h.stage === 'Occupied');
+  const vacantEntries = history.filter(h => h && h.stage === 'Vacant' && h.stageUpdatedAt);
+
+  let vacancyStartDate = null, vacancyDateBasis = null, listDate = null;
+
+  if (hadPreviousTenant && vacantEntries.length > 0) {
+    const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
+    vacancyStartDate = new Date(mostRecentVacant.stageUpdatedAt);
+    vacancyDateBasis = 'previous_tenant';
+    listDate = new Date(vacancyStartDate.getTime() - 60 * 86400000);
+  } else if (unit.availableDate) {
+    vacancyStartDate = new Date(unit.availableDate);
+    vacancyDateBasis = 'new_listing';
+    listDate = vacancyStartDate;
+  } else if (vacantEntries.length > 0) {
+    const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
+    vacancyStartDate = new Date(mostRecentVacant.stageUpdatedAt);
+    vacancyDateBasis = 'new_listing';
+    listDate = vacancyStartDate;
+  } else {
+    return null;
+  }
+
+  const now = new Date();
+  const daysVacant = Math.max(0, Math.floor((now - vacancyStartDate) / 86400000));
+  const dom = Math.max(0, Math.floor((now - listDate) / 86400000));
+  const rent = unit.marketRent ? (typeof unit.marketRent === 'object' ? parseFloat(unit.marketRent.amount || 0) : parseFloat(unit.marketRent || 0)) : 0;
+  const lostPerDay = rent > 0 ? rent / 30 : 0;
+  const lostSoFar = Math.round(lostPerDay * daysVacant);
+
+  return {
+    vacancyStartDate: vacancyStartDate.toISOString(),
+    vacancyDateBasis,
+    listDate: listDate.toISOString(),
+    daysVacant,
+    dom,
+    rent,
+    lostPerDay: Math.round(lostPerDay * 100) / 100,
+    lostSoFar,
+    showPersuasion: dom > 60
+  };
+}
+
+function matchByStreetNumber(address, items, getAddressFn) {
+  const streetNum = (address.match(/^\d+/) || [])[0] || '';
+  if (!streetNum) return [];
+  return items.filter(item => {
+    const addr = getAddressFn(item) || '';
+    return addr.includes(streetNum);
+  });
+}
+
+function filterToCurrentCycle(items, cutoffDate, getDateFn) {
+  if (!cutoffDate) return items;
+  return items.filter(item => {
+    const raw = getDateFn(item);
+    const d = raw ? new Date(raw) : null;
+    if (!d || isNaN(d)) return true;
+    return d >= cutoffDate;
+  });
+}
+
+function bucketAppStatus(status) {
+  const s = (status || '').toLowerCase();
+  if (/incomplete/.test(s) && /all/.test(s)) return 'started';
+  if (/partially/.test(s)) return 'inProgress';
+  if (/pending screening/.test(s)) return 'screeningReady';
+  if (/screening incomplete/.test(s)) return 'screeningInProgress';
+  if (/pending decision/.test(s)) return 'awaitingDecision';
+  if (/approved/.test(s)) return 'approved';
+  if (/denied/.test(s)) return 'denied';
+  if (/closed|cancel/.test(s)) return 'cancelled';
+  return 'other';
+}
+
+function buildPropertyReportData(unit, allLeads, allApplications) {
+  const vacancy = computeVacancyDates(unit);
+  if (!vacancy) return null;
+  const address = unit.street || unit.marketingName || '';
+  const cutoff = new Date(vacancy.listDate);
+
+  const matchedLeads = matchByStreetNumber(address, allLeads, l => l.address || l.preferredRental || '');
+  const leadsInCycle = filterToCurrentCycle(matchedLeads, cutoff, l => l.createdAt);
+
+  const sourceCounts = {};
+  leadsInCycle.forEach(l => {
+    const src = l.source || 'Unknown';
+    sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+  });
+
+  const showings = leadsInCycle.filter(l => Array.isArray(l.showingInfo) && l.showingInfo.length > 0).map(l => {
+    const info = l.showingInfo[0] || {};
+    return { contact: l.contact, start: info.start || null, status: info.showingStatus || null };
+  });
+
+  const matchedApps = matchByStreetNumber(address, allApplications, a => a['Application Location'] || '');
+  const appsInCycle = filterToCurrentCycle(matchedApps, cutoff, a => a['Created At']);
+
+  const rawFunnel = { started: 0, inProgress: 0, screeningReady: 0, screeningInProgress: 0, awaitingDecision: 0, approved: 0, denied: 0, cancelled: 0, other: 0 };
+  appsInCycle.forEach(a => {
+    const bucket = bucketAppStatus(a['Status']);
+    rawFunnel[bucket] = (rawFunnel[bucket] || 0) + 1;
+  });
+
+  const funnel = {
+    started: rawFunnel.started + rawFunnel.inProgress,
+    inScreening: rawFunnel.screeningReady + rawFunnel.screeningInProgress + rawFunnel.awaitingDecision,
+    approved: rawFunnel.approved,
+    denied: rawFunnel.denied,
+    cancelled: rawFunnel.cancelled + rawFunnel.other
+  };
+
+  return {
+    ...vacancy,
+    address,
+    leadsTotal: leadsInCycle.length,
+    sourceCounts,
+    showings,
+    funnel
+  };
+}
+
 function groupVacantPropertiesByOwner(units, ownerMap) {
   const groups = {};
   const unmatched = [];
