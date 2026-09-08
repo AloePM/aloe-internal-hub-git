@@ -607,6 +607,7 @@ app.get('/api/aptly/leads-rich', async function(req, res) {
         address: prefStr,
         source: m['Source'] || '',
         showingInfo: m['Requested Showing Information'] || '',
+        tourAtDoorCodeDate: c.tourAtDoorCodeDate || '',
         moveDate: m['Move Date'] || '',
         income: m['Household Income'] || '',
         pets: m['Pets'] || '',
@@ -2119,7 +2120,21 @@ function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap,
 
   const showings = leadsInCycle.filter(l => Array.isArray(l.showingInfo) && l.showingInfo.length > 0).map(l => {
     const info = l.showingInfo[0] || {};
-    return { contact: l.contact, start: info.start || null, status: info.showingStatus || null };
+    const rawStatus = (info.showingStatus || '').toLowerCase();
+    let realStatus;
+    if (rawStatus === 'cancelled' || rawStatus === 'denied') {
+      realStatus = 'cancelled';
+    } else if (l.tourAtDoorCodeDate) {
+      realStatus = 'completed';
+    } else {
+      realStatus = 'scheduled';
+    }
+    return {
+      contact: l.contact,
+      start: info.start || null,
+      status: realStatus,
+      completedDate: l.tourAtDoorCodeDate || null
+    };
   });
 
   const matchedApps = matchByStreetNumber(address, allApplications, a => a['Application Location'] || '');
@@ -2212,10 +2227,15 @@ function renderPropertyCard(unit, data, footnoteFlags, idx) {
   let showingsHtml;
   if (data.showings && data.showings.length > 0) {
     const lines = data.showings.map(function(s) {
-      const dt = s.start ? formatDate(s.start) : '';
-      const status = (s.status || '').toLowerCase();
-      if (status === 'cancelled') return '1 showing scheduled &mdash; cancelled' + (dt ? ' (' + dt + ')' : '');
-      return '1 showing scheduled' + (dt ? ' for ' + dt : '');
+      if (s.status === 'completed') {
+        return '1 tour completed on ' + formatDate(s.completedDate);
+      } else if (s.status === 'cancelled') {
+        const dt = s.start ? formatDate(s.start) : '';
+        return '1 showing cancelled' + (dt ? ' (' + dt + ')' : '');
+      } else {
+        const dt = s.start ? formatDate(s.start) : '';
+        return '1 showing scheduled' + (dt ? ' for ' + dt : '');
+      }
     });
     showingsHtml = '<div class="section-body">' + lines.join('<br>') + '</div>';
   } else {
