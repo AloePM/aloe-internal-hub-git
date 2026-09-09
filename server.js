@@ -2356,6 +2356,7 @@ function renderPropertyCard(unit, data, footnoteFlags, idx) {
     '<div class="property-body">' +
       '<div class="stat-row">' +
         '<div class="stat"><div class="label">Days vacant</div><div class="value">' + data.daysVacant + '</div></div>' +
+        '<div class="stat"><div class="label">Lost/day</div><div class="value cost">$' + (data.lostPerDay || 0).toLocaleString() + '</div></div>' +
         '<div class="stat"><div class="label">Lost so far</div><div class="value cost">$' + (data.lostSoFar || 0).toLocaleString() + '</div></div>' +
         '<div class="stat"><div class="label">Days listed</div><div class="value">' + data.dom + '</div></div>' +
       '</div>' +
