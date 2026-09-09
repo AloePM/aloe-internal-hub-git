@@ -2684,7 +2684,8 @@ app.get('/api/settlement-alert/test', async (req, res) => {
   }
 });
 app.post('/api/settlement-alert/run', async (req, res) => {
-  const debug = req.query.debug === 'true';
+  if (req.query.marker === 'true') return res.json({ MARKER: 'v3-fixed-rows-key', builtAt: new Date().toISOString() });
+    const debug = req.query.debug === 'true';
     const now = new Date();
   const yStr = req.query.date || new Date(now.getTime() - 7*60*60*1000 - 24*60*60*1000).toISOString().slice(0, 10);
   const y = new Date(yStr + 'T00:00:00Z');
