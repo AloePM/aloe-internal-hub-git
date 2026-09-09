@@ -2105,7 +2105,7 @@ function computeVacancyDates(unit, listedDateMap) {
     rent,
     lostPerDay: Math.round(lostPerDay * 100) / 100,
     lostSoFar,
-    showPersuasion: dom >= 60
+    showPersuasion: dom >= 21
   };
 }
 
