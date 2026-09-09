@@ -2683,9 +2683,127 @@ app.get('/api/settlement-alert/test', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
 app.post('/api/settlement-alert/run', async (req, res) => {
-  // [[ full route code from my last message, Canvas step removed ]]
+  const debug = req.query.debug === 'true';
+  const now = new Date();
+  const y = new Date(now.getTime() - 7*60*60*1000 - 24*60*60*1000);
+  const yStr = y.toISOString().slice(0, 10);
+  const ALOE_FEE_ACCOUNT_IDS = new Set([93,94,40,148,58,14,51,90,136,57,12,62,56,145,19]);
+  const PAY_TYPE = {1:'ACH',2:'Credit Card',3:'Check',4:'Money Order',5:'Cash',6:'Other',7:'Cash Pay',8:"Cashier's Check"};
+  const results = { late: [], moveIn: [], manual: [], current: [], errors: [] };
+
+  try {
+    const reportBody = { displayColumns: ['datePosted','leaseID','unitName','amount','isDepositedSettled','paymentTypeID','reference'],
+      filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: yStr, endDate: yStr }] };
+    let allRows = [], page = 1;
+    while (true) {
+      const url = `${RENTVINE_BASE}/reports/lease-payments?exportTypeID=1&json=${encodeURIComponent(JSON.stringify(reportBody))}&page=${page}&pageSize=200`;
+      const r = await fetch(url, { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
+      if (!r.ok) throw new Error(`lease-payments report failed: ${r.status}`);
+      const batch = await r.json();
+      const rows = (Array.isArray(batch) ? batch : batch.data || []).map(x => x.data || x);
+      if (!rows.length) break;
+      allRows = allRows.concat(rows);
+      if (rows.length < 200) break;
+      page++;
+    }
+    const settled = allRows.filter(p => p.isDepositedSettled === true || p.isDepositedSettled === 1);
+
+    for (const p of settled) {
+      try {
+        const leaseResp = await fetch(`${RENTVINE_BASE}/reports/lease?exportTypeID=1&json=${encodeURIComponent(JSON.stringify({ displayColumns: ['leaseID','propertyID','unitName','address','moveInDate'], filters: [{ name:'leaseID', comparator:'equals', value: p.leaseID }] }))}`,
+          { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
+        const leaseData = (await leaseResp.json());
+        const lease = (Array.isArray(leaseData) ? leaseData : leaseData.data || []).map(x => x.data || x)[0] || {};
+
+        const tenResp = await fetch(`${RENTVINE_BASE}/reports/lease-tenants?exportTypeID=1&json=${encodeURIComponent(JSON.stringify({ displayColumns:['leaseID','tenantName'], filters:[{name:'leaseID',comparator:'equals',value:p.leaseID}] }))}`,
+          { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
+        const tenData = await tenResp.json();
+        const tenants = (Array.isArray(tenData) ? tenData : tenData.data || []).map(x => x.data || x);
+        const tenantName = tenants.map(t => t.tenantName).filter(Boolean).join(', ') || 'Unknown tenant';
+
+        const chgResp = await fetch(`${RENTVINE_BASE}/reports/lease-charges?exportTypeID=1&json=${encodeURIComponent(JSON.stringify({ displayColumns:['leaseID','dueDate','description','amount','isPaid'], filters:[{name:'leaseID',comparator:'equals',value:p.leaseID},{name:'isPaid',comparator:'equals',value:false}] }))}`,
+          { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
+        const chgData = await chgResp.json();
+        const unpaidCharges = (Array.isArray(chgData) ? chgData : chgData.data || []).map(x => x.data || x);
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+        const pastDue = unpaidCharges.filter(c => c.dueDate && c.dueDate < monthStart);
+
+        const moveIn = lease.moveInDate;
+        const isMoveIn = moveIn && ((y - new Date(moveIn)) / 86400000) <= 45;
+
+        let mgmtFee = 'needs manual check';
+        try {
+          const propResp = await fetch(`${RENTVINE_BASE}/reports/property?exportTypeID=1&json=${encodeURIComponent(JSON.stringify({ displayColumns:['propertyID','managementFeeSettingID'], filters:[{name:'propertyID',comparator:'equals',value:lease.propertyID}] }))}`,
+            { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
+          const propData = await propResp.json();
+          const prop = (Array.isArray(propData) ? propData : propData.data || []).map(x => x.data || x)[0];
+          if (prop?.managementFeeSettingID) {
+            const feeResp = await fetch(`${RENTVINE_BASE}/managementfeesettings/${prop.managementFeeSettingID}`,
+              { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
+            const fee = await feeResp.json();
+            mgmtFee = fee.feeType === 'percentage' ? (parseFloat(p.amount) * (fee.feeValue/100)).toFixed(2) : fee.feeValue;
+          }
+        } catch (e) { /* leave as needs manual check */ }
+
+        let billsHeld = 0, billNotes = [];
+        try {
+          const billResp = await fetch(`${RENTVINE_BASE}/reports/payables?exportTypeID=1&json=${encodeURIComponent(JSON.stringify({ displayColumns:['propertyID','chargeAccountID','amount','amountUnpaid','description','billID'], filters:[{name:'isPaid',comparator:'booleanFalse'},{name:'isVoided',comparator:'booleanFalse'}] }))}`,
+            { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
+          const billData = await billResp.json();
+          const bills = (Array.isArray(billData) ? billData : billData.data || []).map(x => x.data || x)
+            .filter(b => String(b.propertyID) === String(lease.propertyID) && !ALOE_FEE_ACCOUNT_IDS.has(parseInt(b.chargeAccountID)));
+          billsHeld = bills.reduce((s,b) => s + parseFloat(b.amountUnpaid || 0), 0);
+          billNotes = bills.map(b => `${b.description}: $${b.amountUnpaid}`);
+        } catch (e) { /* leave at 0 */ }
+
+        const netPayout = (parseFloat(p.amount) - (parseFloat(mgmtFee) || 0) - billsHeld).toFixed(2);
+        const row = { date: yStr, tenant: tenantName, property: lease.address || p.unitName, amount: p.amount,
+          payType: PAY_TYPE[p.paymentTypeID] || 'Unknown', mgmtFee, billsHeld: billsHeld.toFixed(2), netPayout,
+          notes: billNotes.join('; ') };
+
+        if (pastDue.length) {
+          row.notes = `Cleared: ${pastDue.map(c=>c.description+' (due '+c.dueDate+')').join(', ')}`;
+          results.late.push(row);
+        } else if (isMoveIn) {
+          row.notes = `Move-in: ${moveIn}`;
+          results.moveIn.push(row);
+        } else if ([3,4,5,6,7,8].includes(p.paymentTypeID)) {
+          results.manual.push(row);
+        } else {
+          results.current.push(row);
+        }
+      } catch (e) {
+        results.errors.push(`Lease ${p.leaseID}: ${e.message}`);
+      }
+    }
+
+    const tableRows = arr => arr.map(r => `| ${r.date} | ${r.tenant} | ${r.property} | $${r.amount} | ${r.payType} | $${r.mgmtFee} | $${r.billsHeld} | $${r.netPayout} | ${r.notes || ''} |`).join('\n');
+    const header = `| Date | Tenant | Property | Amount | Payment Type | Mgmt Fee | Owner Bills Held | Net Payout | Notes |\n|---|---|---|---|---|---|---|---|---|`;
+    let msg = `💰 *Daily Settlement Digest — ${yStr}*\n\n`;
+    if (!results.late.length && !results.moveIn.length && !results.manual.length && !results.current.length) {
+      msg += 'No settlements or deposits yesterday.';
+    } else {
+      if (results.late.length) msg += `🔴 *Late Payment Settlements*\n${header}\n${tableRows(results.late)}\n\n`;
+      if (results.moveIn.length) msg += `🏠 *Move-In Settlements*\n${header}\n${tableRows(results.moveIn)}\n\n`;
+      if (results.manual.length) msg += `🧾 *Manual Deposits (Check/Cash/Money Order/Cashier's Check)*\n${header}\n${tableRows(results.manual)}\n\n`;
+      if (results.current.length) msg += `${results.current.length} routine on-time rent payments, $${results.current.reduce((s,r)=>s+parseFloat(r.amount),0).toFixed(2)}, not itemized.\n`;
+    }
+    if (results.errors.length) msg += `\n⚠️ Note: ${results.errors.join(' | ')}`;
+    if (!debug) {
+      await fetch('https://slack.com/api/chat.postMessage', { method:'POST',
+        headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`, 'Content-Type':'application/json' },
+        body: JSON.stringify({ channel: 'U066CCVN0HJ', text: msg }) });
+    }
+
+    return res.json({ success: true, date: yStr, debug, ...results });
+  } catch (err) {
+    console.error('[settlement-alert] Fatal:', err.message);
+    await fetch('https://slack.com/api/chat.postMessage', { method:'POST',
+      headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ channel: 'U066CCVN0HJ', text: `⚠️ *Settlement alert failed (${yStr}):* ${err.message}` }) }).catch(()=>{});
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 // ── End Late Payment Settlement Alert ──────────────────────────────────────
