@@ -2411,17 +2411,17 @@ function renderReductionTable() {
 function renderRentHistorySection(entries) {
   if (!entries || entries.length === 0) return '';
   const rows = entries.map(function(e) {
-    return '<div class="rent-history-line">' + formatDate(e.date) + ' &mdash; $' + (e.rent || 0).toLocaleString() + '/mo (' + (e.note || '') + ')</div>';
+    return '<div style="font-size:13px;color:#555;padding:3px 0;">' + formatDate(e.date) + ' &mdash; $' + (e.rent || 0).toLocaleString() + '/mo (' + (e.note || '') + ')</div>';
   }).join('');
-  return '<div class="section-title">Rent history</div><div class="section-body">' + rows + '</div>';
+  return '<div style="font-size:12px;font-weight:600;color:#4BB4D2;text-transform:uppercase;letter-spacing:0.03em;margin:16px 0 6px;font-family:-apple-system,Segoe UI,Arial,sans-serif;">Rent history</div><div style="font-size:14px;color:#444;line-height:1.6;font-family:-apple-system,Segoe UI,Arial,sans-serif;">' + rows + '</div>';
 }
 
 function renderWeeklyActivitySection(weeks) {
   if (!weeks || weeks.length === 0) return '';
   const rows = weeks.map(function(w) {
-    return '<div class="rent-history-line">' + w.label + ' &mdash; ' + w.leads + 'L / ' + w.tours + ' tours</div>';
+    return '<div style="font-size:13px;color:#555;padding:3px 0;">' + w.label + ' &mdash; ' + w.leads + 'L / ' + w.tours + ' tours</div>';
   }).join('');
-  return '<div class="section-title">Activity by week (last 8 weeks)</div><div class="section-body">' + rows + '</div>';
+  return '<div style="font-size:12px;font-weight:600;color:#4BB4D2;text-transform:uppercase;letter-spacing:0.03em;margin:16px 0 6px;font-family:-apple-system,Segoe UI,Arial,sans-serif;">Activity by week (last 8 weeks)</div><div style="font-size:14px;color:#444;line-height:1.6;font-family:-apple-system,Segoe UI,Arial,sans-serif;">' + rows + '</div>';
 }
 
 function renderTourFeedbackSection(feedback) {
@@ -2439,9 +2439,9 @@ function renderTourFeedbackSection(feedback) {
     } else {
       detail = 'N/A \u2014 no follow-up feedback provided';
     }
-    return '<div class="rent-history-line"><b>Prospect</b> &mdash; ' + f.status + ' (' + formatDate(f.date) + ')<br><span style="color:#888; font-size:12px;">' + detail + '</span></div>';
+    return '<div style="font-size:13px;color:#555;padding:3px 0;"><b>Prospect</b> &mdash; ' + f.status + ' (' + formatDate(f.date) + ')<br><span style="color:#888; font-size:12px;">' + detail + '</span></div>';
   }).join('');
-  return '<div class="section-title">Tour feedback</div><div class="section-body">' + rows + '</div>';
+  return '<div style="font-size:12px;font-weight:600;color:#4BB4D2;text-transform:uppercase;letter-spacing:0.03em;margin:16px 0 6px;font-family:-apple-system,Segoe UI,Arial,sans-serif;">Tour feedback</div><div style="font-size:14px;color:#444;line-height:1.6;font-family:-apple-system,Segoe UI,Arial,sans-serif;">' + rows + '</div>';
 }
 
 function renderPropertyCard(unit, data, footnoteFlags, idx) {
@@ -2456,9 +2456,9 @@ function renderPropertyCard(unit, data, footnoteFlags, idx) {
   const f = data.funnel;
   let appsHtml;
   if (f.started + f.inScreening + f.approved + f.denied + f.cancelled === 0) {
-    appsHtml = '<div class="funnel-empty">No applications received yet in the current vacancy cycle.</div>';
+    appsHtml = '<div style="font-size:13px;color:#888;font-style:italic;">No applications received yet in the current vacancy cycle.</div>';
   } else {
-    appsHtml = '<div class="section-body" style="display:flex; gap:14px; flex-wrap:wrap;">' +
+    appsHtml = '<div style="display:flex; gap:14px; flex-wrap:wrap; font-family:-apple-system,Segoe UI,Arial,sans-serif;">' +
       '<div><span style="font-weight:600; color:#222;">' + f.started + '</span> <span style="color:#888; font-size:12px;">Started</span></div>' +
       '<div><span style="font-weight:600; color:#222;">' + f.inScreening + '</span> <span style="color:#888; font-size:12px;">In screening</span></div>' +
       '<div><span style="font-weight:600; color:#0F6E56;">' + f.approved + '</span> <span style="color:#888; font-size:12px;">Approved</span></div>' +
@@ -2485,39 +2485,39 @@ function renderPropertyCard(unit, data, footnoteFlags, idx) {
         return '1 showing scheduled' + (dt ? ' for ' + dt : '');
       }
     });
-    showingsHtml = '<div class="section-body">' + lines.join('<br>') + '</div>';
+    showingsHtml = '<div style="font-size:14px;color:#444;line-height:1.6;font-family:-apple-system,Segoe UI,Arial,sans-serif;">' + lines.join('<br>') + '</div>';
   } else {
-    showingsHtml = '<div class="funnel-empty">No showings scheduled yet.</div>';
+    showingsHtml = '<div style="font-size:13px;color:#888;font-style:italic;">No showings scheduled yet.</div>';
   }
 
   let persuasionHtml = '';
   if (data.showPersuasion) {
-    persuasionHtml = '<div class="persuasion">' +
+    persuasionHtml = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#FAEEDA; border-left:3px solid #EF9F27; margin-top:16px;"><tr><td style="padding:12px 16px; font-size:13px; color:#633806; font-family:-apple-system,Segoe UI,Arial,sans-serif;">' +
       "We know costs keep rising while rents in the area have stayed flat or dipped this year, and lowering the price is never an easy call. But the numbers are worth a look side by side &mdash; this home has been listed for " + data.dom + ' days without an application.' +
       renderReductionTable() +
-      '<p style="margin:10px 0 0;">For comparison, one more month of vacancy at the current $' + (data.rent || 0).toLocaleString() + '/mo asking rent costs <b>$' + (data.rent || 0).toLocaleString() + '</b>.</p>' +
-    '</div>';
+      '<p style="margin:10px 0 0;">For comparison, one more month of vacancy at the current $' + (data.rent || 0).toLocaleString() + '/mo asking rent costs <b style="color:#412402;">$' + (data.rent || 0).toLocaleString() + '</b>.</p>' +
+    '</td></tr></table>';
   }
 
-  return '<div class="property-card" id="prop-' + idx + '">' +
-    '<div class="property-head"><h2>' + address + '</h2><span>' + cityLine + '</span></div>' +
-    '<div class="property-body">' +
-      '<div class="stat-row">' +
-        '<div class="stat"><div class="label">Days vacant</div><div class="value">' + data.daysVacant + '</div></div>' +
-        '<div class="stat"><div class="label">Lost/day</div><div class="value cost">$' + (data.lostPerDay || 0).toLocaleString() + '</div></div>' +
-        '<div class="stat"><div class="label">Lost so far</div><div class="value cost">$' + (data.lostSoFar || 0).toLocaleString() + '</div></div>' +
-        '<div class="stat"><div class="label">Days listed</div><div class="value">' + data.dom + '</div></div>' +
-      '</div>' +
-      '<p class="vacancy-footnote">Vacant since ' + formatDate(data.vacancyStartDate) + '<sup>' + vacantSinceLabel + '</sup></p>' +
+  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E5E9E9; border-radius:6px; margin-bottom:20px;" id="prop-' + idx + '"><tr><td>' +
+    '<div style="background-color:#F8FAFC; padding:14px 18px; border-bottom:1px solid #E5E9E9; font-family:-apple-system,Segoe UI,Arial,sans-serif;"><h2 style="margin:0;font-size:15px;color:#222;">' + address + '</h2><span style="font-size:13px;color:#666;">' + cityLine + '</span></div>' +
+    '<div style="padding:16px 18px;">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:6px;"><tr>' +
+        '<td width="25%" style="padding:0 10px 6px 0; font-family:-apple-system,Segoe UI,Arial,sans-serif;"><div style="font-size:11px;color:#B4C3C3;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:2px;">Days vacant</div><div style="font-size:20px;font-weight:600;color:#222;">' + data.daysVacant + '</div></td>' +
+        '<td width="25%" style="padding:0 10px 6px 0; font-family:-apple-system,Segoe UI,Arial,sans-serif;"><div style="font-size:11px;color:#B4C3C3;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:2px;">Lost/day</div><div style="font-size:20px;font-weight:600;color:#D85A30;">$' + (data.lostPerDay || 0).toLocaleString() + '</div></td>' +
+        '<td width="25%" style="padding:0 10px 6px 0; font-family:-apple-system,Segoe UI,Arial,sans-serif;"><div style="font-size:11px;color:#B4C3C3;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:2px;">Lost so far</div><div style="font-size:20px;font-weight:600;color:#D85A30;">$' + (data.lostSoFar || 0).toLocaleString() + '</div></td>' +
+        '<td width="25%" style="padding:0 0 6px 0; font-family:-apple-system,Segoe UI,Arial,sans-serif;"><div style="font-size:11px;color:#B4C3C3;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:2px;">Days listed</div><div style="font-size:20px;font-weight:600;color:#222;">' + data.dom + '</div></td>' +
+      '</tr></table>' +
+      '<p style="font-size:11px;color:#999;margin:0 0 16px;font-family:-apple-system,Segoe UI,Arial,sans-serif;">Vacant since ' + formatDate(data.vacancyStartDate) + '<sup>' + vacantSinceLabel + '</sup></p>' +
       renderRentHistorySection(data.rentHistoryEntries) +
-    '<div class="section-title">Applications this cycle</div>' + appsHtml +
-      '<div class="section-title">Leads &amp; sources (' + data.leadsTotal + ' total)<sup style="color:#4BB4D2;">3</sup></div>' +
-      '<div class="section-body">' + leadsLine + '</div>' +
-      '<div class="section-title">Showings</div>' + showingsHtml +
+    '<div style="font-size:12px;font-weight:600;color:#4BB4D2;text-transform:uppercase;letter-spacing:0.03em;margin:16px 0 6px;font-family:-apple-system,Segoe UI,Arial,sans-serif;">Applications this cycle</div>' + appsHtml +
+      '<div style="font-size:12px;font-weight:600;color:#4BB4D2;text-transform:uppercase;letter-spacing:0.03em;margin:16px 0 6px;font-family:-apple-system,Segoe UI,Arial,sans-serif;">Leads &amp; sources (' + data.leadsTotal + ' total)<sup style="color:#4BB4D2;">3</sup></div>' +
+      '<div style="font-size:14px;color:#444;line-height:1.6;font-family:-apple-system,Segoe UI,Arial,sans-serif;">' + leadsLine + '</div>' +
+      '<div style="font-size:12px;font-weight:600;color:#4BB4D2;text-transform:uppercase;letter-spacing:0.03em;margin:16px 0 6px;font-family:-apple-system,Segoe UI,Arial,sans-serif;">Showings</div>' + showingsHtml +
       renderWeeklyActivitySection(data.weeklyActivity) +
       renderTourFeedbackSection(data.tourFeedback) +
       persuasionHtml +
-    '</div></div>';
+    '</div></td></tr></table>';
 }
 
 function renderOwnerEmail(reportDataList) {
@@ -2530,44 +2530,27 @@ function renderOwnerEmail(reportDataList) {
   let rollupHtml = '';
   if (propCount > 1) {
     const rows = sorted.map(function(x, i) {
-      return '<div class="rollup-row"><a href="#prop-' + (i + 1) + '">' + escapeHtml(x.unit.street || '') + '</a><span class="cost">$' + (x.data.lostSoFar || 0).toLocaleString() + ' &middot; ' + x.data.daysVacant + ' days</span></div>';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;border-top:1px solid #E5E9E9;font-family:-apple-system,Segoe UI,Arial,sans-serif;"><a href="#prop-' + (i + 1) + '" style="color:#0F6E56;text-decoration:none;font-weight:600;">' + escapeHtml(x.unit.street || '') + '</a><span style="color:#D85A30;font-weight:600;">$' + (x.data.lostSoFar || 0).toLocaleString() + ' &middot; ' + x.data.daysVacant + ' days</span></div>';
     }).join('');
-    rollupHtml = '<div class="rollup"><p class="total">Across your <b>' + propCount + ' vacant properties</b>, you\'ve lost an estimated <b>$' + totalLost.toLocaleString() + '</b> so far this cycle.</p>' + rows + '</div>';
+    rollupHtml = '<div style="background-color:#F8FAFC;border-radius:6px;padding:14px 18px;margin-bottom:24px;font-family:-apple-system,Segoe UI,Arial,sans-serif;"><p style="font-size:15px;color:#222;margin:0 0 10px;">Across your <b style="color:#D85A30;">' + propCount + ' vacant properties</b>, you\'ve lost an estimated <b style="color:#D85A30;">$' + totalLost.toLocaleString() + '</b> so far this cycle.</p>' + rows + '</div>';
   }
 
-  let footnoteBlock = '<div class="footnote-block">';
+  let footnoteBlock = '<div style="font-size:11px;color:#999;padding:0 28px 16px;line-height:1.5;font-family:-apple-system,Segoe UI,Arial,sans-serif;">';
   if (footnoteFlags.usesFootnote1) footnoteBlock += '<sup>1</sup> Based on the date the previous tenant moved out.<br>';
   if (footnoteFlags.usesFootnote2) footnoteBlock += '<sup>2</sup> This is a new listing with no prior tenant, so this is the date the home was first listed.<br>';
   if (footnoteFlags.usesFootnote3) footnoteBlock += "<sup>3</sup> Reflects leads from sources we actively track. It doesn't include phone calls that came in without an online inquiry, showings arranged directly through an outside realtor or MLS, or interest from listing sites we don't track \u2014 so actual interest may be higher than shown here.<br>";
   if (footnoteFlags.usesFootnote4) footnoteBlock += "<sup>4</sup> Cancelled applications and leads that go quiet typically mean the person is no longer interested \u2014 they may have changed their mind, applied for the wrong property by mistake, never finished the application, or become unresponsive.";
   footnoteBlock += '</div>';
 
-  const styleBlock = '<style>' +
-    'body{font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#F8FAFC;margin:0;padding:40px 20px;}' +
-    '.email-shell{max-width:640px;margin:0 auto;background:#fff;border:1px solid #E5E9E9;border-radius:8px;overflow:hidden;}' +
-    '.email-header{background:#3CC3E1;padding:24px 28px;}.email-header h1{margin:0;font-size:18px;color:#fff;font-weight:600;}' +
-    '.email-header p{margin:4px 0 0;font-size:13px;color:#E8FAFE;}.email-body{padding:24px 28px;}' +
-    '.rollup{background:#F8FAFC;border-radius:6px;padding:14px 18px;margin-bottom:24px;}' +
-    '.rollup .total{font-size:15px;color:#222;margin:0 0 10px;}.rollup .total b{color:#D85A30;}' +
-    '.rollup-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;border-top:1px solid #E5E9E9;}' +
-    '.rollup-row:first-of-type{border-top:none;}.rollup-row a{color:#0F6E56;text-decoration:none;font-weight:600;}.rollup-row .cost{color:#D85A30;font-weight:600;}' +
-    '.property-card{border:1px solid #E5E9E9;border-radius:6px;margin-bottom:20px;overflow:hidden;}.property-card:last-child{margin-bottom:0;}' +
-    '.property-head{background:#F8FAFC;padding:14px 18px;border-bottom:1px solid #E5E9E9;}.property-head h2{margin:0;font-size:15px;color:#222;}.property-head span{font-size:13px;color:#666;}' +
-    '.property-body{padding:16px 18px;}.stat-row{display:flex;gap:20px;margin-bottom:6px;flex-wrap:wrap;}.stat{flex:1;min-width:120px;}' +
-    '.stat .label{font-size:11px;color:#B4C3C3;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:2px;}.stat .value{font-size:20px;font-weight:600;color:#222;}.stat .value.cost{color:#D85A30;}' +
-    '.vacancy-footnote{font-size:11px;color:#999;margin:0 0 16px;}'+'.rent-history-line{font-size:13px;color:#555;padding:3px 0;}' +
-    '.section-title{font-size:12px;font-weight:600;color:#4BB4D2;text-transform:uppercase;letter-spacing:0.03em;margin:16px 0 6px;}' +
-    '.section-body{font-size:14px;color:#444;line-height:1.6;}.funnel-empty{font-size:13px;color:#888;font-style:italic;}' +
-    '.persuasion{background:#FAEEDA;border-left:3px solid #EF9F27;padding:12px 16px;margin-top:16px;font-size:13px;color:#633806;}.persuasion b{color:#412402;}' +
-    '.footer-note{font-size:12px;color:#999;padding:16px 28px;border-top:1px solid #E5E9E9;}.footnote-block{font-size:11px;color:#999;padding:0 28px 16px;line-height:1.5;}' +
-  '</style>';
-
-  return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Vacancy update</title>' + styleBlock + '</head><body>' +
-    '<div class="email-shell"><div class="email-header"><h1>Your weekly vacancy update</h1>' +
-    '<p>' + propCount + ' propert' + (propCount === 1 ? 'y' : 'ies') + ' currently vacant &middot; $' + totalLost.toLocaleString() + ' lost so far this cycle</p></div>' +
-    '<div class="email-body">' + rollupHtml + cardsHtml + '</div>' +
-    '<div class="footer-note">Aloe Property Management &middot; questions? just reply to this email.</div>' +
-    footnoteBlock + '</div></body></html>';
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Vacancy update</title></head><body>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F8FAFC; padding:40px 20px; font-family:-apple-system,Segoe UI,Arial,sans-serif;"><tr><td align="center">' +
+    '<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px; width:100%; background-color:#ffffff; border:1px solid #E5E9E9; border-radius:8px; overflow:hidden;">' +
+    '<tr><td style="background-color:#3CC3E1; padding:24px 28px;"><div style="margin:0;font-size:18px;color:#fff;font-weight:600;font-family:-apple-system,Segoe UI,Arial,sans-serif;">Your weekly vacancy update</div>' +
+    '<div style="margin:4px 0 0;font-size:13px;color:#E8FAFE;font-family:-apple-system,Segoe UI,Arial,sans-serif;">' + propCount + ' propert' + (propCount === 1 ? 'y' : 'ies') + ' currently vacant &middot; $' + totalLost.toLocaleString() + ' lost so far this cycle</div></td></tr>' +
+    '<tr><td style="padding:24px 28px;">' + rollupHtml + cardsHtml + '</td></tr>' +
+    '<tr><td style="font-size:12px;color:#999;padding:16px 28px;border-top:1px solid #E5E9E9;font-family:-apple-system,Segoe UI,Arial,sans-serif;">Aloe Property Management &middot; questions? just reply to this email.</td></tr>' +
+    '<tr><td>' + footnoteBlock + '</td></tr>' +
+    '</table></td></tr></table></body></html>';
 }
 
 function groupVacantPropertiesByOwner(units, ownerMap) {
