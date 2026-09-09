@@ -231,6 +231,40 @@ async function writeWOSyncHistory(dateStr, data) {
 
 const _rentHistoryFile = 'rent-history.json';
 let _rentHistoryCache = null;
+const _vacancyStartOverridesFile = 'vacancy-start-overrides.json';
+let _vacancyStartOverridesCache = null;
+
+async function readVacancyStartOverrides() {
+  if (_vacancyStartOverridesCache) return _vacancyStartOverridesCache;
+  try {
+    const token = await getGCSToken();
+    const r = await fetch(`https://storage.googleapis.com/storage/v1/b/${_vendorBucket}/o/${_vacancyStartOverridesFile}?alt=media`, {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!r.ok) {
+      if (r.status === 404) { _vacancyStartOverridesCache = {}; return _vacancyStartOverridesCache; }
+      throw new Error('GCS read ' + r.status);
+    }
+    _vacancyStartOverridesCache = await r.json();
+    return _vacancyStartOverridesCache;
+  } catch(e) {
+    console.error('Vacancy start overrides read failed:', e.message);
+    return {};
+  }
+}
+
+async function writeVacancyStartOverrides(data) {
+  _vacancyStartOverridesCache = data;
+  const token = await getGCSToken();
+  const body = JSON.stringify(data, null, 2);
+  const r = await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${_vendorBucket}/o?uploadType=media&name=${_vacancyStartOverridesFile}`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body
+  });
+  if (!r.ok) throw new Error('GCS write ' + r.status + ': ' + await r.text());
+}
+
 const _listedDateOverridesFile = 'listed-date-overrides.json';
 let _listedDateOverridesCache = null;
 
@@ -530,19 +564,20 @@ app.get('/api/owners/email-preview/:contactID', async function(req, res) {
     const group = grouped.groups[req.params.contactID];
     if (!group) return res.status(404).send('No vacant properties found for contactID ' + req.params.contactID);
 
-    const [leadsRes, appsRes, listPropRes, rentHistory, listedDateOverrides] = await Promise.all([
+    const [leadsRes, appsRes, listPropRes, rentHistory, listedDateOverrides, vacancyStartOverrides] = await Promise.all([
       fetch('http://localhost:' + PORT + '/api/aptly/leads-rich').then(function(r) { return r.json(); }),
       fetch('http://localhost:' + PORT + '/api/aptly/applications-rich').then(function(r) { return r.json(); }),
       fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich').then(function(r) { return r.json(); }),
       readRentHistory(),
-      readListedDateOverrides()
+      readListedDateOverrides(),
+      readVacancyStartOverrides()
     ]);
     const allLeads = Array.isArray(leadsRes) ? leadsRes : (leadsRes.leads || []);
     const allApplications = Array.isArray(appsRes) ? appsRes : (appsRes.applications || []);
     const listedDateMap = buildListedDateMap(listPropRes.cards || []);
 
     const reportDataList = group.properties.map(function(u) {
-      return { unit: u, data: buildPropertyReportData(u, allLeads, allApplications, listedDateMap, rentHistory, listedDateOverrides) };
+      return { unit: u, data: buildPropertyReportData(u, allLeads, allApplications, listedDateMap, rentHistory, listedDateOverrides, vacancyStartOverrides) };
     }).filter(function(x) { return x.data; });
 
     const html = renderOwnerEmail(reportDataList);
@@ -580,6 +615,21 @@ app.get('/api/aptly/list-property-rich', async function(req, res) {
       return m;
     });
     res.json({ cards: mapped, total: mapped.length });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+app.post('/api/vacancy-start/override', hubAuth, async function(req, res) {
+  try {
+    const overrides = await readVacancyStartOverrides();
+    const updates = req.body || {};
+    let count = 0;
+    for (const cardId of Object.keys(updates)) {
+      overrides[cardId] = updates[cardId];
+      count++;
+    }
+    await writeVacancyStartOverrides(overrides);
+    res.json({ success: true, propertiesUpdated: count });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
@@ -624,12 +674,13 @@ app.get('/api/owners/batch-export', hubAuth, async function(req, res) {
     const skipContactIds = ['4195', '4806', '4382', '5949'];
     const summaryRes = await fetch('http://localhost:' + PORT + '/api/owners/vacant-summary').then(r => r.json());
     const groups = summaryRes.groups || summaryRes;
-    const [leadsRes, appsRes, listPropRes, rentHistory, listedDateOverrides] = await Promise.all([
+    const [leadsRes, appsRes, listPropRes, rentHistory, listedDateOverrides, vacancyStartOverrides] = await Promise.all([
       fetch('http://localhost:' + PORT + '/api/aptly/leads-rich').then(r => r.json()),
       fetch('http://localhost:' + PORT + '/api/aptly/applications-rich').then(r => r.json()),
       fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich').then(r => r.json()),
       readRentHistory(),
-      readListedDateOverrides()
+      readListedDateOverrides(),
+      readVacancyStartOverrides()
     ]);
     const allLeads = Array.isArray(leadsRes) ? leadsRes : (leadsRes.leads || []);
     const allApplications = Array.isArray(appsRes) ? appsRes : (appsRes.applications || []);
@@ -640,7 +691,7 @@ app.get('/api/owners/batch-export', hubAuth, async function(req, res) {
       if (skipContactIds.includes(contactId)) continue;
       const group = groups[contactId];
       const reportDataList = group.properties.map(function(u) {
-        return { unit: u, data: buildPropertyReportData(u, allLeads, allApplications, listedDateMap, rentHistory, listedDateOverrides) };
+        return { unit: u, data: buildPropertyReportData(u, allLeads, allApplications, listedDateMap, rentHistory, listedDateOverrides, vacancyStartOverrides) };
       }).filter(function(x) { return x.data; });
       if (reportDataList.length === 0) continue;
       const html = renderOwnerEmail(reportDataList);
@@ -2104,14 +2155,19 @@ function scheduleRentHistoryCheck() {
   console.log('Rent history check: scheduled daily at 6am AZ time');
 }
 
-function computeVacancyDates(unit, listedDateMap, listedDateOverrides) {
+function computeVacancyDates(unit, listedDateMap, listedDateOverrides, vacancyStartOverrides) {
   const history = Array.isArray(unit.stageHistory) ? unit.stageHistory : [];
   const hadPreviousTenant = history.some(h => h && h.stage === 'Occupied');
   const vacantEntries = history.filter(h => h && h.stage === 'Vacant' && h.stageUpdatedAt);
 
   let vacancyStartDate = null, vacancyDateBasis = null;
 
-  if (hadPreviousTenant && vacantEntries.length > 0) {
+  const vacancyStartOverride = vacancyStartOverrides ? vacancyStartOverrides[unit.cardId] : null;
+
+  if (vacancyStartOverride) {
+    vacancyStartDate = new Date(vacancyStartOverride);
+    vacancyDateBasis = 'manual_override';
+  } else if (hadPreviousTenant && vacantEntries.length > 0) {
     const mostRecentVacant = vacantEntries.reduce((a, b) => new Date(a.stageUpdatedAt) > new Date(b.stageUpdatedAt) ? a : b);
     vacancyStartDate = new Date(mostRecentVacant.stageUpdatedAt);
     vacancyDateBasis = 'previous_tenant';
@@ -2210,8 +2266,8 @@ function bucketAppStatus(status) {
   return 'other';
 }
 
-function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap, rentHistory, listedDateOverrides) {
-  const vacancy = computeVacancyDates(unit, listedDateMap, listedDateOverrides);
+function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap, rentHistory, listedDateOverrides, vacancyStartOverrides) {
+  const vacancy = computeVacancyDates(unit, listedDateMap, listedDateOverrides, vacancyStartOverrides);
   if (!vacancy) return null;
   const address = unit.street || unit.marketingName || '';
   const cutoff = new Date(vacancy.listDate);
