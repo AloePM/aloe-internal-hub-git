@@ -2169,13 +2169,16 @@ function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap,
 
   const weeklyActivity = buildWeeklyActivity(leadsInCycle, vacancy.listDate);
 
+  const nowForFeedback = new Date();
   const tourFeedback = leadsInCycle.filter(l => Array.isArray(l.showingInfo) && l.showingInfo.length > 0).map(l => {
     const info = l.showingInfo[0] || {};
     const rawStatus = (info.showingStatus || '').toLowerCase();
+    const startDateFb = info.start ? new Date(info.start) : null;
     let statusLabel;
     if (l.tourAtDoorCodeDate) statusLabel = 'Tour Completed';
     else if (rawStatus === 'cancelled' || rawStatus === 'denied') statusLabel = 'Cancelled';
-    else statusLabel = 'Scheduled Tour';
+    else if (startDateFb && startDateFb > nowForFeedback) statusLabel = 'Scheduled Tour';
+    else statusLabel = 'No-show';
     const hasFeedback = l.interestLevel || l.propertyIssues || l.tourQuestions || l.whatWouldItTake || l.likes || l.dislikes;
     return {
       status: statusLabel,
