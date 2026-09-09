@@ -708,6 +708,80 @@ app.get('/api/owners/batch-export', hubAuth, async function(req, res) {
   }
 });
 
+async function createAptlyEmailDraft(channelId, to, subject, body) {
+  const res = await fetch('https://core-api.getaptly.com/api/email/create-draft', {
+    method: 'POST',
+    headers: { 'x-token': APTLY_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: 'op8mkGcfjAoka2GJS',
+      channelId: channelId,
+      to: [{ value: to.email, label: to.name }],
+      subject: subject,
+      body: body
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error('Aptly draft creation failed: ' + res.status + ' ' + JSON.stringify(data));
+  return data;
+}
+
+app.post('/api/owners/weekly-batch-draft', hubAuth, async function(req, res) {
+  try {
+    const skipContactIds = ['4195', '4806', '4382', '5949'];
+    const APTLY_INFO_CHANNEL_ID = '6c8783b9-3fb4-5911-9468-a7c6b91ee25e';
+    const testContactId = req.query.testContactId || null;
+    const summaryRes = await fetch('http://localhost:' + PORT + '/api/owners/vacant-summary').then(r => r.json());
+    const groups = summaryRes.groups || summaryRes;
+    const [leadsRes, appsRes, listPropRes, rentHistory, listedDateOverrides, vacancyStartOverrides] = await Promise.all([
+      fetch('http://localhost:' + PORT + '/api/aptly/leads-rich').then(r => r.json()),
+      fetch('http://localhost:' + PORT + '/api/aptly/applications-rich').then(r => r.json()),
+      fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich').then(r => r.json()),
+      readRentHistory(),
+      readListedDateOverrides(),
+      readVacancyStartOverrides()
+    ]);
+    const allLeads = Array.isArray(leadsRes) ? leadsRes : (leadsRes.leads || []);
+    const allApplications = Array.isArray(appsRes) ? appsRes : (appsRes.applications || []);
+    const listedDateMap = buildListedDateMap(listPropRes.cards || []);
+    const results = { drafted: [], skipped: [], failed: [], testMode: !!testContactId };
+    const contactIdsToProcess = testContactId ? [testContactId] : Object.keys(groups);
+    for (const contactId of contactIdsToProcess) {
+      if (skipContactIds.includes(contactId)) continue;
+      const group = groups[contactId];
+      if (!group) {
+        results.skipped.push({ contactId: contactId, reason: 'contactId not found in vacant-summary groups' });
+        continue;
+      }
+      if (!group.ownerEmail) {
+        results.skipped.push({ contactId: contactId, ownerName: group.ownerName, reason: 'no email on file' });
+        continue;
+      }
+      const reportDataList = group.properties.map(function(u) {
+        return { unit: u, data: buildPropertyReportData(u, allLeads, allApplications, listedDateMap, rentHistory, listedDateOverrides, vacancyStartOverrides) };
+      }).filter(function(x) { return x.data; });
+      if (reportDataList.length === 0) continue;
+      const html = renderOwnerEmail(reportDataList);
+      const subject = reportDataList.length === 1
+        ? 'Your Weekly Vacancy Update \u2013 ' + (reportDataList[0].unit.street || '')
+        : 'Your Properties';
+      try {
+        const draftResult = await createAptlyEmailDraft(
+          APTLY_INFO_CHANNEL_ID,
+          { email: group.ownerEmail, name: group.ownerName },
+          subject,
+          html
+        );
+        results.drafted.push({ contactId: contactId, ownerName: group.ownerName, propertyCount: reportDataList.length, streamId: draftResult.streamId, draftUuid: draftResult.draftUuid });
+      } catch (draftErr) {
+        results.failed.push({ contactId: contactId, ownerName: group.ownerName, error: draftErr.message });
+      }
+    }
+    res.json(results);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/aptly/leads-rich', async function(req, res) {
   try {
     if (_leadsRichCache && (Date.now() - _leadsRichCacheTime) < LEADS_RICH_CACHE_MS) {
