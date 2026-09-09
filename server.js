@@ -569,6 +569,43 @@ let _leadsRichCache = null;
 let _leadsRichCacheTime = 0;
 const LEADS_RICH_CACHE_MS = 15 * 60 * 1000;
 
+app.get('/api/owners/batch-export', hubAuth, async function(req, res) {
+  try {
+    const skipContactIds = ['4195', '4806', '4382', '5949'];
+    const summaryRes = await fetch('http://localhost:' + PORT + '/api/owners/vacant-summary').then(r => r.json());
+    const groups = summaryRes.groups || summaryRes;
+    const [leadsRes, appsRes, listPropRes, rentHistory] = await Promise.all([
+      fetch('http://localhost:' + PORT + '/api/aptly/leads-rich').then(r => r.json()),
+      fetch('http://localhost:' + PORT + '/api/aptly/applications-rich').then(r => r.json()),
+      fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich').then(r => r.json()),
+      readRentHistory()
+    ]);
+    const allLeads = Array.isArray(leadsRes) ? leadsRes : (leadsRes.leads || []);
+    const allApplications = Array.isArray(appsRes) ? appsRes : (appsRes.applications || []);
+    const listedDateMap = buildListedDateMap(listPropRes.cards || []);
+
+    const output = {};
+    for (const contactId of Object.keys(groups)) {
+      if (skipContactIds.includes(contactId)) continue;
+      const group = groups[contactId];
+      const reportDataList = group.properties.map(function(u) {
+        return { unit: u, data: buildPropertyReportData(u, allLeads, allApplications, listedDateMap, rentHistory) };
+      }).filter(function(x) { return x.data; });
+      if (reportDataList.length === 0) continue;
+      const html = renderOwnerEmail(reportDataList);
+      output[contactId] = {
+        ownerName: group.ownerName,
+        ownerEmail: group.ownerEmail,
+        propertyCount: group.properties.length,
+        html: html
+      };
+    }
+    res.json(output);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/aptly/leads-rich', async function(req, res) {
   try {
     if (_leadsRichCache && (Date.now() - _leadsRichCacheTime) < LEADS_RICH_CACHE_MS) {
