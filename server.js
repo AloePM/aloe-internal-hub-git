@@ -776,6 +776,21 @@ app.post('/api/owners/weekly-batch-draft', hubAuth, async function(req, res) {
         results.failed.push({ contactId: contactId, ownerName: group.ownerName, error: draftErr.message });
       }
     }
+    if (!results.testMode) {
+      let slackText = ':email: *Weekly owner vacancy drafts* \u2014 ' + results.drafted.length + ' drafted, ' + results.skipped.length + ' skipped, ' + results.failed.length + ' failed.';
+      if (results.failed.length > 0) {
+        slackText += '\n:warning: Failed: ' + results.failed.map(function(f) { return f.ownerName + ' (' + f.error + ')'; }).join(', ');
+      }
+      try {
+        await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: 'C06CQ5NUKK3', text: slackText })
+        });
+      } catch (slackErr) {
+        console.error('Slack notification failed:', slackErr.message);
+      }
+    }
     res.json(results);
   } catch(e) {
     res.status(500).json({ error: e.message });
