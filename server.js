@@ -2675,6 +2675,18 @@ app.get('/api/settlement-alert/test', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+app.get('/api/settlement-alert/test', async (req, res) => {
+  try {
+    await runLatePaymentSettlementAlert();
+    res.json({ ok: true, message: 'Settlement alert ran — check your Slack DM' });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/settlement-alert/run', async (req, res) => {
+  // [[ full route code from my last message, Canvas step removed ]]
+});
 
 // ── End Late Payment Settlement Alert ──────────────────────────────────────
 // ── Daily Bill Sync ────────────────────────────────────────────────────────────────────────────
