@@ -2685,9 +2685,9 @@ app.get('/api/settlement-alert/test', async (req, res) => {
 });
 app.post('/api/settlement-alert/run', async (req, res) => {
   const debug = req.query.debug === 'true';
-  const now = new Date();
-  const y = new Date(now.getTime() - 7*60*60*1000 - 24*60*60*1000);
-  const yStr = y.toISOString().slice(0, 10);
+    const now = new Date();
+  const yStr = req.query.date || new Date(now.getTime() - 7*60*60*1000 - 24*60*60*1000).toISOString().slice(0, 10);
+  const y = new Date(yStr + 'T00:00:00Z');
   const ALOE_FEE_ACCOUNT_IDS = new Set([93,94,40,148,58,14,51,90,136,57,12,62,56,145,19]);
   const PAY_TYPE = {1:'ACH',2:'Credit Card',3:'Check',4:'Money Order',5:'Cash',6:'Other',7:'Cash Pay',8:"Cashier's Check"};
   const results = { late: [], moveIn: [], manual: [], current: [], errors: [] };
