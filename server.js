@@ -231,22 +231,38 @@ async function writeWOSyncHistory(dateStr, data) {
 
 const _rentHistoryFile = 'rent-history.json';
 let _rentHistoryCache = null;
+const _listedDateOverridesFile = 'listed-date-overrides.json';
+let _listedDateOverridesCache = null;
+
 async function readListedDateOverrides() {
+  if (_listedDateOverridesCache) return _listedDateOverridesCache;
   try {
-    const file = storageBucket.file('listed-date-overrides.json');
-    const [exists] = await file.exists();
-    if (!exists) return {};
-    const [contents] = await file.download();
-    return JSON.parse(contents.toString());
+    const token = await getGCSToken();
+    const r = await fetch(`https://storage.googleapis.com/storage/v1/b/${_vendorBucket}/o/${_listedDateOverridesFile}?alt=media`, {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!r.ok) {
+      if (r.status === 404) { _listedDateOverridesCache = {}; return _listedDateOverridesCache; }
+      throw new Error('GCS read ' + r.status);
+    }
+    _listedDateOverridesCache = await r.json();
+    return _listedDateOverridesCache;
   } catch(e) {
-    console.error('readListedDateOverrides error:', e.message);
+    console.error('Listed date overrides read failed:', e.message);
     return {};
   }
 }
 
 async function writeListedDateOverrides(data) {
-  const file = storageBucket.file('listed-date-overrides.json');
-  await file.save(JSON.stringify(data, null, 2), { contentType: 'application/json' });
+  _listedDateOverridesCache = data;
+  const token = await getGCSToken();
+  const body = JSON.stringify(data, null, 2);
+  const r = await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${_vendorBucket}/o?uploadType=media&name=${_listedDateOverridesFile}`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body
+  });
+  if (!r.ok) throw new Error('GCS write ' + r.status + ': ' + await r.text());
 }
 
 async function readRentHistory() {
