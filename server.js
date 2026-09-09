@@ -565,15 +565,22 @@ app.post('/api/rent-history/backfill', hubAuth, async function(req, res) {
     res.status(500).json({ error: e.message });
   }
 });
+let _leadsRichCache = null;
+let _leadsRichCacheTime = 0;
+const LEADS_RICH_CACHE_MS = 15 * 60 * 1000;
+
 app.get('/api/aptly/leads-rich', async function(req, res) {
   try {
+    if (_leadsRichCache && (Date.now() - _leadsRichCacheTime) < LEADS_RICH_CACHE_MS) {
+      return res.json(_leadsRichCache);
+    }
     const token = process.env.APTLY_UNITS_TOKEN || process.env.APTLY_TOKEN || '';
     const schemaRes = await fetch('https://core-api.getaptly.com/api/schema/4EMDSYKirhQaNdQKz', { headers: { 'x-token': token } });
     const schema = await schemaRes.json();
     const schemaMap = {};
     if (Array.isArray(schema)) schema.forEach(function(f) { schemaMap[f.key] = f.label; });
     let allLeads = [], page = 0;
-    while (page < 5) {
+    while (page < 80) {
       const r = await fetch(`https://core-api.getaptly.com/api/board/4EMDSYKirhQaNdQKz?page=${page}&pageSize=100&includeArchived=true`, { headers: { 'x-token': token } });
       if (!r.ok) break;
       const data = await r.json();
@@ -622,7 +629,9 @@ app.get('/api/aptly/leads-rich', async function(req, res) {
         }) : [],
       };
     });
-    res.json({ leads: mapped, total: mapped.length });
+    _leadsRichCache = { leads: mapped, total: mapped.length };
+    _leadsRichCacheTime = Date.now();
+    res.json(_leadsRichCache);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.get('/api/aptly/units', async function(req, res) {
