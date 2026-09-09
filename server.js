@@ -2708,8 +2708,7 @@ app.post('/api/settlement-alert/run', async (req, res) => {
       if (rows.length < 200) break;
       page++;
     }
-    const settled = allRows.filter(p => p.isDepositedSettled === true || p.isDepositedSettled === 1);
-
+    const settled = allRows.filter(p => p.isDepositedSettled === true || p.isDepositedSettled === 1 || p.isDepositedSettled === '1');
     for (const p of settled) {
       try {
         const leaseResp = await fetch(`${RENTVINE_BASE}/reports/lease?exportTypeID=1&json=${encodeURIComponent(JSON.stringify({ displayColumns: ['leaseID','propertyID','unitName','address','moveInDate'], filters: [{ name:'leaseID', comparator:'equals', value: p.leaseID }] }))}`,
