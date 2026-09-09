@@ -2695,12 +2695,13 @@ app.post('/api/settlement-alert/run', async (req, res) => {
   try {
     const reportBody = { displayColumns: ['datePosted','leaseID','unitName','amount','isDepositedSettled','paymentTypeID','reference'],
       filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: yStr, endDate: yStr }] };
-    let allRows = [], page = 1;
+        let allRows = [], page = 1;
     while (true) {
       const url = `${RENTVINE_BASE}/reports/lease-payments?exportTypeID=1&json=${encodeURIComponent(JSON.stringify(reportBody))}&page=${page}&pageSize=200`;
       const r = await fetch(url, { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
       if (!r.ok) throw new Error(`lease-payments report failed: ${r.status}`);
       const batch = await r.json();
+      if (debug && page === 1) return res.json({ debugRaw: true, date: yStr, requestUrl: url, httpStatus: r.status, rawBatch: batch });
       const rows = (Array.isArray(batch) ? batch : batch.data || []).map(x => x.data || x);
       if (!rows.length) break;
       allRows = allRows.concat(rows);
@@ -2709,7 +2710,7 @@ app.post('/api/settlement-alert/run', async (req, res) => {
     }
     const settled = allRows.filter(p => p.isDepositedSettled === true || p.isDepositedSettled === 1);
     if (debug) return res.json({ debugRaw: true, date: yStr, allRowsCount: allRows.length, sample: allRows.slice(0, 3) });
-    
+
     for (const p of settled) {
       try {
         const leaseResp = await fetch(`${RENTVINE_BASE}/reports/lease?exportTypeID=1&json=${encodeURIComponent(JSON.stringify({ displayColumns: ['leaseID','propertyID','unitName','address','moveInDate'], filters: [{ name:'leaseID', comparator:'equals', value: p.leaseID }] }))}`,
