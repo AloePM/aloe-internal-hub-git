@@ -2768,8 +2768,8 @@ app.post('/api/settlement-alert/run', async (req, res) => {
         } else if (isMoveIn) {
           row.notes = `Move-in: ${moveIn}`;
           results.moveIn.push(row);
-        } else if ([3,4,5,6,7,8].includes(p.paymentTypeID)) {
-          results.manual.push(row);
+        } else if ([3,4,5,6,7,8].includes(parseInt(p.paymentTypeID))) {
+                    results.manual.push(row);
         } else {
           results.current.push(row);
         }
