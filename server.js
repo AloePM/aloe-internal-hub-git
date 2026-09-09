@@ -2702,8 +2702,8 @@ app.post('/api/settlement-alert/run', async (req, res) => {
       if (!r.ok) throw new Error(`lease-payments report failed: ${r.status}`);
       const batch = await r.json();
       if (debug && page === 1) return res.json({ debugRaw: true, date: yStr, requestUrl: url, httpStatus: r.status, rawBatch: batch });
-      const rows = (Array.isArray(batch) ? batch : batch.data || []).map(x => x.data || x);
-      if (!rows.length) break;
+      const rows = (Array.isArray(batch) ? batch : batch.rows || batch.data || []).map(x => x.data || x);
+            if (!rows.length) break;
       allRows = allRows.concat(rows);
       if (rows.length < 200) break;
       page++;
