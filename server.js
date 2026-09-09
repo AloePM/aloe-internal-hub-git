@@ -2709,7 +2709,6 @@ app.post('/api/settlement-alert/run', async (req, res) => {
       page++;
     }
     const settled = allRows.filter(p => p.isDepositedSettled === true || p.isDepositedSettled === 1);
-    if (debug) return res.json({ debugRaw: true, date: yStr, allRowsCount: allRows.length, sample: allRows.slice(0, 3) });
 
     for (const p of settled) {
       try {
