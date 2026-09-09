@@ -2700,8 +2700,7 @@ app.post('/api/settlement-alert/run', async (req, res) => {
       const url = `${RENTVINE_BASE}/reports/lease-payments?exportTypeID=1&json=${encodeURIComponent(JSON.stringify(reportBody))}&page=${page}&pageSize=200`;
       const r = await fetch(url, { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
       if (!r.ok) throw new Error(`lease-payments report failed: ${r.status}`);
-      const batch = await r.json();
-      if (debug && page === 1) return res.json({ debugRaw: true, date: yStr, requestUrl: url, httpStatus: r.status, rawBatch: batch });
+            const batch = await r.json();
       const rows = (Array.isArray(batch) ? batch : batch.rows || batch.data || []).map(x => x.data || x);
             if (!rows.length) break;
       allRows = allRows.concat(rows);
