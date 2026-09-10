@@ -6754,6 +6754,21 @@ app.post('/api/five-day-notice/run', async (req, res) => {
     const aptlyData = await aptlyResp.json();
     const allCards = aptlyData.data || aptlyData.items || [];
     const delinquent = allCards.filter(c => c.stage === DELINQUENT_STAGE);
+
+    const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const addrToLease = {};
+    let leasePage = 1;
+    while (true) {
+      const lUrl = `${RENTVINE_BASE}/reports/lease?exportTypeID=1&json=${encodeURIComponent(JSON.stringify({ displayColumns: ['leaseID','unitAddress','primaryLeaseStatusID'], filters: [{ name:'primaryLeaseStatusID', comparator:'equals', value:'2' }] }))}&page=${leasePage}&pageSize=200`;
+      const lResp = await fetch(lUrl, { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
+      const lData = await lResp.json();
+      const lRows = (Array.isArray(lData) ? lData : lData.rows || lData.data || []).map(x => x.data || x);
+      if (!lRows.length) break;
+      lRows.forEach(l => { if (l.unitAddress) addrToLease[norm(l.unitAddress)] = l.leaseID; });
+      if (lRows.length < 200) break;
+      leasePage++;
+    }
+
     if (dryRun) {
       const stageCounts = {};
       const everSeenStages = new Set();
@@ -6761,14 +6776,14 @@ app.post('/api/five-day-notice/run', async (req, res) => {
         stageCounts[c.stage || '(no stage field)'] = (stageCounts[c.stage || '(no stage field)'] || 0) + 1;
         (c.stageHistory || []).forEach(h => everSeenStages.add(h.stage));
       });
-      results.debug = { totalCardsOnBoard: allCards.length, stageCounts, everSeenStages: [...everSeenStages], sampleCard: allCards[0] || null };
+      results.debug = { totalCardsOnBoard: allCards.length, stageCounts, everSeenStages: [...everSeenStages], activeLeaseCount: Object.keys(addrToLease).length };
     }
 
     for (const card of delinquent) {
-      const leaseID = card.leaseID || card.fields?.leaseID;
-      const tenantName = card.tenantName || card.fields?.tenantName || card.name;
-      const address = card.address || card.fields?.address || '';
-      if (!leaseID) { results.errors.push({ address, tenantName, reason: 'No leaseID on card' }); continue; }
+      const address = (card.unit && card.unit[0] && card.unit[0].name) || card.name || '';
+      const tenantName = (card.relatedContacts && card.relatedContacts[0] && card.relatedContacts[0].name) || 'Unknown tenant';
+      const leaseID = addrToLease[norm(address)];
+      if (!leaseID) { results.errors.push({ address, tenantName, reason: 'No matching active lease found for this address' }); continue; }
 
       try {
         const chkResp = await fetch(
