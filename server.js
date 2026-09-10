@@ -6737,6 +6737,95 @@ function filterTools(q) {
 </html>`);
 });
 // Vendor application form submission
+app.post('/api/five-day-notice/run', async (req, res) => {
+  const dryRun = req.query.dryRun === 'true';
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const FIVE_DAY_CHARGE_ACCT_ID = '57';
+  const APTLY_AR_BOARD_UUID = 'wk228jktWTWibWNhT';
+  const DELINQUENT_STAGE = 'Delinquent';
+  const results = { charged: [], skipped: [], errors: [] };
+
+  try {
+    const aptlyResp = await fetch(
+      `https://core-api.getaptly.com/api/board/${APTLY_AR_BOARD_UUID}?page=0&pageSize=500`,
+      { headers: { 'x-token': APTLY_TOKEN } }
+    );
+    if (!aptlyResp.ok) throw new Error(`Aptly board fetch failed: ${aptlyResp.status}`);
+    const aptlyData = await aptlyResp.json();
+    const allCards = aptlyData.data || aptlyData.items || [];
+    const delinquent = allCards.filter(c => c.stage === DELINQUENT_STAGE);
+
+    for (const card of delinquent) {
+      const leaseID = card.leaseID || card.fields?.leaseID;
+      const tenantName = card.tenantName || card.fields?.tenantName || card.name;
+      const address = card.address || card.fields?.address || '';
+      if (!leaseID) { results.errors.push({ address, tenantName, reason: 'No leaseID on card' }); continue; }
+
+      try {
+        const chkResp = await fetch(
+          `${RENTVINE_BASE}/accounting/leases/${leaseID}/charges?startDate=${todayStr}&endDate=${todayStr}`,
+          { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } }
+        );
+        const chkData = await chkResp.json();
+        const existing = Array.isArray(chkData) ? chkData : (chkData.rows || chkData.data || []);
+        const already = existing.some(c =>
+          String(c.chargeAccountID) === FIVE_DAY_CHARGE_ACCT_ID ||
+          (c.description || '').toLowerCase().includes('5 day') ||
+          (c.description || '').toLowerCase().includes('notice fee')
+        );
+        if (already) { results.skipped.push({ address, tenantName, leaseID, reason: 'Already charged today' }); continue; }
+      } catch (e) {
+        console.warn(`[5-day] Dedup check failed for lease ${leaseID}: ${e.message} \u2014 proceeding`);
+      }
+
+      if (dryRun) { results.charged.push({ address, tenantName, leaseID, dryRun: true }); continue; }
+
+      try {
+        const r = await fetch(`${RENTVINE_BASE}/accounting/leases/${leaseID}/charges`, {
+          method: 'POST',
+          headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chargeAccountID: FIVE_DAY_CHARGE_ACCT_ID, amount: '75', description: '5 Day Notice Fee', dueDate: todayStr })
+        });
+        if (!r.ok) throw new Error(`Rentvine charge failed: ${r.status}`);
+        if (card.id) {
+          await fetch(`https://core-api.getaptly.com/api/board/${APTLY_AR_BOARD_UUID}/${card.id}/comment`, {
+            method: 'POST',
+            headers: { 'x-token': APTLY_TOKEN, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: `\u2705 $75 five-day notice charge posted to Rentvine on ${todayStr}.` })
+          }).catch(e => console.warn(`[5-day] Comment failed for card ${card.id}: ${e.message}`));
+        }
+        results.charged.push({ address, tenantName, leaseID });
+      } catch (e) {
+        results.errors.push({ address, tenantName, leaseID, reason: e.message });
+      }
+    }
+
+    const summary = dryRun
+      ? `\ud83d\udd0d *5-Day Notice Dry Run (${todayStr})*\nWould charge ${results.charged.length} lease(s), skip ${results.skipped.length} (already charged).`
+      : `${results.errors.length ? '\u26a0\ufe0f' : '\u2705'} *5-Day Notice Charges \u2014 ${todayStr}*\nPosted: ${results.charged.length} | Skipped (already charged): ${results.skipped.length} | Errors: ${results.errors.length}`;
+    const detail = [
+      results.charged.length ? results.charged.map(r => `\u2022 ${r.tenantName} \u2014 ${r.address}`).join('\n') : '',
+      results.errors.length ? `\n*Errors:*\n` + results.errors.map(r => `\u2022 ${r.tenantName || r.address}: ${r.reason}`).join('\n') : ''
+    ].filter(Boolean).join('\n');
+
+    await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: 'C0BCCV790VC', text: `${summary}\n${detail}` })
+    }).catch(() => {});
+
+    return res.json({ success: true, dryRun, date: todayStr, ...results });
+  } catch (err) {
+    console.error('[5-day] Fatal:', err.message);
+    await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: 'C0BCCV790VC', text: `\u274c *5-Day Notice job failed (${todayStr}):* ${err.message}` })
+    }).catch(() => {});
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => console.log('Aloe Assistant running on port ' + PORT));
 
 // Vendor Duplicate Bill Check
