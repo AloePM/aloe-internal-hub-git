@@ -2716,11 +2716,11 @@ app.post('/api/settlement-alert/run', async (req, res) => {
         const leaseData = (await leaseResp.json());
         const lease = (Array.isArray(leaseData) ? leaseData : leaseData.data || []).map(x => x.data || x)[0] || {};
 
-        const tenResp = await fetch(`${RENTVINE_BASE}/reports/lease-tenants?exportTypeID=1&json=${encodeURIComponent(JSON.stringify({ displayColumns:['leaseID','tenantName'], filters:[{name:'leaseID',comparator:'equals',value:p.leaseID}] }))}`,
+        const tenResp = await fetch(`${RENTVINE_BASE}/reports/lease-tenants?exportTypeID=1&json=${encodeURIComponent(JSON.stringify({ displayColumns:['leaseID','tenants'], filters:[{name:'leaseID',comparator:'equals',value:p.leaseID}] }))}`,
           { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
         const tenData = await tenResp.json();
-        const tenants = (Array.isArray(tenData) ? tenData : tenData.data || []).map(x => x.data || x);
-        const tenantName = tenants.map(t => t.tenantName).filter(Boolean).join(', ') || 'Unknown tenant';
+        const tenantRows = (Array.isArray(tenData) ? tenData : tenData.rows || tenData.data || []).map(x => x.data || x);
+        const tenantName = (tenantRows[0] && tenantRows[0].tenants) || 'Unknown tenant';
 
         const chgResp = await fetch(`${RENTVINE_BASE}/reports/lease-charges?exportTypeID=1&json=${encodeURIComponent(JSON.stringify({ displayColumns:['leaseID','dueDate','description','amount','isPaid'], filters:[{name:'leaseID',comparator:'equals',value:p.leaseID},{name:'isPaid',comparator:'equals',value:false}] }))}`,
           { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
