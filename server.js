@@ -2746,12 +2746,19 @@ app.post('/api/settlement-alert/run', async (req, res) => {
           } else {
             const feeController = new AbortController();
             const feeTimeout = setTimeout(() => feeController.abort(), 5000);
-            const feeResp = await fetch(`${RENTVINE_BASE}/managementfeesettings/${prop.managementFeeSettingID}`,
+            const feeResp = await fetch(`${RENTVINE_BASE}/settings/management-fees/${prop.managementFeeSettingID}`,
               { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT }, signal: feeController.signal });
             clearTimeout(feeTimeout);
             if (feeResp.ok) {
-              const fee = await feeResp.json();
-              mgmtFee = fee.feeType === 'percentage' ? (parseFloat(p.amount) * (fee.feeValue/100)).toFixed(2) : fee.feeValue;
+              const feeData = await feeResp.json();
+              const fee = feeData.managementFeeSetting || feeData;
+              const pct = parseFloat(fee.receivedPaymentPercent);
+              if (!isNaN(pct) && pct > 0) {
+                const min = parseFloat(fee.receivedPaymentMinimum) || 0;
+                mgmtFee = Math.max(parseFloat(p.amount) * (pct / 100), min).toFixed(2);
+              } else {
+                mgmtFee = 'N/A (flat monthly fee)';
+              }
             } else {
               results.errors.push(`Mgmt fee lookup failed for setting ${prop.managementFeeSettingID}: HTTP ${feeResp.status}`);
             }
