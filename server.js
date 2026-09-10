@@ -6471,7 +6471,7 @@ async function getSchedulerJobStatus(jobId) {
     liveTimeZone: job.timeZone,
     lastAttemptTime: job.lastAttemptTime || null,
     scheduleTime: job.scheduleTime || null,
-    lastAttemptStatus: job.status && Object.keys(job.status).length === 0 ? 'OK' : (job.status?.code ? `ERROR ${job.status.code}` : null)
+    lastAttemptStatus: !job.lastAttemptTime ? 'Never run yet' : (job.status && Object.keys(job.status).length === 0 ? 'OK' : (job.status?.code && job.status.code !== -1 ? `ERROR ${job.status.code}` : 'OK'))
   };
 }
 
