@@ -6754,6 +6754,11 @@ app.post('/api/five-day-notice/run', async (req, res) => {
     const aptlyData = await aptlyResp.json();
     const allCards = aptlyData.data || aptlyData.items || [];
     const delinquent = allCards.filter(c => c.stage === DELINQUENT_STAGE);
+    if (dryRun) {
+      const stageCounts = {};
+      allCards.forEach(c => { stageCounts[c.stage || '(no stage field)'] = (stageCounts[c.stage || '(no stage field)'] || 0) + 1; });
+      results.debug = { totalCardsOnBoard: allCards.length, stageCounts, sampleCard: allCards[0] || null };
+    }
 
     for (const card of delinquent) {
       const leaseID = card.leaseID || card.fields?.leaseID;
