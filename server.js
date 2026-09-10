@@ -2737,14 +2737,26 @@ app.post('/api/settlement-alert/run', async (req, res) => {
           const propResp = await fetch(`${RENTVINE_BASE}/reports/property?exportTypeID=1&json=${encodeURIComponent(JSON.stringify({ displayColumns:['propertyID','managementFeeSettingID'], filters:[{name:'propertyID',comparator:'equals',value:lease.propertyID}] }))}`,
             { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
           const propData = await propResp.json();
-          const prop = (Array.isArray(propData) ? propData : propData.data || []).map(x => x.data || x)[0];
-          if (prop?.managementFeeSettingID) {
+          const propRows = (Array.isArray(propData) ? propData : propData.rows || propData.data || []).map(x => x.data || x);
+          const prop = propRows[0];
+          if (!prop) {
+            results.errors.push(`No property row found for propertyID ${lease.propertyID}`);
+          } else if (!prop.managementFeeSettingID) {
+            results.errors.push(`Property ${lease.propertyID} has no managementFeeSettingID (raw: ${JSON.stringify(prop)})`);
+          } else {
+            const feeController = new AbortController();
+            const feeTimeout = setTimeout(() => feeController.abort(), 5000);
             const feeResp = await fetch(`${RENTVINE_BASE}/managementfeesettings/${prop.managementFeeSettingID}`,
-              { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
-            const fee = await feeResp.json();
-            mgmtFee = fee.feeType === 'percentage' ? (parseFloat(p.amount) * (fee.feeValue/100)).toFixed(2) : fee.feeValue;
+              { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT }, signal: feeController.signal });
+            clearTimeout(feeTimeout);
+            if (feeResp.ok) {
+              const fee = await feeResp.json();
+              mgmtFee = fee.feeType === 'percentage' ? (parseFloat(p.amount) * (fee.feeValue/100)).toFixed(2) : fee.feeValue;
+            } else {
+              results.errors.push(`Mgmt fee lookup failed for setting ${prop.managementFeeSettingID}: HTTP ${feeResp.status}`);
+            }
           }
-        } catch (e) { /* leave as needs manual check */ }
+        } catch (e) { results.errors.push(`Mgmt fee lookup error for property ${lease.propertyID}: ${e.message}`); }
 
         let billsHeld = 0, billNotes = [];
         try {
