@@ -2788,7 +2788,7 @@ app.post('/api/settlement-alert/run', async (req, res) => {
           row.notes = `Move-in: ${moveIn}`;
           results.moveIn.push(row);
         } else if ([3,4,5,6,7,8].includes(parseInt(p.paymentTypeID))) {
-          gcloud iam service-accounts list --project=property-agent-496300 --filter="displayName:aloe-internal-hub-git OR email:*compute@developer.gserviceaccount.com" --format="value(email)"          results.manual.push(row);
+          results.manual.push(row);
         } else {
           results.current.push(row);
         }
