@@ -26,11 +26,19 @@
   .job-what { color: #777; font-size: 13px; margin-top: 2px; }
   .mono { font-family: ui-monospace, monospace; font-size: 13px; color: #555; }
   .loading { padding: 40px; text-align: center; color: #888; }
+  .filter-btn { background: white; border: 1px solid #ddd; padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; margin-right: 6px; }
+  .filter-btn.active { background: #1a1a1a; color: white; border-color: #1a1a1a; }
+  .agent-tag { display: inline-block; background: #f0e8fc; color: #6b3fa0; font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-left: 6px; }
 </style>
 </head>
 <body>
   <h1>Scheduled Jobs</h1>
   <p class="subtitle">Everything that's supposed to run automatically, and whether it actually did.</p>
+  <div style="margin-bottom:16px;">
+    <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">All</button>
+    <button class="filter-btn" data-filter="ai_agent" onclick="setFilter('ai_agent')">AI Agents</button>
+    <button class="filter-btn" data-filter="server_job" onclick="setFilter('server_job')">Server Jobs</button>
+  </div>
   <div id="content" class="loading">Loading...</div>
 
 <script>
@@ -55,10 +63,24 @@ function fmtTime(iso) {
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Phoenix' }) + ' AZ';
 }
 
+let allJobs = [];
+let currentFilter = 'all';
+
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === f));
+  render();
+}
+
 async function load() {
   const res = await fetch('/api/jobs');
   const data = await res.json();
-  const jobs = data.jobs;
+  allJobs = data.jobs;
+  render();
+}
+
+function render() {
+  const jobs = currentFilter === 'all' ? allJobs : allJobs.filter(j => j.type === currentFilter);
 
   let ok = 0, warn = 0, error = 0, other = 0;
   jobs.forEach(j => {
@@ -83,7 +105,7 @@ async function load() {
     return `
       <tr>
         <td>
-          <div class="job-name">${j.name}</div>
+          <div class="job-name">${j.name}${j.agent ? `<span class="agent-tag">${j.agent}</span>` : ''}</div>
           <div class="job-what">${j.what || ''}</div>
         </td>
         <td class="mono">${j.schedule || live.liveSchedule || '\u2014'}</td>
