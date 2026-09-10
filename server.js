@@ -13,8 +13,13 @@ import multer from 'multer';
 import { initPlaidRoutes } from './plaid-integration.js';
 import { initCustomFieldUpdateRoutes } from './custom-field-update-route.js';
 import { createShadowClassifier } from './router-classifier.js';
-import { createClient } from '@supabase/supabase-js';
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseHeaders = {
+  apikey: SUPABASE_KEY,
+  Authorization: `Bearer ${SUPABASE_KEY}`,
+  'Content-Type': 'application/json'
+};
 
 const app = express();
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
@@ -6140,23 +6145,25 @@ app.post('/api/agents/log', async (req, res) => {
   if (!ACTIVITY_CATEGORIES.has(category)) {
     return res.status(400).json({ error: `Unknown category "${category}". Must be one of: ${[...ACTIVITY_CATEGORIES].join(', ')}` });
   }
-  const { error } = await supabase.from('agent_activity').insert({
-    agent_id: agentId, category, type, outcome, summary, property, metadata: metadata || {}
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/agent_activity`, {
+    method: 'POST',
+    headers: supabaseHeaders,
+    body: JSON.stringify({ agent_id: agentId, category, type, outcome, summary, property, metadata: metadata || {} })
   });
-  if (error) return res.status(500).json({ error: error.message });
+  if (!r.ok) return res.status(500).json({ error: await r.text() });
   res.json({ ok: true });
 });
 
 app.get('/api/agents/activity', async (req, res) => {
   const { agent, category, outcome, since, limit } = req.query;
-  let query = supabase.from('agent_activity').select('*').order('created_at', { ascending: false }).limit(parseInt(limit) || 50);
-  if (agent) query = query.eq('agent_id', agent);
-  if (category) query = query.eq('category', category);
-  if (outcome) query = query.eq('outcome', outcome);
-  if (since) query = query.gte('created_at', since);
-  const { data, error } = await query;
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  const params = new URLSearchParams({ order: 'created_at.desc', limit: limit || '50' });
+  if (agent) params.set('agent_id', `eq.${agent}`);
+  if (category) params.set('category', `eq.${category}`);
+  if (outcome) params.set('outcome', `eq.${outcome}`);
+  if (since) params.set('created_at', `gte.${since}`);
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/agent_activity?${params}`, { headers: supabaseHeaders });
+  if (!r.ok) return res.status(500).json({ error: await r.text() });
+  res.json(await r.json());
 });
 
 app.post('/api/agents/heartbeat', (req, res) => {
