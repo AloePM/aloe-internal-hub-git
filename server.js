@@ -6758,16 +6758,20 @@ app.post('/api/five-day-notice/run', async (req, res) => {
     const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const addrToLease = {};
     let leasePage = 1;
-    while (true) {
+    let leaseSeenIDs = new Set();
+    while (leasePage <= 20) {
       const lUrl = `${RENTVINE_BASE}/reports/lease?exportTypeID=1&json=${encodeURIComponent(JSON.stringify({ displayColumns: ['leaseID','unitAddress','primaryLeaseStatusID'], filters: [{ name:'primaryLeaseStatusID', comparator:'equals', value:'2' }] }))}&page=${leasePage}&pageSize=200`;
       const lResp = await fetch(lUrl, { headers: { Authorization: `Basic ${RENTVINE_AUTH}`, 'X-Rentvine-Account': RENTVINE_ACCOUNT } });
       const lData = await lResp.json();
       const lRows = (Array.isArray(lData) ? lData : lData.rows || lData.data || []).map(x => x.data || x);
       if (!lRows.length) break;
-      lRows.forEach(l => { if (l.unitAddress) addrToLease[norm(l.unitAddress)] = l.leaseID; });
+      const newIDs = lRows.filter(l => !leaseSeenIDs.has(l.leaseID));
+      if (newIDs.length === 0) { results.errors.push(`Lease pagination stalled - page ${leasePage} returned no new leaseIDs, stopping`); break; }
+      newIDs.forEach(l => { leaseSeenIDs.add(l.leaseID); if (l.unitAddress) addrToLease[norm(l.unitAddress)] = l.leaseID; });
       if (lRows.length < 200) break;
       leasePage++;
     }
+    if (leasePage > 20) results.errors.push('Lease pagination hit the 20-page safety cap - address matching may be incomplete');
 
     if (dryRun) {
       const stageCounts = {};
