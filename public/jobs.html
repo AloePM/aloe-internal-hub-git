@@ -44,9 +44,13 @@
 <script>
 function badgeFor(job) {
   if (job.mechanism !== 'Cloud Scheduler') {
-    if ((job.status || '').startsWith('paused')) return { cls: 'badge-neutral', text: 'Not on Scheduler' };
-    if ((job.status || '').includes('needs investigation')) return { cls: 'badge-warn', text: 'Needs Investigation' };
-    return { cls: 'badge-neutral', text: job.mechanism };
+    const s = job.status || '';
+    if (s.includes('needs investigation')) return { cls: 'badge-warn', text: 'Needs Investigation' };
+    if (s.startsWith('paused')) return { cls: 'badge-neutral', text: 'Paused' };
+    if (s.startsWith('retired')) return { cls: 'badge-neutral', text: 'Retired' };
+    if (s.includes('unverified')) return { cls: 'badge-warn', text: 'Unverified' };
+    if (s.startsWith('live')) return { cls: 'badge-ok', text: 'Live' };
+    return { cls: 'badge-neutral', text: 'Unknown' };
   }
   const live = job.live || {};
   if (live.liveStatusError) return { cls: 'badge-error', text: 'Status check failed' };
