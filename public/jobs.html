@@ -109,7 +109,7 @@ function render() {
           <div class="job-what">${j.what || ''}</div>
         </td>
         <td class="mono">${j.schedule || live.liveSchedule || '\u2014'}</td>
-        <td>${j.mechanism}</td>
+        <td style="font-size:12px;">${j.livesAt || j.mechanism}</td>
         <td><span class="badge ${b.cls}">${b.text}</span></td>
         <td>${fmtTime(live.lastAttemptTime)}</td>
         <td>${j.notifies || '\u2014'}</td>
@@ -122,7 +122,7 @@ function render() {
       <tr>
         <th>Job</th>
         <th>Schedule</th>
-        <th>Runs Via</th>
+        <th>Lives At</th>
         <th>Status</th>
         <th>Last Ran</th>
         <th>Notifies</th>
