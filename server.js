@@ -6452,6 +6452,65 @@ app.get('/dashboard', (req, res) => {
   res.sendFile('/app/public/dashboard.html');
 });
 
+async function getGcpAccessToken() {
+  const r = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token', { headers: { 'Metadata-Flavor': 'Google' } });
+  if (!r.ok) throw new Error(`Metadata token fetch failed: ${r.status}`);
+  const data = await r.json();
+  return data.access_token;
+}
+
+async function getSchedulerJobStatus(jobId) {
+  const token = await getGcpAccessToken();
+  const url = `https://cloudscheduler.googleapis.com/v1/projects/property-agent-496300/locations/us-west4/jobs/${jobId}`;
+  const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) return { liveStatusError: `HTTP ${r.status}` };
+  const job = await r.json();
+  return {
+    liveState: job.state,
+    liveSchedule: job.schedule,
+    liveTimeZone: job.timeZone,
+    lastAttemptTime: job.lastAttemptTime || null,
+    scheduleTime: job.scheduleTime || null,
+    lastAttemptStatus: job.status && Object.keys(job.status).length === 0 ? 'OK' : (job.status?.code ? `ERROR ${job.status.code}` : null)
+  };
+}
+
+app.get('/api/jobs', async (req, res) => {
+  try {
+    const file = storage.bucket(BUCKET).file('jobs.json');
+    const [contents] = await file.download();
+    const data = JSON.parse(contents.toString());
+
+    const enriched = await Promise.all(data.jobs.map(async (job) => {
+      if (job.mechanism === 'Cloud Scheduler') {
+        try {
+          const live = await getSchedulerJobStatus(job.id);
+          return { ...job, live };
+        } catch (e) {
+          return { ...job, live: { liveStatusError: e.message } };
+        }
+      }
+      return job;
+    }));
+
+    res.json({ lastUpdated: data.lastUpdated, jobs: enriched });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/jobs', async (req, res) => {
+  try {
+    const file = storage.bucket(BUCKET).file('jobs.json');
+    const payload = JSON.stringify({ lastUpdated: new Date().toISOString().slice(0,10), jobs: req.body.jobs }, null, 2);
+    await file.save(payload, { contentType: 'application/json' });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 app.get('*', function(req, res) {
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -6851,64 +6910,6 @@ app.post('/api/five-day-notice/run', async (req, res) => {
       body: JSON.stringify({ channel: 'C0BCCV790VC', text: `\u274c *5-Day Notice job failed (${todayStr}):* ${err.message}` })
     }).catch(() => {});
     return res.status(500).json({ error: err.message });
-  }
-});
-
-async function getGcpAccessToken() {
-  const r = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token', { headers: { 'Metadata-Flavor': 'Google' } });
-  if (!r.ok) throw new Error(`Metadata token fetch failed: ${r.status}`);
-  const data = await r.json();
-  return data.access_token;
-}
-
-async function getSchedulerJobStatus(jobId) {
-  const token = await getGcpAccessToken();
-  const url = `https://cloudscheduler.googleapis.com/v1/projects/property-agent-496300/locations/us-west4/jobs/${jobId}`;
-  const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!r.ok) return { liveStatusError: `HTTP ${r.status}` };
-  const job = await r.json();
-  return {
-    liveState: job.state,
-    liveSchedule: job.schedule,
-    liveTimeZone: job.timeZone,
-    lastAttemptTime: job.lastAttemptTime || null,
-    scheduleTime: job.scheduleTime || null,
-    lastAttemptStatus: job.status && Object.keys(job.status).length === 0 ? 'OK' : (job.status?.code ? `ERROR ${job.status.code}` : null)
-  };
-}
-
-app.get('/api/jobs', async (req, res) => {
-  try {
-    const file = storage.bucket(BUCKET).file('jobs.json');
-    const [contents] = await file.download();
-    const data = JSON.parse(contents.toString());
-
-    const enriched = await Promise.all(data.jobs.map(async (job) => {
-      if (job.mechanism === 'Cloud Scheduler') {
-        try {
-          const live = await getSchedulerJobStatus(job.id);
-          return { ...job, live };
-        } catch (e) {
-          return { ...job, live: { liveStatusError: e.message } };
-        }
-      }
-      return job;
-    }));
-
-    res.json({ lastUpdated: data.lastUpdated, jobs: enriched });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.post('/api/jobs', async (req, res) => {
-  try {
-    const file = storage.bucket(BUCKET).file('jobs.json');
-    const payload = JSON.stringify({ lastUpdated: new Date().toISOString().slice(0,10), jobs: req.body.jobs }, null, 2);
-    await file.save(payload, { contentType: 'application/json' });
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
   }
 });
 
