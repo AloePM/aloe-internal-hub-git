@@ -13,6 +13,8 @@ import multer from 'multer';
 import { initPlaidRoutes } from './plaid-integration.js';
 import { initCustomFieldUpdateRoutes } from './custom-field-update-route.js';
 import { createShadowClassifier } from './router-classifier.js';
+import { createClient } from '@supabase/supabase-js';
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 const app = express();
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
@@ -6121,24 +6123,40 @@ app.delete('/api/agents/knowledge/:scope', async (req, res) => {
   }
 });
 
-// Activity log
-let agentActivity = [];
+// Activity log — Supabase-backed
+const ACTIVITY_CATEGORIES = new Set([
+  'HOA Violation', 'HOA Registration', 'HOA Intake Review',
+  'Work Order Created', 'Assign Work Order', 'Work Order Status Update',
+  'Duplicate Flagged', 'Photo Request', 'Human Review Needed'
+]);
 
-app.post('/api/agents/log', (req, res) => {
+app.post('/api/agents/log', async (req, res) => {
   const key = req.headers['x-agent-key'];
   if (key !== 'aloe-internal') return res.status(401).json({ error: 'unauthorized' });
-  const entry = { ...req.body, timestamp: new Date().toISOString() };
-  agentActivity.unshift(entry);
-  if (agentActivity.length > 500) agentActivity = agentActivity.slice(0, 500);
+  const { agentId, category, type, outcome, summary, property, metadata } = req.body;
+  if (!agentId || !category || !type || !outcome || !summary) {
+    return res.status(400).json({ error: 'agentId, category, type, outcome, summary are required' });
+  }
+  if (!ACTIVITY_CATEGORIES.has(category)) {
+    return res.status(400).json({ error: `Unknown category "${category}". Must be one of: ${[...ACTIVITY_CATEGORIES].join(', ')}` });
+  }
+  const { error } = await supabase.from('agent_activity').insert({
+    agent_id: agentId, category, type, outcome, summary, property, metadata: metadata || {}
+  });
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });
 
-app.get('/api/agents/activity', (req, res) => {
-  const agent = req.query.agent;
-  const limit = parseInt(req.query.limit) || 50;
-  let results = agentActivity;
-  if (agent) results = results.filter(e => e.agentId === agent);
-  res.json(results.slice(0, limit));
+app.get('/api/agents/activity', async (req, res) => {
+  const { agent, category, outcome, since, limit } = req.query;
+  let query = supabase.from('agent_activity').select('*').order('created_at', { ascending: false }).limit(parseInt(limit) || 50);
+  if (agent) query = query.eq('agent_id', agent);
+  if (category) query = query.eq('category', category);
+  if (outcome) query = query.eq('outcome', outcome);
+  if (since) query = query.gte('created_at', since);
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 });
 
 app.post('/api/agents/heartbeat', (req, res) => {
