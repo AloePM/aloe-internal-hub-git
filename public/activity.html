@@ -1,5 +1,140 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Activity — Aloe PM</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#1a2332;min-height:100vh;display:flex}.sidebar{width:220px;min-height:100vh;background:#F8FAFA;border-right:1px solid #E8EEEE;display:flex;flex-direction:column;padding:20px 0;flex-shrink:0}.sidebar-logo{padding:0 20px 24px;border-bottom:1px solid #E8EEEE;margin-bottom:16px}.logo-text{font-size:15px;font-weight:800}.logo-sub{font-size:11px;color:#8AA0A0}.nav-link{display:flex;align-items:center;gap:10px;padding:9px 20px;font-size:13px;color:#4A6060;text-decoration:none}.nav-link:hover,.nav-link.active{background:#E8F8FC;color:#2A8FA6}.nav-icon{font-size:14px;width:18px}.sidebar-footer{margin-top:auto;padding:16px 20px;font-size:11px;color:#8AA0A0;border-top:1px solid #E8EEEE}.main{flex:1;display:flex;flex-direction:column}.topbar{padding:16px 28px;border-bottom:1px solid #E8EEEE;display:flex;align-items:center;justify-content:space-between}.topbar-title{font-size:18px;font-weight:700}.topbar-sub{font-size:12px;color:#8AA0A0}.content{padding:24px 28px;flex:1}.log-item{padding:12px 16px;border-radius:8px;background:#F8FAFA;border:1px solid #E8EEEE;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start}.log-agent{font-size:11px;font-weight:700;color:#2A8FA6;min-width:60px}.log-text{font-size:13px;color:#1a2332;flex:1}.log-time{font-size:11px;color:#8AA0A0;white-space:nowrap}.btn{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none}.btn-primary{background:#3CC3E1;color:#fff}</style></head>
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Activity — Aloe PM</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#1a2332;min-height:100vh;display:flex}.sidebar{width:220px;min-height:100vh;background:#F8FAFA;border-right:1px solid #E8EEEE;display:flex;flex-direction:column;padding:20px 0;flex-shrink:0}.sidebar-logo{padding:0 20px 24px;border-bottom:1px solid #E8EEEE;margin-bottom:16px}.logo-text{font-size:15px;font-weight:800}.logo-sub{font-size:11px;color:#8AA0A0}.nav-link{display:flex;align-items:center;gap:10px;padding:9px 20px;font-size:13px;color:#4A6060;text-decoration:none}.nav-link:hover,.nav-link.active{background:#E8F8FC;color:#2A8FA6}.nav-icon{font-size:14px;width:18px}.sidebar-footer{margin-top:auto;padding:16px 20px;font-size:11px;color:#8AA0A0;border-top:1px solid #E8EEEE}.main{flex:1;display:flex;flex-direction:column}.topbar{padding:16px 28px;border-bottom:1px solid #E8EEEE;display:flex;align-items:center;justify-content:space-between}.topbar-title{font-size:18px;font-weight:700}.topbar-sub{font-size:12px;color:#8AA0A0}.content{padding:24px 28px;flex:1;max-width:900px}.btn{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none}.btn-primary{background:#3CC3E1;color:#fff}.chip-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.chip{padding:8px 14px;border-radius:8px;border:1px solid #E8EEEE;background:#F8FAFA;cursor:pointer;font-size:13px;font-weight:500;color:#1a2332;display:flex;align-items:center;gap:8px}.chip.active{border-color:#2A8FA6;background:#E8F8FC}.chip-avatar{width:26px;height:26px;border-radius:50%;background:#E8EEEE;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#4A6060}.chip-sub{font-size:11px;color:#8AA0A0}.cat-chip{padding:6px 12px;border-radius:8px;border:1px solid #E8EEEE;background:#fff;cursor:pointer;font-size:12px;color:#1a2332}.cat-chip.active{border-color:#2A8FA6;background:#E8F8FC}.view-toggle{display:flex;gap:6px;margin-bottom:16px}.view-btn{padding:8px 16px;border-radius:8px;border:1px solid #E8EEEE;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:#1a2332}.view-btn.active{background:#3CC3E1;color:#fff;border-color:transparent}.log-item{padding:12px 0;border-bottom:1px solid #E8EEEE;cursor:pointer}.log-row{display:flex;gap:12px}.log-bar{width:5px;border-radius:3px;flex-shrink:0}.badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;display:inline-block}.log-text{font-size:14px;color:#1a2332;margin:4px 0 2px}.log-coach{font-size:12px;color:#4A6060;margin:0}.log-time{font-size:12px;color:#8AA0A0;white-space:nowrap}.log-meta{font-size:12px;color:#8AA0A0}.log-detail{margin-top:8px;padding:10px 12px;background:#F8FAFA;border-radius:8px;font-size:13px;color:#4A6060}.log-detail div{margin-bottom:4px}.log-link{font-size:12px;color:#2A8FA6;text-decoration:none}</style></head>
 <body><div class="sidebar"><div class="sidebar-logo"><div class="logo-text">🌿 Aloe PM</div><div class="logo-sub">Agent Hub</div></div><a href="/agents" class="nav-link"><span class="nav-icon">⬛</span>Overview</a><a href="/agents/activity" class="nav-link active"><span class="nav-icon">📋</span>Activity</a><a href="/agents/playbooks" class="nav-link"><span class="nav-icon">📝</span>Playbooks</a><a href="/agents/knowledge" class="nav-link"><span class="nav-icon">💡</span>Knowledge</a><a href="/agents/sops" class="nav-link"><span class="nav-icon">⚙️</span>SOPs</a><a href="/agents/jobs" class="nav-link"><span class="nav-icon">🕐</span>Jobs</a><a href="/agents/training" class="nav-link"><span class="nav-icon">🎯</span>Training</a><div class="sidebar-footer">hub.aloepm.com</div></div>
-<div class="main"><div class="topbar"><div><div class="topbar-title">Activity Feed</div><div class="topbar-sub">Recent agent actions</div></div><button class="btn btn-primary" onclick="load()">↺ Refresh</button></div>
-<div class="content"><div id="log"><div style="color:#8AA0A0;font-size:13px">Loading...</div></div></div></div>
-<script>async function load(){try{const r=await fetch('/api/agents/activity');const d=await r.json();const items=d.entries||d||[];if(!items.length){document.getElementById('log').innerHTML='<div style="color:#8AA0A0;font-size:13px">No activity yet.</div>';return;}document.getElementById('log').innerHTML=items.slice(0,50).map(e=>'<div class="log-item"><div class="log-agent">'+(e.agent||'?')+'</div><div class="log-text">'+(e.text||e.message||'')+'</div><div class="log-time">'+(e.time||e.timestamp||'')+'</div></div>').join('');}catch(e){document.getElementById('log').innerHTML='<div style="color:#EF4444">Error loading.</div>';}}load();setInterval(load,15000);</script></body></html>
+<div class="main"><div class="topbar"><div><div class="topbar-title">Activity Feed</div><div class="topbar-sub">What each agent has actually done</div></div><button class="btn btn-primary" onclick="load()">↺ Refresh</button></div>
+<div class="content">
+<div id="agentRow" class="chip-row"></div>
+<div id="categoryRow" class="chip-row"></div>
+<div class="view-toggle" id="viewToggle">
+  <button class="view-btn active" data-view="feed">Feed</button>
+  <button class="view-btn" data-view="audit">Audit and coaching</button>
+</div>
+<div id="log"><div style="color:#8AA0A0;font-size:13px">Loading...</div></div>
+</div></div>
+<script>
+const BOARD_BY_CATEGORY = c => (c && c.indexOf('HOA') === 0) ? '8bazEHshdZNuMKCFE' : 'workOrder';
+const OUTCOME_LABEL = {ok:'Completed', flagged:'Needs review', skipped:'Skipped', corrected:'Auto-corrected'};
+const OUTCOME_COLOR = {ok:'#1F9D55', flagged:'#DC4C4C', skipped:'#D89B2A', corrected:'#2A8FA6'};
+const OUTCOME_BG = {ok:'#EAF9EF', flagged:'#FDECEC', skipped:'#FDF3E3', corrected:'#E8F8FC'};
+
+let allEntries = [], activeAgent = null, activeCategory = 'all', activeView = 'feed', openIndex = null;
+
+async function load() {
+  try {
+    const r = await fetch('/api/agents/activity?limit=200');
+    const data = await r.json();
+    allEntries = Array.isArray(data) ? data : (data.entries || []);
+    if (!activeAgent) {
+      const agents = [...new Set(allEntries.map(e => e.agent_id))].sort();
+      activeAgent = agents[0] || null;
+    }
+    renderAgents();
+    renderCategories();
+    render();
+  } catch (e) {
+    document.getElementById('log').innerHTML = '<div style="color:#DC4C4C;font-size:13px">Error loading activity: ' + e.message + '</div>';
+  }
+}
+
+function renderAgents() {
+  const agents = [...new Set(allEntries.map(e => e.agent_id))].sort();
+  const row = document.getElementById('agentRow');
+  if (!agents.length) {
+    row.innerHTML = '<div style="font-size:13px;color:#8AA0A0">No agent activity has been logged yet.</div>';
+    return;
+  }
+  row.innerHTML = agents.map(a => {
+    const count = allEntries.filter(e => e.agent_id === a).length;
+    const active = a === activeAgent;
+    return '<button class="chip' + (active ? ' active' : '') + '" data-agent="' + a + '">'
+      + '<span class="chip-avatar">' + a.slice(0,2).toUpperCase() + '</span>'
+      + '<span><div style="font-size:13px;font-weight:600">' + a + '</div><div class="chip-sub">' + count + ' actions</div></span>'
+      + '</button>';
+  }).join('');
+  row.querySelectorAll('.chip').forEach(b => b.onclick = () => {
+    activeAgent = b.dataset.agent; activeCategory = 'all'; openIndex = null;
+    renderAgents(); renderCategories(); render();
+  });
+}
+
+function renderCategories() {
+  const cats = [...new Set(allEntries.filter(e => e.agent_id === activeAgent).map(e => e.category))].sort();
+  const row = document.getElementById('categoryRow');
+  const all = ['all', ...cats];
+  row.innerHTML = all.map(c => {
+    const active = c === activeCategory;
+    return '<button class="cat-chip' + (active ? ' active' : '') + '" data-cat="' + c + '">' + (c === 'all' ? 'All categories' : c) + '</button>';
+  }).join('');
+  row.querySelectorAll('.cat-chip').forEach(b => b.onclick = () => {
+    activeCategory = b.dataset.cat; openIndex = null; renderCategories(); render();
+  });
+}
+
+document.getElementById('viewToggle').querySelectorAll('.view-btn').forEach(b => b.onclick = () => {
+  activeView = b.dataset.view; openIndex = null;
+  document.getElementById('viewToggle').querySelectorAll('.view-btn').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  render();
+});
+
+function toggleRow(i) { openIndex = openIndex === i ? null : i; render(); }
+
+function render() {
+  let entries = allEntries.filter(e => e.agent_id === activeAgent);
+  if (activeCategory !== 'all') entries = entries.filter(e => e.category === activeCategory);
+  if (activeView === 'audit') entries = entries.filter(e => e.outcome !== 'ok');
+  entries = entries.slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  const root = document.getElementById('log');
+  if (!activeAgent) {
+    root.innerHTML = '<div style="color:#8AA0A0;font-size:13px">No activity yet.</div>';
+    return;
+  }
+  if (!entries.length) {
+    root.innerHTML = '<div style="color:#8AA0A0;font-size:13px">Nothing matches these filters.</div>';
+    return;
+  }
+  root.innerHTML = entries.map((e, i) => {
+    const color = OUTCOME_COLOR[e.outcome] || '#8AA0A0';
+    const bg = OUTCOME_BG[e.outcome] || '#F8FAFA';
+    const label = OUTCOME_LABEL[e.outcome] || e.outcome;
+    const meta = e.metadata || {};
+    const time = new Date(e.created_at).toLocaleString();
+    let cardLink = '';
+    if (meta.cardId) {
+      const board = BOARD_BY_CATEGORY(e.category);
+      cardLink = '<a class="log-link" target="_blank" href="https://app.getaptly.com/ticket/' + board + '/' + meta.cardId + '">View card ↗</a>';
+    }
+    let detail = '';
+    if (openIndex === i) {
+      const rows = [];
+      if (meta.woNumber) rows.push('WO #' + meta.woNumber);
+      if (meta.leaseID || meta.leaseId) rows.push('Lease ' + (meta.leaseID || meta.leaseId));
+      if (meta.before || meta.after) rows.push((meta.before || '?') + ' → ' + (meta.after || '?'));
+      if (meta.confidence) rows.push('Confidence: ' + meta.confidence);
+      if (meta.vendor) rows.push('Vendor: ' + meta.vendor + (meta.phone ? ' (' + meta.phone + ')' : ''));
+      if (meta.reason) rows.push('Reason: ' + meta.reason);
+      if (meta.commentText) rows.push('"' + meta.commentText + '"');
+      if (e.outcome === 'flagged') rows.push('Resolved: ' + (meta.resolvedBy ? meta.resolvedBy + (meta.resolvedAt ? ' at ' + meta.resolvedAt : '') : 'not yet resolved'));
+      detail = '<div class="log-detail">' + rows.map(r => '<div>' + r + '</div>').join('') + '</div>';
+    }
+    return '<div class="log-item">'
+      + '<div class="log-row" onclick="toggleRow(' + i + ')">'
+        + '<div class="log-bar" style="background:' + color + '"></div>'
+        + '<div style="flex:1;min-width:0">'
+          + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+            + '<span class="badge" style="background:' + bg + ';color:' + color + '">' + label + '</span>'
+            + '<span class="log-meta">' + e.category + '</span>'
+            + (e.property ? '<span class="log-meta">' + e.property + '</span>' : '')
+          + '</div>'
+          + '<p class="log-text">' + e.summary + '</p>'
+        + '</div>'
+        + '<div class="log-time">' + time + '</div>'
+      + '</div>'
+      + detail
+    + '</div>';
+  }).join('');
+}
+
+load();
+setInterval(load, 15000);
+</script>
+</body></html>
