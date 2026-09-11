@@ -44,6 +44,9 @@
 <script>
 function badgeFor(job) {
   if (job.mechanism !== 'Cloud Scheduler') {
+    const live = job.live || {};
+    if (live.lastAttemptStatus === 'OK') return { cls: 'badge-ok', text: 'OK' };
+    if ((live.lastAttemptStatus || '').startsWith('ERROR')) return { cls: 'badge-error', text: live.lastAttemptStatus };
     const s = job.status || '';
     if (s.includes('needs investigation')) return { cls: 'badge-warn', text: 'Needs Investigation' };
     if (s.startsWith('paused')) return { cls: 'badge-neutral', text: 'Paused' };
