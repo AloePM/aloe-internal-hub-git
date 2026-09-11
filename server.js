@@ -6945,6 +6945,7 @@ async function checkVendorDuplicates(days, windowDays) {
   const RENTVINE_BASE = `https://${process.env.RENTVINE_ACCOUNT}.rentvine.com/api/manager`;
   const RENTVINE_AUTH = Buffer.from(`${process.env.RENTVINE_API_KEY}:${process.env.RENTVINE_API_SECRET}`).toString('base64');
   const RECURRING_CHARGE_ACCOUNT_IDS = new Set([79, 83, 77]); // Landscaping, Pool Services, Pest Control
+  const ALOE_INTERNAL_VENDOR_IDS = new Set(['1', '3229', '3380']); // Aloe Property Management, Reimbursements, Aloe PM-Vendor — excluded, this check is vendor-only
 
   const dateMin = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
@@ -6990,8 +6991,12 @@ async function checkVendorDuplicates(days, windowDays) {
     };
   });
 
+  const filteredBills = bills.filter(b => !ALOE_INTERNAL_VENDOR_IDS.has(String(b.vendor_id)));
+
   const groups = {};
-  bills.forEach(b => {
+  const needsManualMatch = [];
+  filteredBills.forEach(b => {
+    if (!b.property_id) { needsManualMatch.push(b); return; }
     const key = `${b.vendor_id}|${b.property_id}`;
     if (!groups[key]) groups[key] = [];
     groups[key].push(b);
@@ -7021,9 +7026,10 @@ async function checkVendorDuplicates(days, windowDays) {
 
   return {
     period_days: days, window_days: windowDays,
-    total_bills_scanned: bills.length,
+    total_bills_scanned: filteredBills.length,
     duplicate_pairs_found: duplicates.length,
-    duplicates
+    duplicates,
+    needs_manual_match: needsManualMatch
   };
 }
 
