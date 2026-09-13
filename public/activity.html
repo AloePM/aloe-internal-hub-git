@@ -8,6 +8,11 @@
   <button class="view-btn active" data-view="feed">Feed</button>
   <button class="view-btn" data-view="audit">Audit and coaching</button>
 </div>
+<div class="chip-row" id="dateRow">
+  <button class="cat-chip active" data-range="all">All time</button>
+  <button class="cat-chip" data-range="today">Today</button>
+  <button class="cat-chip" data-range="week">This week</button>
+</div>
 <div id="log"><div style="color:#8AA0A0;font-size:13px">Loading...</div></div>
 </div></div>
 <script>
@@ -16,7 +21,28 @@ const OUTCOME_LABEL = {ok:'Completed', flagged:'Needs review', skipped:'Skipped'
 const OUTCOME_COLOR = {ok:'#1F9D55', flagged:'#DC4C4C', skipped:'#D89B2A', corrected:'#2A8FA6'};
 const OUTCOME_BG = {ok:'#EAF9EF', flagged:'#FDECEC', skipped:'#FDF3E3', corrected:'#E8F8FC'};
 
-let allEntries = [], activeAgent = null, activeCategory = 'all', activeView = 'feed', openIndex = null;
+let allEntries = [], activeAgent = null, activeCategory = 'all', activeView = 'feed', openIndex = null, activeRange = 'all';
+
+document.getElementById('dateRow').querySelectorAll('.cat-chip').forEach(b => b.onclick = () => {
+  activeRange = b.dataset.range;
+  document.getElementById('dateRow').querySelectorAll('.cat-chip').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  render();
+});
+
+function withinRange(dateStr) {
+  if (activeRange === 'all') return true;
+  const d = new Date(dateStr);
+  const now = new Date();
+  if (activeRange === 'today') {
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  }
+  if (activeRange === 'week') {
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    return d >= weekAgo;
+  }
+  return true;
+}
 
 const KNOWN_AGENTS = ['ari', 'kat', 'bo', 'ivy', 'mary', 'rex', 'remy', 'troy', 'jay', 'joe', 'lea', 'mae'];
 
@@ -81,6 +107,7 @@ function render() {
   let entries = allEntries.filter(e => e.agent_id === activeAgent);
   if (activeCategory !== 'all') entries = entries.filter(e => e.category === activeCategory);
   if (activeView === 'audit') entries = entries.filter(e => e.outcome !== 'ok');
+  entries = entries.filter(e => withinRange(e.created_at));
   entries = entries.slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
   const root = document.getElementById('log');
   if (!activeAgent) {
