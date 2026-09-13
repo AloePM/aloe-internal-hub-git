@@ -18,6 +18,8 @@ const OUTCOME_BG = {ok:'#EAF9EF', flagged:'#FDECEC', skipped:'#FDF3E3', correcte
 
 let allEntries = [], activeAgent = null, activeCategory = 'all', activeView = 'feed', openIndex = null;
 
+const KNOWN_AGENTS = ['ari', 'kat', 'bo', 'ivy', 'mary', 'rex', 'remy', 'troy', 'jay', 'joe', 'lea', 'mae'];
+
 async function load() {
   try {
     const r = await fetch('/api/agents/activity?limit=200');
@@ -36,12 +38,9 @@ async function load() {
 }
 
 function renderAgents() {
-  const agents = [...new Set(allEntries.map(e => e.agent_id))].sort();
+  const seenAgents = new Set(allEntries.map(e => e.agent_id));
+  const agents = [...new Set([...KNOWN_AGENTS, ...seenAgents])].sort();
   const row = document.getElementById('agentRow');
-  if (!agents.length) {
-    row.innerHTML = '<div style="font-size:13px;color:#8AA0A0">No agent activity has been logged yet.</div>';
-    return;
-  }
   row.innerHTML = agents.map(a => {
     const count = allEntries.filter(e => e.agent_id === a).length;
     const active = a === activeAgent;
