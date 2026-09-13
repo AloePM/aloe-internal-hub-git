@@ -6132,7 +6132,7 @@ app.delete('/api/agents/knowledge/:scope', async (req, res) => {
 const ACTIVITY_CATEGORIES = new Set([
   'HOA Violation', 'HOA Registration', 'HOA Intake Review',
   'Work Order Created', 'Assign Work Order', 'Work Order Status Update',
-  'Duplicate Flagged', 'Photo Request', 'Human Review Needed'
+  'Duplicate Flagged', 'Photo Request', 'Human Review Needed', 'Vendor Bill Created'
 ]);
 
 app.post('/api/agents/log', async (req, res) => {
