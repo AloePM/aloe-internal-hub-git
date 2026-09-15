@@ -2479,24 +2479,30 @@ function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap,
 
 function buildWeeklyActivity(leads, listDate) {
   if (!listDate || !leads) return [];
-  const start = new Date(listDate);
-  start.setHours(0,0,0,0);
+  const listStart = new Date(listDate);
+  listStart.setHours(0,0,0,0);
+  const day = listStart.getDay();
+  const diffToMonday = (day === 0) ? 6 : day - 1;
+  const start = new Date(listStart);
+  start.setDate(start.getDate() - diffToMonday);
   const now = new Date();
-  const totalWeeks = Math.ceil((now - start) / (7 * 86400000)) || 1;
   const weeks = [];
-  for (let w = 0; w < totalWeeks; w++) {
-    const wStart = new Date(start.getTime() + w * 7 * 86400000);
+  let wStart = new Date(start);
+  while (wStart < now) {
     const wEnd = new Date(wStart.getTime() + 7 * 86400000);
+    if (wEnd > now) break;
     const weekLeads = leads.filter(l => {
       const d = new Date(l.createdAt || '');
       return d >= wStart && d < wEnd;
     });
     const tours = weekLeads.filter(l => Array.isArray(l.showingInfo) && l.showingInfo.length > 0);
+    const wEndDisplay = new Date(wEnd.getTime() - 86400000);
     weeks.push({
-      label: 'Wk ' + (w + 1) + ' (' + wStart.toLocaleDateString('en-US', {month:'numeric', day:'numeric'}) + ')',
+      label: 'Wk of ' + wStart.toLocaleDateString('en-US', {month:'numeric', day:'numeric'}) + '\u2013' + wEndDisplay.toLocaleDateString('en-US', {month:'numeric', day:'numeric'}),
       leads: weekLeads.length,
       tours: tours.length
     });
+    wStart = wEnd;
   }
   return weeks.slice(-8);
 }
