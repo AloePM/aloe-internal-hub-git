@@ -2349,9 +2349,10 @@ function buildListedDateMap(listPropertyCards) {
 function matchByStreetNumber(address, items, getAddressFn) {
   const streetNum = (address.match(/^\d+/) || [])[0] || '';
   if (!streetNum) return [];
+  const streetNumPattern = new RegExp('(^|[^0-9])' + streetNum + '(?=\\s|,|$)');
   return items.filter(item => {
     const addr = getAddressFn(item) || '';
-    return addr.includes(streetNum);
+    return streetNumPattern.test(addr.trim());
   });
 }
 
