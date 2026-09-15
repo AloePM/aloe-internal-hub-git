@@ -2415,7 +2415,8 @@ function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap,
       status: realStatus,
       completedDate: l.tourAtDoorCodeDate || null
     };
-  }).filter(function(s) { return s.status === 'completed' || s.status === 'scheduled' || s.status === 'cancelled'; });
+  }).filter(function(s) { return s.status === 'completed' || s.status === 'scheduled' || s.status === 'cancelled'; })
+    .sort(function(a, b) { return new Date(b.completedDate || b.start || 0) - new Date(a.completedDate || a.start || 0); });
 
   const matchedApps = matchByStreetNumber(address, allApplications, a => a['Application Location'] || '');
   const appsInCycle = filterToCurrentCycle(matchedApps, cutoff, a => a['Created At']);
@@ -2461,7 +2462,7 @@ function buildPropertyReportData(unit, allLeads, allApplications, listedDateMap,
       propertyIssues: l.propertyIssues,
       tourQuestions: l.tourQuestions
     };
-  });
+  }).sort(function(a, b) { return new Date(b.date || 0) - new Date(a.date || 0); });
 
   return {
     ...vacancy,
