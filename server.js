@@ -678,7 +678,7 @@ const LEADS_RICH_CACHE_MS = 15 * 60 * 1000;
 
 app.get('/api/owners/batch-export', hubAuth, async function(req, res) {
   try {
-    const skipContactIds = ['4195', '4806', '4382', '5949'];
+    const skipContactIds = ['4195', '4806', '4382', '5949', '336', '5023'];
     const summaryRes = await fetch('http://localhost:' + PORT + '/api/owners/vacant-summary').then(r => r.json());
     const groups = summaryRes.groups || summaryRes;
     const [leadsRes, appsRes, listPropRes, rentHistory, listedDateOverrides, vacancyStartOverrides] = await Promise.all([
@@ -734,7 +734,7 @@ async function createAptlyEmailDraft(channelId, to, subject, body) {
 
 app.post('/api/owners/weekly-batch-draft', hubAuth, async function(req, res) {
   try {
-    const skipContactIds = ['4195', '4806', '4382', '5949'];
+    const skipContactIds = ['4195', '4806', '4382', '5949', '336', '5023'];
     const APTLY_INFO_CHANNEL_ID = '6c8783b9-3fb4-5911-9468-a7c6b91ee25e';
     const testContactId = req.query.testContactId || null;
     const summaryRes = await fetch('http://localhost:' + PORT + '/api/owners/vacant-summary').then(r => r.json());
