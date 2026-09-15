@@ -608,7 +608,7 @@ app.get('/api/aptly/list-property-rich', async function(req, res) {
       url.searchParams.set('pageSize', 100);
       url.searchParams.set('includeArchived', 'true');
       const r = await fetch(url.toString(), { headers: { 'x-token': token, 'Accept': 'application/json' } });
-      if (!r.ok) break;
+      if (!r.ok) throw new Error('list-property-rich: Aptly page ' + page + ' fetch failed with status ' + r.status);
       const data = await r.json();
       const batch = Array.isArray(data) ? data : (data && data.data) || [];
       if (batch.length === 0) break;
@@ -750,6 +750,22 @@ app.post('/api/owners/weekly-batch-draft', hubAuth, async function(req, res) {
     const allLeads = Array.isArray(leadsRes) ? leadsRes : (leadsRes.leads || []);
     const allApplications = Array.isArray(appsRes) ? appsRes : (appsRes.applications || []);
     const listedDateMap = buildListedDateMap(listPropRes.cards || []);
+
+    const MIN_EXPECTED_LEADS = 500;
+    if (!testContactId && allLeads.length < MIN_EXPECTED_LEADS) {
+      const warnText = ':rotating_light: *Weekly owner vacancy drafts ABORTED* \u2014 only ' + allLeads.length + ' leads fetched (expected 500+). Likely a data-fetch problem this run. No drafts were created. Please investigate and re-run manually.';
+      try {
+        await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + SLACK_TOKEN, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: 'C06CQ5NUKK3', text: warnText })
+        });
+      } catch (slackErr) {
+        console.error('Slack abort-notification failed:', slackErr.message);
+      }
+      return res.status(503).json({ error: 'Aborted: leads count (' + allLeads.length + ') below safety threshold (' + MIN_EXPECTED_LEADS + '). No drafts created.' });
+    }
+
     const results = { drafted: [], skipped: [], failed: [], testMode: !!testContactId };
     const contactIdsToProcess = testContactId ? [testContactId] : Object.keys(groups);
     for (const contactId of contactIdsToProcess) {
@@ -817,7 +833,7 @@ app.get('/api/aptly/leads-rich', async function(req, res) {
     let allLeads = [], page = 0;
     while (page < 80) {
       const r = await fetch(`https://core-api.getaptly.com/api/board/4EMDSYKirhQaNdQKz?page=${page}&pageSize=100&includeArchived=true`, { headers: { 'x-token': token } });
-      if (!r.ok) break;
+      if (!r.ok) throw new Error('leads-rich: Aptly page ' + page + ' fetch failed with status ' + r.status);
       const data = await r.json();
       const batch = Array.isArray(data) ? data : (data && data.data) || [];
       if (batch.length === 0) break;
