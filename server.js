@@ -970,7 +970,7 @@ const ZINSPECTOR_API_KEY  = process.env.ZINSPECTOR_API_KEY;
 const SLACK_TOKEN         = process.env.SLACK_TOKEN;
 const KB_URL              = process.env.KB_URL || 'https://kb.aloepm.com';
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
-const shadowClassify = createShadowClassifier({ anthropic, SLACK_TOKEN, ROUTER_SHADOW_CHANNEL_ID: 'C0BTCF1CYE7' });
+const shadowClassify = createShadowClassifier({ anthropic, SLACK_TOKEN, ROUTER_SHADOW_CHANNEL_ID: 'C0BTCF1CYE7', QUO_API_TOKEN: process.env.QUO_API_TOKEN || 'dc4e31adbc86b3983202a9e8f39349e4e7ad1d4f53285dae230af23844b1988d' });
 const RENTVINE_BASE = `https://${RENTVINE_ACCOUNT}.rentvine.com/api/manager`;
 const RENTVINE_AUTH = Buffer.from(`${RENTVINE_API_KEY}:${RENTVINE_API_SECRET}`).toString('base64');
 
@@ -5446,7 +5446,7 @@ app.post('/webhook/quo', express.json(), async (req, res) => {
     // Only care about inbound messages with attachments OR invoice/quote keywords
     const isInbound = direction === 'incoming' || direction === 'inbound' || direction === 'in';
     if (isInbound) {
-      shadowClassify({ from, messageText: body, threadId: `${inboxNumber}_${from}` }).catch(() => {});
+      shadowClassify({ from, messageText: body, threadId: `${inboxNumber}_${from}`, inboxNumber }).catch(() => {});
     }
     const lowerBody = body.toLowerCase();
     const isInvoice = lowerBody.includes('invoice') || lowerBody.includes('total') || lowerBody.includes('amount due') || lowerBody.includes('payment');

@@ -30,6 +30,15 @@ const CATEGORIES = [
   'General-Other'
 ];
 
+// Only the Main Office Number is read for thread-history context (2026-09-16
+// decision -- Maintenance/Leasing/other inboxes aren't used by this router
+// in practice, and fetching the wrong inbox's history would be worse than
+// fetching none). If a message ever arrives tagged with a different inbox
+// number, history-fetching is skipped and classification falls back to
+// message-only context, same as before this change.
+const MAIN_OFFICE_NUMBER = '+16028549884';
+const MAIN_OFFICE_PHONE_NUMBER_ID = 'PNRRARIpQO';
+
 const CLASSIFIER_SYSTEM_PROMPT = `You are a message router for a property management company's shared SMS inbox. Read the inbound text message (and any recent thread context provided) and classify it into exactly one of these categories:
 
 - Maintenance: repair requests, work order status questions, anything broken/not working at the property
@@ -59,7 +68,39 @@ function truncate(str, maxLen) {
 // drives live routing (agreed 2026-08-29).
 const threadCategoryMemory = new Map();
 
-export function createShadowClassifier({ anthropic, SLACK_TOKEN, ROUTER_SHADOW_CHANNEL_ID }) {
+export function createShadowClassifier({ anthropic, SLACK_TOKEN, ROUTER_SHADOW_CHANNEL_ID, QUO_API_TOKEN }) {
+  // Fetches up to the last 6 messages (both directions) from the last 48
+  // hours on this thread via Quo's /v1/messages, so a bare reply like "Yes
+  // that works" can be classified using what it's actually replying to.
+  // Fails safe: any error, missing token, or non-Main-Office inbox just
+  // returns null and classification proceeds message-only, same as before
+  // this change existed.
+  async function fetchThreadContext(fromNumber, inboxNumber) {
+    if (inboxNumber !== MAIN_OFFICE_NUMBER) return null;
+    if (!QUO_API_TOKEN) return null;
+
+    try {
+      const createdAfter = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+      const url = `https://api.quo.com/v1/messages?phoneNumberId=${MAIN_OFFICE_PHONE_NUMBER_ID}&participants=${encodeURIComponent(fromNumber)}&createdAfter=${encodeURIComponent(createdAfter)}&maxResults=20`;
+      const r = await fetch(url, { headers: { 'Authorization': QUO_API_TOKEN } });
+      if (!r.ok) return null;
+      const data = await r.json();
+      const messages = (data.data || [])
+        .slice()
+        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+        .slice(-6);
+
+      if (messages.length === 0) return null;
+
+      return messages
+        .map(m => `[${m.direction}] ${truncate(m.text || '(no text)', 200)}`)
+        .join('\n');
+    } catch (err) {
+      console.error('[router-classifier] fetchThreadContext error:', err.message);
+      return null;
+    }
+  }
+
   async function classifyMessage(messageText, threadContext) {
     const userContent = threadContext
       ? `Recent thread context:\n${threadContext}\n\nNew inbound message:\n${messageText}`
@@ -113,7 +154,7 @@ export function createShadowClassifier({ anthropic, SLACK_TOKEN, ROUTER_SHADOW_C
     }
   }
 
-  return async function shadowClassify({ from, messageText, threadId, threadContext }) {
+  return async function shadowClassify({ from, messageText, threadId, inboxNumber }) {
     try {
       const memoryKey = threadId || from;
       const cached = threadCategoryMemory.get(memoryKey);
@@ -128,6 +169,7 @@ export function createShadowClassifier({ anthropic, SLACK_TOKEN, ROUTER_SHADOW_C
         return;
       }
 
+      const threadContext = await fetchThreadContext(from, inboxNumber);
       const { category, confidence, reasoning } = await classifyMessage(messageText, threadContext);
       threadCategoryMemory.set(memoryKey, { category, confidence });
       await postToShadowSlack({ from, messageText, threadId, category, confidence, reasoning });
