@@ -5446,7 +5446,7 @@ app.post('/webhook/quo', express.json(), async (req, res) => {
     // Only care about inbound messages with attachments OR invoice/quote keywords
     const isInbound = direction === 'incoming' || direction === 'inbound' || direction === 'in';
     if (isInbound) {
-      shadowClassify({ from, messageText: body, threadId: `${inboxNumber}_${from}`, inboxNumber }).catch(() => {});
+      shadowClassify({ from, messageText: body, threadId: `${inboxNumber}_${from}`, inboxNumber, mediaUrls }).catch(() => {});
     }
     const lowerBody = body.toLowerCase();
     const isInvoice = lowerBody.includes('invoice') || lowerBody.includes('total') || lowerBody.includes('amount due') || lowerBody.includes('payment');
