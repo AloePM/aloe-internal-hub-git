@@ -24,6 +24,8 @@ const supabaseHeaders = {
 const app = express();
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
 app.use(express.json({ limit: '50mb' }));
+import { installAuthGate } from './auth-gate.js';
+installAuthGate(app);
 app.use('/api/chat', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
