@@ -1,3 +1,4 @@
+import { slackRawBody, slackSigCheck } from './auth-gate.js';
 // ─────────────────────────────────────────────────────────────────────────────
 // appliance-scanner-routes.js
 // Aloe PM — Appliance & Property Data Scanner (Phase 1)
@@ -627,7 +628,7 @@ async function scanProperty(ziProp, rvProperties) {
 }
 
 // ── Slack interaction handler (approve / skip) ────────────────────────────────
-router.post('/slack/actions', express.urlencoded({ extended: true }), async (req, res) => {
+router.post('/slack/actions', express.urlencoded({ extended: true, verify: slackRawBody }), slackSigCheck, async (req, res) => {
   res.sendStatus(200); // Always ACK immediately
 
   let payload;

@@ -188,3 +188,34 @@ export function installAuthGate(app) {
     next();
   });
 }
+
+// ---- Slack request signature check (used by the scanner's Slack buttons) ----
+// Off until SLACK_SIGNING_SECRET is set. SLACK_SIG_LOG_ONLY=1 logs bad signatures without blocking.
+export function slackRawBody(req, res, buf) {
+  req.rawBody = buf;
+}
+
+export function slackSigCheck(req, res, next) {
+  const secret = process.env.SLACK_SIGNING_SECRET;
+  if (!secret) {
+    console.log('[SLACK-SIG] SLACK_SIGNING_SECRET not set - request NOT verified');
+    return next();
+  }
+  const ts = String(req.headers['x-slack-request-timestamp'] || '');
+  const sig = String(req.headers['x-slack-signature'] || '');
+  let ok = false;
+  if (/^\d+$/.test(ts) && Math.abs(Date.now() / 1000 - Number(ts)) < 300 && sig.startsWith('v0=') && req.rawBody) {
+    const want = 'v0=' + createHmac('sha256', secret).update(`v0:${ts}:`).update(req.rawBody).digest('hex');
+    const a = Buffer.from(sig);
+    const b = Buffer.from(want);
+    ok = a.length === b.length && timingSafeEqual(a, b);
+  }
+  if (ok) {
+    console.log('[SLACK-SIG] valid');
+    return next();
+  }
+  const logOnly = process.env.SLACK_SIG_LOG_ONLY === '1';
+  console.log(`[SLACK-SIG] INVALID signature ${who(req)}${logOnly ? ' (log-only: allowed)' : ' (blocked)'}`);
+  if (logOnly) return next();
+  return res.status(401).send('invalid signature');
+}
