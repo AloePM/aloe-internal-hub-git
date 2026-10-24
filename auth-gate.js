@@ -1,5 +1,5 @@
 // auth-gate.js - Phase 1 sign-in for the Aloe Internal Hub.
-// Web pages require sign-in. API routes are only LOGGED (never blocked) in Phase 1.
+// Web pages require sign-in. API routes are only LOGGED unless enforcement is switched on (see enforced()).
 // Needs two env vars: HUB_LOGIN_PASSWORD and HUB_SESSION_SECRET. If either is missing the gate stays OFF.
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import express from 'express';
@@ -55,9 +55,25 @@ function validSession(req) {
 }
 
 function validHubToken(req) {
-  const t = req.headers['x-hub-token'];
   const s = process.env.HUB_INTERNAL_SECRET;
-  return !!(t && s && same(t, s));
+  if (!s) return false;
+  const t = req.headers['x-hub-token'] || req.headers['x-agent-key'];
+  if (t && same(t, s)) return true;
+  // Temporary: property-lookup also accepts ?token= until its callers send a header.
+  return req.path.toLowerCase() === '/api/rentvine/property-lookup' && !!req.query.token && same(req.query.token, s);
+}
+
+// Still only logged, even when enforcing, until their callers are fixed.
+const ENFORCE_EXEMPT = new Set(['/api/scanner/slack/actions', '/api/rentvine/vendor-by-phone']);
+
+// HUB_API_ENFORCE=all blocks every unauthenticated API call.
+// HUB_API_ENFORCE_PREFIXES="/api/rentvine,/api/zinspector" blocks just those areas.
+function enforced(p) {
+  const lp = p.toLowerCase();
+  if (ENFORCE_EXEMPT.has(lp)) return false;
+  if ((process.env.HUB_API_ENFORCE || '').toLowerCase() === 'all') return true;
+  return (process.env.HUB_API_ENFORCE_PREFIXES || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean)
+    .some((x) => lp === x || lp.startsWith(x + '/'));
 }
 
 function locked() {
@@ -79,14 +95,14 @@ const esc = (s) =>
 const who = (req) =>
   `ip=${String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').slice(0, 100)} ua=${String(req.headers['user-agent'] || '').slice(0, 60)}`;
 
-function audit(req) {
-  const key = `${req.method} ${req.path} ${req.headers['user-agent'] || ''}`;
+function audit(req, label = 'would-block') {
+  const key = `${label} ${req.method} ${req.path} ${req.headers['user-agent'] || ''}`;
   const now = Date.now();
   if (now - (auditSeen.get(key) || 0) < 10 * 60 * 1000) return;
   if (auditSeen.size > 2000) auditSeen.clear();
   auditSeen.set(key, now);
   const cred = req.headers['x-agent-key'] ? ' agentkey=yes' : '';
-  console.log(`[AUTH-AUDIT] would-block ${req.method} ${req.path}${cred} ${who(req)}`);
+  console.log(`[AUTH-AUDIT] ${label} ${req.method} ${req.path}${cred} ${who(req)}`);
 }
 
 function loginPage(error, next) {
@@ -159,7 +175,16 @@ export function installAuthGate(app) {
       res.setHeader('Cache-Control', 'no-store');
       return res.redirect(302, '/login?next=' + encodeURIComponent(req.originalUrl));
     }
-    if (!validHubToken(req)) audit(req); // Phase 1: log only, never block
+    if (validHubToken(req)) return next();
+    if (req.method !== 'OPTIONS' && enforced(p)) {
+      audit(req, 'BLOCKED');
+      if (isRead && String(req.headers.accept || '').includes('text/html')) {
+        res.setHeader('Cache-Control', 'no-store');
+        return res.redirect(302, '/login?next=' + encodeURIComponent(req.originalUrl));
+      }
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    audit(req); // not enforced: log only
     next();
   });
 }
