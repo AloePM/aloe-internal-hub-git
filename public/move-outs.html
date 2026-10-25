@@ -56,7 +56,7 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .trend-section-label::after{content:'';flex:1;height:1px;background:var(--rule)}
 #panes thead tr{background:#E6EFF0!important;color:#4A6466!important}
 .pl-wrap{overflow-x:auto;border:1px solid var(--rule);border-radius:var(--r);background:var(--card)}
-.pl-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:860px}
+.pl-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:980px}
 .pl-tbl th{background:#E6EFF0;color:#4A6466;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;white-space:nowrap}
 .pl-tbl td{padding:10px 12px;border-top:1px solid var(--rule);vertical-align:top}
 .pl-addr{font-weight:700;color:var(--ink)}
@@ -68,6 +68,26 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .pl-days.bad{color:var(--red);font-weight:700}
 .pl-note{margin:0 0 12px;color:var(--muted);font-size:13px}
 .pl-empty{padding:24px;color:var(--muted)}
+.rp-btn{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid #B4C3C3;background:#fff;color:#0A5468;font:700 12px Manrope,system-ui,sans-serif;cursor:pointer;text-align:left}
+.rp-btn:hover{background:#E6EFF0}
+.rp-back{position:fixed;inset:0;background:rgba(13,26,26,.45);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow-y:auto}
+.rp-dlg{background:#fff;border-radius:14px;max-width:1040px;width:100%;padding:22px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.rp-dlg h2{font-size:20px;font-weight:800;margin-bottom:4px}
+.rp-grid{overflow-x:auto;margin:14px 0}
+.rp-tbl{width:100%;border-collapse:collapse;min-width:900px;font-size:13px}
+.rp-tbl th{background:#E6EFF0;color:#4A6466;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:8px}
+.rp-tbl td{padding:6px 4px;border-top:1px solid var(--rule);vertical-align:top}
+.rp-tbl input,.rp-tbl select,.rp-ed input{width:100%;min-height:44px;padding:0 8px;border:1px solid #B4C3C3;border-radius:8px;font:500 13px Manrope,system-ui,sans-serif;background:#fff;color:var(--ink)}
+.rp-tbl input:focus,.rp-tbl select:focus,.rp-ed input:focus{outline:2px solid #2A8FA6;outline-offset:1px}
+.rp-tot{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 14px}
+.rp-tot div{background:var(--card2);border:1px solid var(--rule);border-radius:10px;padding:8px 14px;font-size:12px;color:var(--muted)}
+.rp-tot b{display:block;font-size:18px;color:var(--ink)}
+.rp-msg{margin:10px 0;padding:10px 14px;border-radius:8px;font-size:13px}
+.rp-msg.err{background:var(--red-d);color:#b91c1c}
+.rp-msg.ok{background:var(--green-d);color:#0b6b46}
+.rp-ed{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;margin-top:6px}
+.rp-ed label{font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px}
+.rp-ed .f{flex:1;min-width:180px;max-width:260px}
 @media(max-width:900px){
   .kpi-grid.g4{grid-template-columns:repeat(2,1fr)}
   .main{padding:16px}
@@ -537,9 +557,9 @@ function plRender() {
   PL.stageOrder.concat(Object.keys(PL.stageCounts).filter(function (s) { return PL.stageOrder.indexOf(s) < 0; })).forEach(function (st) {
     var list = cards.filter(function (c) { return c.stage === st; });
     if (!list.length) return;
-    ph += '<div class="trend-section-label">' + esc(st || 'No stage') + ' · ' + list.length + '</div><div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Move-out</th><th>Type</th><th>Owner</th><th>In stage</th><th>Checklist</th><th>Last activity</th><th>Flags</th></tr></thead><tbody>';
+    ph += '<div class="trend-section-label">' + esc(st || 'No stage') + ' · ' + list.length + '</div><div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Move-out</th><th>Type</th><th>Owner</th><th>In stage</th><th>Checklist</th><th>Last activity</th><th>Flags</th><th>Repairs</th></tr></thead><tbody>';
     list.forEach(function (c) {
-      ph += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div></td><td>' + plWhen(c) + '</td><td>' + esc(c.moveOutType || '—') + '</td><td>' + esc(c.owners.join(', ') || '—') + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td></tr>';
+      ph += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div></td><td>' + plWhen(c) + '</td><td>' + esc(c.moveOutType || '—') + '</td><td>' + esc(c.owners.join(', ') || '—') + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
     });
     ph += '</tbody></table></div>';
   });
@@ -555,14 +575,131 @@ function plRender() {
   turns = turns.slice().sort(function (a, b) { return (b.daysInStage || 0) - (a.daysInStage || 0); });
   if (!turns.length) th += '<div class="pl-wrap"><div class="pl-empty">No units in turn right now.</div></div>';
   else {
-    th += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Stage</th><th>In stage</th><th>Moved out</th><th>Turn items needed</th><th>Open checklist</th><th>Last activity</th><th>Flags</th></tr></thead><tbody>';
+    th += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Stage</th><th>In stage</th><th>Moved out</th><th>Turn items needed</th><th>Open checklist</th><th>Last activity</th><th>Flags</th><th>Repairs</th></tr></thead><tbody>';
     turns.forEach(function (c) {
-      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div></td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td></tr>';
+      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div></td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
     });
     th += '</tbody></table></div>';
   }
   T.innerHTML = th + '</div>';
 }
+// ---- Repair items (saved in hub storage; never written to Aptly or Rentvine) ----
+var RP = { sums: {}, cur: null, opener: null };
+var RP_PAYER = [['tbd', 'Not decided'], ['tenant', 'Tenant'], ['owner', 'Owner'], ['aloe', 'Aloe']];
+var RP_SRC = [['none', 'No estimate yet'], ['vendor', 'Vendor quote'], ['price-list', 'Price list'], ['ai', 'AI estimate']];
+var RP_STAT = [['needed', 'Needed'], ['asked', 'Estimate asked'], ['received', 'Estimate received'], ['shared-tenant', 'Shared with tenant'], ['shared-owner', 'Shared with owner'], ['done', 'Done']];
+function money(n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }); }
+function rpKey(c) { return c.aptlyId || c.id; }
+function rpButton(c) {
+  var s = RP.sums[rpKey(c)];
+  var label = s && s.count ? s.count + (s.count === 1 ? ' item' : ' items') + ' · ' + money(s.totals.all) : 'Add repairs';
+  return '<button class="rp-btn" type="button" data-rp="' + esc(rpKey(c)) + '" data-addr="' + esc(c.address) + '">' + esc(label) + '</button>';
+}
+async function rpLoadSummaries() {
+  try {
+    var r = await fetch('/api/moveouts/repairs', { credentials: 'same-origin' });
+    if (r.ok) { var j = await r.json(); RP.sums = j.summaries || {}; }
+  } catch (e) {}
+}
+function rpSel(opts, val) { return opts.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === val ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join(''); }
+function rpRow(it, i) {
+  return '<tr data-i="' + i + '">'
+    + '<td><input aria-label="Repair item" data-f="description" value="' + esc(it.description) + '" maxlength="300"></td>'
+    + '<td><input aria-label="Area" data-f="area" value="' + esc(it.area) + '" maxlength="60"></td>'
+    + '<td><select aria-label="Who pays" data-f="payer">' + rpSel(RP_PAYER, it.payer) + '</select></td>'
+    + '<td><select aria-label="Estimate source" data-f="source">' + rpSel(RP_SRC, it.source) + '</select></td>'
+    + '<td><input aria-label="Vendor" data-f="vendor" value="' + esc(it.vendor) + '" maxlength="80"></td>'
+    + '<td><input aria-label="Amount" data-f="amount" inputmode="decimal" value="' + (it.amount == null ? '' : esc(it.amount)) + '" style="min-width:80px"></td>'
+    + '<td><select aria-label="Status" data-f="status">' + rpSel(RP_STAT, it.status) + '</select></td>'
+    + '<td><button type="button" class="btn btn-line" data-del="' + i + '" aria-label="Remove item ' + (i + 1) + '" style="padding:0 12px">Remove</button></td></tr>';
+}
+function rpCollect() {
+  var rows = document.querySelectorAll('#rp-body tr'), items = [];
+  rows.forEach(function (tr) {
+    var o = {};
+    tr.querySelectorAll('[data-f]').forEach(function (el) { o[el.getAttribute('data-f')] = el.value; });
+    items.push(o);
+  });
+  return items;
+}
+function rpTotalsHtml(items) {
+  var t = { tenant: 0, owner: 0, aloe: 0, tbd: 0, none: 0 };
+  items.forEach(function (it) { var a = parseFloat(it.amount); if (isNaN(a)) t.none++; else t[it.payer] = (t[it.payer] || 0) + a; });
+  return '<div>Tenant<b>' + money(t.tenant) + '</b></div><div>Owner<b>' + money(t.owner) + '</b></div><div>Aloe<b>' + money(t.aloe) + '</b></div><div>Not decided<b>' + money(t.tbd) + '</b></div><div>Items with no amount<b>' + t.none + '</b></div>';
+}
+function rpMsg(kind, text) { var m = document.getElementById('rp-msg'); if (m) { m.className = 'rp-msg ' + kind; m.textContent = text; m.style.display = text ? 'block' : 'none'; } }
+function rpClose() {
+  var b = document.getElementById('rp-back'); if (b) b.remove();
+  document.removeEventListener('keydown', rpKey_);
+  var o = RP.opener; RP.cur = null;
+  if (o && !document.contains(o)) { var again = document.querySelectorAll('[data-rp]'); o = null; var k = RP.openerKey; for (var i = 0; i < again.length; i++) if (again[i].getAttribute('data-rp') === k && again[i].offsetParent !== null) { o = again[i]; break; } }
+  if (o) o.focus();
+}
+function rpKey_(e) { if (e.key === 'Escape') rpClose(); }
+function rpRefreshTotals() { var el = document.getElementById('rp-tot'); if (el) el.innerHTML = rpTotalsHtml(rpCollect()); }
+async function rpOpen(id, addr, opener) {
+  RP.opener = opener; RP.openerKey = id;
+  var back = document.createElement('div'); back.className = 'rp-back'; back.id = 'rp-back';
+  back.innerHTML = '<div class="rp-dlg" role="dialog" aria-modal="true" aria-labelledby="rp-title"><h2 id="rp-title">Repair items</h2><div class="pl-small">' + esc(addr) + '</div><div id="rp-msg" class="rp-msg" style="display:none" role="status"></div><div id="rp-content" class="pl-note">Loading…</div></div>';
+  document.body.appendChild(back);
+  back.addEventListener('mousedown', function (e) { if (e.target === back) rpClose(); });
+  document.addEventListener('keydown', rpKey_);
+  try {
+    var r = await fetch('/api/moveouts/repairs/' + encodeURIComponent(id), { credentials: 'same-origin' });
+    var j = await r.json().catch(function () { return null; });
+    if (!r.ok || !j || j.error) throw new Error((j && j.error) || 'The server answered ' + r.status);
+    RP.cur = { id: id, addr: addr, rev: j.rev || 0, items: j.items || [], updatedAt: j.updatedAt, updatedBy: j.updatedBy };
+    rpDraw();
+  } catch (e) {
+    document.getElementById('rp-content').innerHTML = '';
+    rpMsg('err', 'Could not load repair items (' + e.message + '). Close this and try again.');
+    return;
+  }
+}
+function rpDraw() {
+  var c = RP.cur, ed = ''; try { ed = localStorage.getItem('aloe_moveout_editor') || ''; } catch (e) {}
+  var h = '<p class="pl-note">Saved in the hub only. Nothing here is sent to the tenant or owner, and nothing changes in Aptly or Rentvine. “Not decided” = who pays is still open.</p>'
+    + '<div class="rp-grid"><table class="rp-tbl"><thead><tr><th>Repair item</th><th>Area</th><th>Who pays</th><th>Estimate source</th><th>Vendor</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody id="rp-body">'
+    + c.items.map(rpRow).join('') + '</tbody></table></div>'
+    + '<button type="button" class="btn btn-line" id="rp-add">Add item</button>'
+    + '<div class="rp-tot" id="rp-tot">' + rpTotalsHtml(c.items) + '</div>'
+    + '<div class="pl-small">' + (c.updatedAt ? 'Last saved ' + esc(new Date(c.updatedAt).toLocaleString('en-US', { timeZone: 'America/Phoenix', dateStyle: 'medium', timeStyle: 'short' })) + ' by ' + esc(c.updatedBy) : 'Not saved yet') + '</div>'
+    + '<div class="rp-ed"><div class="f"><label for="rp-by">Edited by (your name)</label><input id="rp-by" maxlength="40" value="' + esc(ed) + '"></div>'
+    + '<button type="button" class="btn btn-line" id="rp-save" style="background:#0A5468;color:#fff;border-color:#0A5468">Save</button><button type="button" class="btn btn-line" id="rp-close">Close</button></div>';
+  document.getElementById('rp-content').className = ''; document.getElementById('rp-content').innerHTML = h;
+  var body = document.getElementById('rp-body');
+  body.addEventListener('input', rpRefreshTotals); body.addEventListener('change', rpRefreshTotals);
+  body.addEventListener('click', function (e) { var d = e.target.getAttribute && e.target.getAttribute('data-del'); if (d != null) { RP.cur.items = rpCollect(); RP.cur.items.splice(+d, 1); rpDraw(); } });
+  document.getElementById('rp-add').addEventListener('click', function () {
+    RP.cur.items = rpCollect(); RP.cur.items.push({ description: '', area: '', payer: 'tbd', source: 'none', vendor: '', amount: null, status: 'needed' }); rpDraw();
+    var rows = document.querySelectorAll('#rp-body tr'); var f = rows[rows.length - 1].querySelector('input'); if (f) f.focus();
+  });
+  document.getElementById('rp-close').addEventListener('click', rpClose);
+  document.getElementById('rp-save').addEventListener('click', rpSave);
+  (c.items.length ? document.getElementById('rp-add') : document.getElementById('rp-add')).focus();
+}
+async function rpSave() {
+  var c = RP.cur, by = document.getElementById('rp-by').value.trim(), btn = document.getElementById('rp-save');
+  rpMsg('', '');
+  var items = rpCollect();
+  if (items.some(function (it) { return !String(it.description).trim(); })) return rpMsg('err', 'Every item needs a description. Fill it in or remove the row.');
+  if (items.some(function (it) { return it.amount !== '' && (isNaN(parseFloat(it.amount)) || parseFloat(it.amount) < 0); })) return rpMsg('err', 'An amount is not a valid number.');
+  if (!by) return rpMsg('err', 'Enter your name in “Edited by” before saving.');
+  try { localStorage.setItem('aloe_moveout_editor', by); } catch (e) {}
+  btn.disabled = true;
+  try {
+    var r = await fetch('/api/moveouts/repairs/' + encodeURIComponent(c.id), { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: items, baseRev: c.rev, editor: by }) });
+    var j = await r.json().catch(function () { return null; });
+    if (!r.ok || !j || j.error) { rpMsg('err', (j && j.error) || ('Save failed (' + r.status + '). Nothing was saved.')); btn.disabled = false; return; }
+    RP.cur = { id: c.id, addr: c.addr, rev: j.rev, items: j.items, updatedAt: j.updatedAt, updatedBy: j.updatedBy };
+    RP.sums[c.id] = { count: j.items.length, totals: { all: j.items.reduce(function (s, it) { return s + (it.amount || 0); }, 0) } };
+    rpDraw(); rpMsg('ok', 'Saved.'); plRender();
+  } catch (e) { rpMsg('err', 'Could not reach the hub. Nothing was saved.'); btn.disabled = false; }
+}
+document.addEventListener('click', function (e) {
+  var b = e.target.closest && e.target.closest('[data-rp]');
+  if (b) rpOpen(b.getAttribute('data-rp'), b.getAttribute('data-addr'), b);
+});
 async function loadPipeline(force) {
   if (plState === 'loading' || (plState === 'done' && !force)) return;
   plState = 'loading'; plRender();
@@ -570,7 +707,7 @@ async function loadPipeline(force) {
     var r = await fetch('/api/moveouts/pipeline' + (force ? '?refresh=1' : ''), { credentials: 'same-origin' });
     var j = await r.json().catch(function () { return null; });
     if (!r.ok || !j || j.error) { PL = { error: (j && j.error) || ('The server answered ' + r.status) }; plState = 'error'; }
-    else { PL = j; plState = 'done'; }
+    else { PL = j; plState = 'done'; await rpLoadSummaries(); }
   } catch (e) { PL = { error: 'Could not reach the hub (' + e.message + ').' }; plState = 'error'; }
   plRender();
 }
