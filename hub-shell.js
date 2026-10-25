@@ -1,6 +1,6 @@
-/* hub-shell.js - shared left sidebar for the Aloe Internal Hub (PREVIEW stage).
-   Does nothing unless this browser has the preview cookie.
-   Turn on:  open any page with ?preview=1      Turn off: ?preview=0
+/* hub-shell.js - shared left sidebar for the Aloe Internal Hub.
+   On for everyone by default. Opt out in one browser: open any page with ?preview=0
+   Opt back in: ?preview=1
    Only lists pages that exist today. To add a page later, add one line to GROUPS. */
 (function () {
   try {
@@ -8,9 +8,9 @@
     var q = new URLSearchParams(location.search).get('preview');
     var secure = location.protocol === 'https:' ? '; Secure' : '';
     if (q === '1') document.cookie = COOKIE + '=1; Max-Age=2592000; Path=/; SameSite=Lax' + secure;
-    if (q === '0') document.cookie = COOKIE + '=; Max-Age=0; Path=/; SameSite=Lax' + secure;
-    var on = document.cookie.split(';').some(function (c) { return c.trim() === COOKIE + '=1'; });
-    if (!on || q === '0') return;
+    if (q === '0') document.cookie = COOKIE + '=0; Max-Age=2592000; Path=/; SameSite=Lax' + secure;
+    var optedOut = document.cookie.split(';').some(function (c) { return c.trim() === COOKIE + '=0'; });
+    if (optedOut || q === '0') return;
     if (document.getElementById('aloe-shell')) return;
 
     var GROUPS = [
