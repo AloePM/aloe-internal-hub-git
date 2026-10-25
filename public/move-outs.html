@@ -487,7 +487,7 @@ function renderMoveOuts() {
     document.getElementById('rc-q').addEventListener('input', function (e) { ui.q = e.target.value; drawList(); });
     drawList();
 
-    var upcoming = unresolvedClosed.slice().sort(function(a,b){ return (a.moveOut||a.closedDate||'').localeCompare(b.moveOut||b.closedDate||''); });
+    var upcoming = unresolvedClosed.slice().sort(function(a,b){ return (b.moveOut||b.closedDate||'').localeCompare(a.moveOut||a.closedDate||''); });
     var upcomingEl = document.getElementById('recon-upcoming-section');
     if (upcomingEl) {
       if (!upcoming.length) {
@@ -508,7 +508,7 @@ function renderMoveOuts() {
           var pbTotal = bills.reduce(function(a,b){return a+Math.abs(b.amount);},0);
           var closedRef = m.closedDate || m.moveOut || '';
           var ageDays = closedRef ? Math.round((today - new Date(closedRef.slice(0,10)+'T00:00:00'))/86400000) : 0;
-          var oldClosed = isClosedUnresolved && ageDays > 90;
+          var oldClosed = isClosedUnresolved && ageDays > 30;
           window.moToggle = function(h){ var b = h.parentNode.querySelector('.mo-body'); b.style.display = (b.style.display === 'none') ? 'grid' : 'none'; };
 
           uhtml += '<div class="card" style="margin-bottom:14px">';
