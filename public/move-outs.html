@@ -70,7 +70,7 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .pl-empty{padding:24px;color:var(--muted)}
 .rp-btn{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid #B4C3C3;background:#fff;color:#0A5468;font:700 12px Manrope,system-ui,sans-serif;cursor:pointer;text-align:left}
 .rp-btn:hover{background:#E6EFF0}
-.rp-back{position:fixed;inset:0;background:rgba(13,26,26,.45);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow-y:auto}
+.rp-back{position:fixed;inset:0;background:rgba(13,26,26,.45);z-index:20000;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow-y:auto}
 .rp-dlg{background:#fff;border-radius:14px;max-width:1040px;width:100%;padding:22px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
 .rp-dlg h2{font-size:20px;font-weight:800;margin-bottom:4px}
 .rp-grid{overflow-x:auto;margin:14px 0}
@@ -532,7 +532,7 @@ function plFlags(c) {
 function plChecklist(c) {
   if (!c.checklistTotal) return '<span class="pl-small">No checklist</span>';
   var s = c.checklistDone + ' of ' + c.checklistTotal;
-  if (c.checklistOpen.length) s += '<div class="pl-small">Open: ' + esc(c.checklistOpen.slice(0, 3).join(', ')) + (c.checklistOpen.length > 3 ? ' +' + (c.checklistOpen.length - 3) + ' more' : '') + '</div>';
+  if (c.checklistOpen.length) s += '<div class="pl-small">Open: ' + esc(c.checklistOpen.slice(0, 3).map(function (x) { return String(x || '').trim() || 'Untitled item'; }).join(', ')) + (c.checklistOpen.length > 3 ? ' +' + (c.checklistOpen.length - 3) + ' more' : '') + '</div>';
   return s;
 }
 function plNotice(msg) { return '<div class="main"><div class="error-wrap" style="margin:0">' + esc(msg) + '</div></div>'; }
