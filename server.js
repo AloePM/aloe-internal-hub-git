@@ -4305,6 +4305,7 @@ app.get('/rent-analysis', (req, res) => res.sendFile(new URL('./rent-analysis.ht
 app.get('/sale-analysis', (req, res) => res.sendFile(new URL('./sale-analysis.html', import.meta.url).pathname));
 app.get('/owner-report', (req, res) => res.sendFile(new URL('./owner-report.html', import.meta.url).pathname));
 app.get('/metrics', (req, res) => res.sendFile(new URL('./metrics.html', import.meta.url).pathname));
+app.get('/hub-shell.js', (req, res) => { res.set('Cache-Control', 'no-cache'); res.type('application/javascript').sendFile(new URL('./hub-shell.js', import.meta.url).pathname); });
 app.get('/expense-log', (req, res) => res.sendFile(new URL('./expense-log.html', import.meta.url).pathname));
 app.get('/api/properties-search', async (req, res) => {
   try {
