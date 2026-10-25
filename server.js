@@ -1693,6 +1693,73 @@ app.post('/api/rentvine/leases/:id/charges', hubAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ---- Home page numbers (read-only). Added with the new Home page. ----
+let _homeCache = null, _homeCacheTime = 0, _homePending = null;
+
+function mondayInPhoenix() {
+  const now = new Date(Date.now() - 7 * 3600000); // Phoenix has no daylight saving: UTC-7 all year
+  const back = (now.getUTCDay() + 6) % 7;          // days since Monday
+  return new Date(now.getTime() - back * 86400000).toISOString().slice(0, 10);
+}
+
+function findKey(obj, key, depth = 4) {
+  if (!obj || typeof obj !== 'object' || depth < 0) return undefined;
+  if (obj[key] !== undefined && typeof obj[key] !== 'object') return obj[key];
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const f = findKey(v, key, depth - 1);
+      if (f !== undefined) return f;
+    }
+  }
+  return undefined;
+}
+
+async function buildHomeSummary() {
+  let metrics = _metricsCache;
+  if (!metrics) { metrics = await buildMetricsData(); _metricsCache = metrics; _metricsCacheTime = Date.now(); }
+  const open = await fetchAllRVOpenWOs();
+  const breakdown = { pending: 0, open: 0, onHold: 0 };
+  open.forEach(wo => {
+    const sid = parseInt(wo.primaryWorkOrderStatusID || 0);
+    if (sid === 1) breakdown.pending++; else if (sid === 2) breakdown.open++; else if (sid === 4) breakdown.onHold++;
+  });
+  const weekStart = mondayInPhoenix();
+  let newThisWeek = 0;
+  for (let pg = 1; pg <= 10; pg++) {
+    const data = await rvFetch('/maintenance/work-orders', { pageSize: 100, page: pg });
+    if (data && data.error) throw new Error(data.error);
+    const batch = Array.isArray(data) ? data : (data && data.data) || [];
+    if (!batch.length) break;
+    let hitCutoff = false;
+    batch.forEach(rec => {
+      const wo = rec.workOrder || rec;
+      if (!wo.workOrderID) return;
+      if ((wo.dateTimeCreated || '').slice(0, 10) >= weekStart) newThisWeek++; else hitCutoff = true;
+    });
+    if (hitCutoff || batch.length < 100) break;
+  }
+  const num = k => { const v = Number(findKey(metrics, k)); return isFinite(v) ? v : null; };
+  return {
+    activeProperties: num('activeProperties'), totalUnits: num('totalUnits'), occupiedUnits: num('occupiedUnits'),
+    vacantUnits: num('vacantUnits'), occupancyRate: num('occupancyRate'),
+    openRequests: open.length, openBreakdown: breakdown, newThisWeek, weekStart,
+    asOf: new Date().toISOString()
+  };
+}
+
+app.get('/api/rentvine/home-summary', async (req, res) => {
+  try {
+    if (req.query.fresh !== '1' && _homeCache && Date.now() - _homeCacheTime < 5 * 60 * 1000) return res.json(_homeCache);
+    if (!_homePending) _homePending = buildHomeSummary().finally(() => { _homePending = null; });
+    _homeCache = await _homePending;
+    _homeCacheTime = Date.now();
+    res.json(_homeCache);
+  } catch (e) {
+    console.error('Home summary error:', e.message);
+    res.status(500).json({ error: 'Could not load home numbers' });
+  }
+});
+
 app.use('/api/rentvine', async function(req, res) {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
@@ -4437,73 +4504,6 @@ app.get('/api/moveins-placement', async (req, res) => {
 app.get('/api/metrics/refresh', (req, res) => {
   _metricsCache = null; _metricsCacheTime = 0;
   res.json({ cleared: true });
-});
-
-// ---- Home page numbers (read-only). Added with the new Home page. ----
-let _homeCache = null, _homeCacheTime = 0, _homePending = null;
-
-function mondayInPhoenix() {
-  const now = new Date(Date.now() - 7 * 3600000); // Phoenix has no daylight saving: UTC-7 all year
-  const back = (now.getUTCDay() + 6) % 7;          // days since Monday
-  return new Date(now.getTime() - back * 86400000).toISOString().slice(0, 10);
-}
-
-function findKey(obj, key, depth = 4) {
-  if (!obj || typeof obj !== 'object' || depth < 0) return undefined;
-  if (obj[key] !== undefined && typeof obj[key] !== 'object') return obj[key];
-  for (const v of Object.values(obj)) {
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
-      const f = findKey(v, key, depth - 1);
-      if (f !== undefined) return f;
-    }
-  }
-  return undefined;
-}
-
-async function buildHomeSummary() {
-  let metrics = _metricsCache;
-  if (!metrics) { metrics = await buildMetricsData(); _metricsCache = metrics; _metricsCacheTime = Date.now(); }
-  const open = await fetchAllRVOpenWOs();
-  const breakdown = { pending: 0, open: 0, onHold: 0 };
-  open.forEach(wo => {
-    const sid = parseInt(wo.primaryWorkOrderStatusID || 0);
-    if (sid === 1) breakdown.pending++; else if (sid === 2) breakdown.open++; else if (sid === 4) breakdown.onHold++;
-  });
-  const weekStart = mondayInPhoenix();
-  let newThisWeek = 0;
-  for (let pg = 1; pg <= 10; pg++) {
-    const data = await rvFetch('/maintenance/work-orders', { pageSize: 100, page: pg });
-    if (data && data.error) throw new Error(data.error);
-    const batch = Array.isArray(data) ? data : (data && data.data) || [];
-    if (!batch.length) break;
-    let hitCutoff = false;
-    batch.forEach(rec => {
-      const wo = rec.workOrder || rec;
-      if (!wo.workOrderID) return;
-      if ((wo.dateTimeCreated || '').slice(0, 10) >= weekStart) newThisWeek++; else hitCutoff = true;
-    });
-    if (hitCutoff || batch.length < 100) break;
-  }
-  const num = k => { const v = Number(findKey(metrics, k)); return isFinite(v) ? v : null; };
-  return {
-    activeProperties: num('activeProperties'), totalUnits: num('totalUnits'), occupiedUnits: num('occupiedUnits'),
-    vacantUnits: num('vacantUnits'), occupancyRate: num('occupancyRate'),
-    openRequests: open.length, openBreakdown: breakdown, newThisWeek, weekStart,
-    asOf: new Date().toISOString()
-  };
-}
-
-app.get('/api/rentvine/home-summary', async (req, res) => {
-  try {
-    if (req.query.fresh !== '1' && _homeCache && Date.now() - _homeCacheTime < 5 * 60 * 1000) return res.json(_homeCache);
-    if (!_homePending) _homePending = buildHomeSummary().finally(() => { _homePending = null; });
-    _homeCache = await _homePending;
-    _homeCacheTime = Date.now();
-    res.json(_homeCache);
-  } catch (e) {
-    console.error('Home summary error:', e.message);
-    res.status(500).json({ error: 'Could not load home numbers' });
-  }
 });
 
 
