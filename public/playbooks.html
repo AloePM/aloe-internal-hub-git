@@ -25,4 +25,5 @@ var cur='ari';
 async function sel(n,btn){cur=n;document.querySelectorAll('.agent-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.getElementById('lbl').textContent=n.charAt(0).toUpperCase()+n.slice(1)+' — Playbook';document.getElementById('ed').value='Loading...';try{const r=await fetch('/api/agents/playbook/'+n);const d=await r.json();document.getElementById('ed').value=d.content||d.playbook||'';}catch(e){document.getElementById('ed').value='Error loading.';}}
 async function save(){const c=document.getElementById('ed').value;document.getElementById('st').textContent='Saving...';try{const r=await fetch('/api/agents/playbook-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agentId:cur,content:c})});document.getElementById('st').textContent=r.ok?'✅ Saved':'❌ Error';}catch(e){document.getElementById('st').textContent='❌ Error';}setTimeout(()=>document.getElementById('st').textContent='',3000);}
 sel('ari',document.querySelector('.agent-btn'));
-</script></body></html>
+</script><script src="/hub-shell.js" defer></script>
+</body></html>

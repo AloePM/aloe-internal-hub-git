@@ -72,6 +72,8 @@
       '#aloe-shell [hidden]{display:none!important}',
       '#aloe-toggle{display:none;position:fixed;top:10px;left:10px;z-index:10000;min-width:44px;min-height:44px;border:1px solid #DCE6E7;border-radius:10px;background:#fff;color:#0A5468;font:800 18px Manrope,system-ui,sans-serif;cursor:pointer}',
       'body.aloe-shell-on{padding-left:248px!important}',
+      'body.aloe-old-sb>.sidebar{display:none!important}',
+      'body.aloe-old-sb>.main{margin-left:0!important}',
       'body.aloe-shell-on .topbar{background:#fff!important;color:#1B2B2E!important;border-bottom:1px solid #DCE6E7}',
       'body.aloe-shell-on .topbar .logo-mark,body.aloe-shell-on .topbar .logo-name,body.aloe-shell-on .topbar .logo-sep{display:none!important}',
       'body.aloe-shell-on .topbar .logo-page{color:#1B2B2E!important;font-weight:700;font-size:15px}',
@@ -131,6 +133,7 @@
 
     function mount() {
       document.body.classList.add('aloe-shell-on');
+      if (document.querySelector('body > .sidebar')) document.body.classList.add('aloe-old-sb');
       document.body.insertBefore(nav, document.body.firstChild);
       document.body.appendChild(tog);
     }
