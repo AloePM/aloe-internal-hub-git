@@ -88,6 +88,17 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .rp-ed{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;margin-top:6px}
 .rp-ed label{font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px}
 .rp-ed .f{flex:1;min-width:180px;max-width:260px}
+.rc-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 12px}
+.rc-chip{min-height:44px;padding:0 14px;border-radius:999px;border:1px solid #B4C3C3;background:#fff;color:#0A5468;font:700 13px Manrope,system-ui,sans-serif;cursor:pointer}
+.rc-chip[aria-pressed=true]{background:#0A5468;color:#fff;border-color:#0A5468}
+.rc-search{min-height:44px;padding:0 12px;border:1px solid #B4C3C3;border-radius:10px;font:500 13px Manrope,system-ui,sans-serif;min-width:220px;flex:1;max-width:340px}
+.rc-search:focus,.rc-chip:focus-visible,.rc-open:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}
+.rc-open{background:none;border:none;cursor:pointer;font:700 13px Manrope,system-ui,sans-serif;color:var(--ink);text-align:left;padding:4px 0;min-height:44px;display:flex;align-items:center;gap:8px}
+.rc-caret{display:inline-block;transition:transform .15s;color:var(--muted)}
+.rc-open[aria-expanded=true] .rc-caret{transform:rotate(90deg)}
+.rc-det td{background:var(--card2);padding:14px 16px}
+.rc-st{font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;background:var(--card2);white-space:nowrap;display:inline-block;border:1px solid var(--rule)}
+.rc-note{margin:6px 0 0;color:var(--muted);font-size:12px}
 @media(max-width:900px){
   .kpi-grid.g4{grid-template-columns:repeat(2,1fr)}
   .main{padding:16px}
@@ -365,7 +376,7 @@ function renderMoveOuts() {
       return {label:'Needs review', color:'#b45309'};
     }
 
-    var rhtml = '<div class="trend-section-label" style="margin-top:20px">6000 vs 6070 Charge Reconciliation \u2014 Move-Outs, Last 90 Days</div>';
+    var items = [];
     var unresolvedClosed = [];
     moveOuts.forEach(function(m) {
       var charges = m.charges || [];
@@ -378,38 +389,103 @@ function renderMoveOuts() {
       var tcTotal = charges.reduce(function(a,c){return a+Math.abs(c.amount);},0);
       var pbTotal = bills.reduce(function(a,b){return a+Math.abs(b.amount);},0);
 
-      rhtml += '<div class="card" style="margin-bottom:14px">';
-      rhtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:2px solid var(--rule)">';
-      rhtml += '<div><div style="font-size:14px;font-weight:700">'+(m.addr||'--')+'</div>';
-      rhtml += '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(m.portfolio||'--')+' &middot; '+(m.tenant||'--')+' &middot; '+leaseLen(m.moveIn,m.moveOut)+' lease &middot; Move-out '+(m.moveOut?m.moveOut.slice(0,10):'--')+' &middot; 14-day clock: '+clockHtml+'</div></div>';
-      rhtml += '<div style="text-align:right"><span style="font-size:11px;color:'+st.color+';font-weight:700;background:var(--card2);padding:3px 8px;border-radius:6px">'+st.label+'</span><div style="margin-top:4px"><span style="font-size:11px;color:var(--blue);font-weight:700">6000: $'+Number(tcTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span><span style="font-size:11px;color:var(--muted);margin:0 8px">/</span><span style="font-size:11px;color:var(--teal2);font-weight:700">6070: $'+Number(pbTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div></div></div>';
-      rhtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+      var ch = '';
+      ch += '<div class="card" style="margin-bottom:14px">';
+      ch += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:2px solid var(--rule)">';
+      ch += '<div><div style="font-size:14px;font-weight:700">'+(m.addr||'--')+'</div>';
+      ch += '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(m.portfolio||'--')+' &middot; '+(m.tenant||'--')+' &middot; '+leaseLen(m.moveIn,m.moveOut)+' lease &middot; Move-out '+(m.moveOut?m.moveOut.slice(0,10):'--')+' &middot; 14-day clock: '+clockHtml+'</div></div>';
+      ch += '<div style="text-align:right"><span style="font-size:11px;color:'+st.color+';font-weight:700;background:var(--card2);padding:3px 8px;border-radius:6px">'+st.label+'</span><div style="margin-top:4px"><span style="font-size:11px;color:var(--blue);font-weight:700">6000: $'+Number(tcTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span><span style="font-size:11px;color:var(--muted);margin:0 8px">/</span><span style="font-size:11px;color:var(--teal2);font-weight:700">6070: $'+Number(pbTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div></div></div>';
+      ch += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
 
-      rhtml += '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue);margin-bottom:8px">6000 \u2014 Tenant Charges</div>';
-      if (!charges.length) { rhtml += '<div style="padding:12px;background:var(--card2);border-radius:6px;color:var(--muted);font-size:12px">No charges found</div>'; }
+      ch += '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue);margin-bottom:8px">6000 \u2014 Tenant Charges</div>';
+      if (!charges.length) { ch += '<div style="padding:12px;background:var(--card2);border-radius:6px;color:var(--muted);font-size:12px">No charges found</div>'; }
       else {
         charges.forEach(function(c,ci){
           var matched = match.cGroup[ci]!==null;
-          rhtml += '<div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:6px;margin-bottom:4px;font-size:12px;background:'+(matched?'rgba(60,195,225,0.12)':'rgba(192,57,43,0.12)')+'"><span>'+c.description+'</span><span style="font-weight:700">$'+Number(Math.abs(c.amount)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
+          ch += '<div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:6px;margin-bottom:4px;font-size:12px;background:'+(matched?'rgba(60,195,225,0.12)':'rgba(192,57,43,0.12)')+'"><span>'+c.description+'</span><span style="font-weight:700">$'+Number(Math.abs(c.amount)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
         });
-        rhtml += '<div style="display:flex;justify-content:space-between;padding:6px 8px;font-weight:700;border-top:1px solid var(--rule);margin-top:4px"><span>Total</span><span style="color:var(--blue)">$'+Number(tcTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
+        ch += '<div style="display:flex;justify-content:space-between;padding:6px 8px;font-weight:700;border-top:1px solid var(--rule);margin-top:4px"><span>Total</span><span style="color:var(--blue)">$'+Number(tcTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
       }
-      rhtml += '</div>';
+      ch += '</div>';
 
-      rhtml += '<div>';
-      rhtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--teal2);margin-bottom:6px">6070-1/2 \u2014 Bills</div>';
-      if (!bills.length) { rhtml += '<div style="padding:8px;background:var(--card2);border-radius:6px;color:var(--muted);font-size:12px">No bills found</div>'; }
+      ch += '<div>';
+      ch += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--teal2);margin-bottom:6px">6070-1/2 \u2014 Bills</div>';
+      if (!bills.length) { ch += '<div style="padding:8px;background:var(--card2);border-radius:6px;color:var(--muted);font-size:12px">No bills found</div>'; }
       else {
         bills.forEach(function(b,bi){
           var matched = match.bGroup[bi]!==null;
           var tag = b.account && b.account.indexOf('Cleaning')>=0 ? '6070-1' : '6070-2';
-          rhtml += '<div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:6px;margin-bottom:4px;font-size:12px;background:'+(matched?'rgba(60,195,225,0.12)':'rgba(192,57,43,0.12)')+'"><span>['+tag+'] '+b.description+'</span><span style="font-weight:700">$'+Number(Math.abs(b.amount)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
+          ch += '<div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:6px;margin-bottom:4px;font-size:12px;background:'+(matched?'rgba(60,195,225,0.12)':'rgba(192,57,43,0.12)')+'"><span>['+tag+'] '+b.description+'</span><span style="font-weight:700">$'+Number(Math.abs(b.amount)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
         });
-        rhtml += '<div style="display:flex;justify-content:space-between;padding:6px 8px;font-weight:700;border-top:1px solid var(--rule);margin-top:4px"><span>Total</span><span style="color:var(--teal2)">$'+Number(pbTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
+        ch += '<div style="display:flex;justify-content:space-between;padding:6px 8px;font-weight:700;border-top:1px solid var(--rule);margin-top:4px"><span>Total</span><span style="color:var(--teal2)">$'+Number(pbTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
       }
-      rhtml += '</div></div></div>';
+      ch += '</div></div></div>';
+      items.push({ m: m, st: st, days: days, clockHtml: clockHtml, tc: tcTotal, pb: pbTotal, ch: ch });
     });
-    recon.innerHTML = rhtml;
+    var today0 = new Date(); today0.setHours(0,0,0,0);
+    function ageOf(m) {
+      var s = (m.moveOut || m.closedDate || '').slice(0, 10);
+      if (!s) return null;
+      return Math.floor((today0 - new Date(s + 'T00:00:00')) / 86400000);
+    }
+    var ui = D._reconUI = D._reconUI || { f: 'work', q: '', open: {} };
+    items.forEach(function (it, i) {
+      it.i = i; it.age = ageOf(it.m); it.unres = it.st.label !== 'Matched'; it.recent = it.age === null || it.age <= 30;
+    });
+    items.sort(function (a, b) {
+      if (a.unres !== b.unres) return a.unres ? -1 : 1;
+      if (a.unres) return (a.days === null ? 9999 : a.days) - (b.days === null ? 9999 : b.days);
+      return (b.m.moveOut || '').localeCompare(a.m.moveOut || '');
+    });
+    var nAttn = items.filter(function (it) { return it.unres; }).length;
+    var nWork = items.filter(function (it) { return it.unres || it.recent; }).length;
+    recon.innerHTML = '<div class="trend-section-label" style="margin-top:20px">6000 vs 6070 Charge Reconciliation — Move-Outs, Last 90 Days</div>'
+      + '<div class="rc-bar" role="group" aria-label="Filter move-outs">'
+      + '<button type="button" class="rc-chip" data-f="work">Working list · ' + nWork + '</button>'
+      + '<button type="button" class="rc-chip" data-f="attention">Needs attention · ' + nAttn + '</button>'
+      + '<button type="button" class="rc-chip" data-f="all">All 90 days · ' + items.length + '</button>'
+      + '<input class="rc-search" id="rc-q" type="search" placeholder="Search address, tenant or owner" aria-label="Search move-outs" value="' + esc(ui.q) + '">'
+      + '</div><div id="rc-list"></div>';
+    function money2(n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    function drawList() {
+      var q = ui.q.trim().toLowerCase();
+      var shown = items.filter(function (it) {
+        if (ui.f === 'attention' && !it.unres) return false;
+        if (ui.f === 'work' && !(it.unres || it.recent)) return false;
+        if (q && ((it.m.addr || '') + ' ' + (it.m.tenant || '') + ' ' + (it.m.portfolio || '')).toLowerCase().indexOf(q) < 0) return false;
+        return true;
+      });
+      recon.querySelectorAll('.rc-chip').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-f') === ui.f)); });
+      var html = '';
+      if (!shown.length) html = '<div style="padding:16px;color:var(--muted);font-size:13px">Nothing matches' + (q ? ' that search' : ' this view') + '.</div>';
+      else {
+        html = '<div class="pl-wrap"><table class="pl-tbl" style="min-width:760px"><thead><tr><th>Property</th><th>Move-out</th><th>14-day clock</th><th>6000 charged</th><th>6070 billed</th><th>Status</th></tr></thead><tbody>';
+        shown.forEach(function (it) {
+          var m = it.m, open = !!ui.open[it.i];
+          html += '<tr><td><button type="button" class="rc-open" data-i="' + it.i + '" aria-expanded="' + open + '" aria-controls="rc-d-' + it.i + '"><span class="rc-caret" aria-hidden="true">▶</span><span>' + esc(m.addr || '--') + '<span class="pl-small" style="display:block;font-weight:500">' + esc((m.portfolio || '--') + ' · ' + (m.tenant || '--')) + '</span></span></button></td>'
+            + '<td>' + esc(m.moveOut ? m.moveOut.slice(0, 10) : '--') + (it.age !== null ? '<div class="pl-small">' + (it.age < 0 ? 'in ' + (-it.age) + ' d' : it.age + ' d ago') + '</div>' : '') + '</td>'
+            + '<td>' + it.clockHtml + '</td><td>' + money2(it.tc) + '</td><td>' + money2(it.pb) + '</td>'
+            + '<td><span class="rc-st" style="color:' + it.st.color + '">' + esc(it.st.label) + '</span></td></tr>'
+            + '<tr class="rc-det" id="rc-d-' + it.i + '"' + (open ? '' : ' style="display:none"') + '><td colspan="6">' + it.ch + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+      var hidden = items.length - shown.length;
+      html += '<p class="rc-note">Showing ' + shown.length + ' of ' + items.length + (ui.f === 'work' ? '. The working list shows everything that needs attention plus the last 30 days. Older matched move-outs are under “All 90 days”.' : '.') + '</p>';
+      document.getElementById('rc-list').innerHTML = html;
+    }
+    recon.addEventListener('click', function (e) {
+      var c = e.target.closest && e.target.closest('.rc-chip');
+      if (c) { ui.f = c.getAttribute('data-f'); drawList(); return; }
+      var o = e.target.closest && e.target.closest('.rc-open');
+      if (o) {
+        var i = o.getAttribute('data-i'); ui.open[i] = !ui.open[i];
+        var row = document.getElementById('rc-d-' + i); if (row) row.style.display = ui.open[i] ? '' : 'none';
+        o.setAttribute('aria-expanded', String(!!ui.open[i]));
+      }
+    });
+    document.getElementById('rc-q').addEventListener('input', function (e) { ui.q = e.target.value; drawList(); });
+    drawList();
 
     var upcoming = unresolvedClosed.slice().sort(function(a,b){ return (a.moveOut||a.closedDate||'').localeCompare(b.moveOut||b.closedDate||''); });
     var upcomingEl = document.getElementById('recon-upcoming-section');
