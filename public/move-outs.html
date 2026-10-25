@@ -55,6 +55,19 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .trend-section-label{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin:24px 0 10px;display:flex;align-items:center;gap:10px}
 .trend-section-label::after{content:'';flex:1;height:1px;background:var(--rule)}
 #panes thead tr{background:#E6EFF0!important;color:#4A6466!important}
+.pl-wrap{overflow-x:auto;border:1px solid var(--rule);border-radius:var(--r);background:var(--card)}
+.pl-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:860px}
+.pl-tbl th{background:#E6EFF0;color:#4A6466;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;white-space:nowrap}
+.pl-tbl td{padding:10px 12px;border-top:1px solid var(--rule);vertical-align:top}
+.pl-addr{font-weight:700;color:var(--ink)}
+.pl-small{font-size:12px;color:var(--muted)}
+.pl-pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin:0 4px 4px 0;background:var(--amber-d);color:#8a5200}
+.pl-pill.red{background:var(--red-d);color:#b91c1c}
+.pl-days{font-family:'DM Mono',monospace;font-weight:500}
+.pl-days.warn{color:var(--amber);font-weight:700}
+.pl-days.bad{color:var(--red);font-weight:700}
+.pl-note{margin:0 0 12px;color:var(--muted);font-size:13px}
+.pl-empty{padding:24px;color:var(--muted)}
 @media(max-width:900px){
   .kpi-grid.g4{grid-template-columns:repeat(2,1fr)}
   .main{padding:16px}
@@ -78,6 +91,8 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 
 <div class="nav" role="tablist" aria-label="Move-out sections">
   <button class="tab active" role="tab" id="tab-main" data-tab="main" aria-selected="true" type="button">Move-outs</button>
+  <button class="tab" role="tab" id="tab-pipeline" data-tab="pipeline" aria-selected="false" type="button">Pipeline</button>
+  <button class="tab" role="tab" id="tab-turns" data-tab="turns" aria-selected="false" type="button">Unit turns</button>
   <button class="tab" role="tab" id="tab-recon" data-tab="recon" aria-selected="false" type="button">Charge reconciliation</button>
 </div>
 
@@ -85,6 +100,8 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 <div id="error" class="error-wrap" role="alert" style="display:none"></div>
 <div id="panes" style="display:none">
   <div id="pane-main" role="tabpanel" aria-labelledby="tab-main"></div>
+  <div id="pane-pipeline" role="tabpanel" aria-labelledby="tab-pipeline" style="display:none"></div>
+  <div id="pane-turns" role="tabpanel" aria-labelledby="tab-turns" style="display:none"></div>
   <div id="pane-recon" role="tabpanel" aria-labelledby="tab-recon" style="display:none"></div>
 </div>
 
@@ -450,7 +467,7 @@ var activeTab = 'main';
 
 function switchTab(id) {
   activeTab = id;
-  ['main', 'recon'].forEach(function (t) {
+  ['main', 'pipeline', 'turns', 'recon'].forEach(function (t) {
     var on = t === id;
     var b = document.getElementById('tab-' + t);
     b.classList.toggle('active', on);
@@ -458,9 +475,105 @@ function switchTab(id) {
     document.getElementById('pane-' + t).style.display = on ? 'block' : 'none';
   });
   try { history.replaceState(null, '', id === 'main' ? location.pathname : '#' + id); } catch (e) {}
+  if (id === 'pipeline' || id === 'turns') loadPipeline(false);
 }
 document.getElementById('tab-main').addEventListener('click', function () { switchTab('main'); });
+document.getElementById('tab-pipeline').addEventListener('click', function () { switchTab('pipeline'); });
+document.getElementById('tab-turns').addEventListener('click', function () { switchTab('turns'); });
 document.getElementById('tab-recon').addEventListener('click', function () { switchTab('recon'); });
+
+// ---- Pipeline and Unit turns (read-only, from the Aptly Move-Outs board) ----
+var PL = null, plState = 'idle';
+function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function plDate(iso) {
+  if (!iso) return '—';
+  var p = iso.split('-'); var m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return m[+p[1] - 1] + ' ' + (+p[2]);
+}
+function plDays(n, warnAt, badAt) {
+  if (n == null) return '<span class="pl-small">—</span>';
+  var cls = n >= badAt ? 'bad' : n >= warnAt ? 'warn' : '';
+  return '<span class="pl-days ' + cls + '">' + n + (n === 1 ? ' day' : ' days') + '</span>';
+}
+function plWhen(c) {
+  if (!c.moveOutDate) return '<span class="pl-small">No date</span>';
+  var n = c.daysToMoveOut, rel = n == null ? '' : n > 0 ? 'in ' + n + ' d' : n === 0 ? 'today' : Math.abs(n) + ' d ago';
+  return esc(plDate(c.moveOutDate)) + '<div class="pl-small">' + esc(rel) + '</div>';
+}
+function plLast(c) {
+  var l = c.lastActivity;
+  if (!l) return '<span class="pl-small">None on card</span>';
+  var ago = l.daysAgo == null ? '' : l.daysAgo === 0 ? 'today' : l.daysAgo + ' d ago';
+  return '<div class="pl-small">' + esc([l.type, ago].filter(Boolean).join(' · ')) + '</div>' + esc(l.text.length > 90 ? l.text.slice(0, 90) + '…' : l.text);
+}
+function plFlags(c) {
+  return c.flags.map(function (f) { return '<span class="pl-pill' + (/passed|Turn open|No move-out/.test(f) ? ' red' : '') + '">' + esc(f) + '</span>'; }).join('');
+}
+function plChecklist(c) {
+  if (!c.checklistTotal) return '<span class="pl-small">No checklist</span>';
+  var s = c.checklistDone + ' of ' + c.checklistTotal;
+  if (c.checklistOpen.length) s += '<div class="pl-small">Open: ' + esc(c.checklistOpen.slice(0, 3).join(', ')) + (c.checklistOpen.length > 3 ? ' +' + (c.checklistOpen.length - 3) + ' more' : '') + '</div>';
+  return s;
+}
+function plNotice(msg) { return '<div class="main"><div class="error-wrap" style="margin:0">' + esc(msg) + '</div></div>'; }
+function plRender() {
+  var P = document.getElementById('pane-pipeline'), T = document.getElementById('pane-turns');
+  if (plState === 'loading') { P.innerHTML = T.innerHTML = '<div class="main"><div class="pl-note">Loading the Aptly Move-Outs board…</div></div>'; return; }
+  if (plState === 'error') { P.innerHTML = T.innerHTML = plNotice(PL && PL.error ? PL.error : 'Could not load the pipeline. Press Refresh to try again.'); return; }
+  if (!PL) return;
+  var cards = PL.cards, ph = '';
+  var turns = cards.filter(function (c) { return c.isTurn; });
+  var flagged = cards.filter(function (c) { return c.flags.length; });
+  var stuck = turns.filter(function (c) { return (c.daysInStage || 0) >= 14; });
+  ph += '<div class="main"><div class="kpi-grid g4">'
+    + kpi('Active move-outs', cards.length, 'On the Aptly board', '#3CC3E1')
+    + kpi('In unit turn', turns.length, 'Repairs / bills not finished', '#7c3aed')
+    + kpi('Turn open 14+ days', stuck.length, 'Needs a push', stuck.length ? '#e03e3e' : '#0fa86c')
+    + kpi('Cards with flags', flagged.length, 'See the Flags column', flagged.length ? '#d4820a' : '#0fa86c')
+    + '</div>';
+  if (PL.stale) ph += '<p class="pl-note">Showing the last successful read; Aptly could not be reached just now.</p>';
+  if (PL.missingLabels && PL.missingLabels.length) ph += '<p class="pl-note">Some Aptly fields were not found (' + esc(PL.missingLabels.join(', ')) + '), so those columns may be empty.</p>';
+  ph += '<p class="pl-note">Read-only. Nothing here changes Aptly. Aptly comments are not shown yet.</p>';
+  PL.stageOrder.concat(Object.keys(PL.stageCounts).filter(function (s) { return PL.stageOrder.indexOf(s) < 0; })).forEach(function (st) {
+    var list = cards.filter(function (c) { return c.stage === st; });
+    if (!list.length) return;
+    ph += '<div class="trend-section-label">' + esc(st || 'No stage') + ' · ' + list.length + '</div><div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Move-out</th><th>Type</th><th>Owner</th><th>In stage</th><th>Checklist</th><th>Last activity</th><th>Flags</th></tr></thead><tbody>';
+    list.forEach(function (c) {
+      ph += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div></td><td>' + plWhen(c) + '</td><td>' + esc(c.moveOutType || '—') + '</td><td>' + esc(c.owners.join(', ') || '—') + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td></tr>';
+    });
+    ph += '</tbody></table></div>';
+  });
+  if (!cards.length) ph += '<div class="pl-empty">No active move-out cards on the board.</div>';
+  P.innerHTML = ph + '</div>';
+
+  var th = '<div class="main"><div class="kpi-grid g4">'
+    + kpi('Units in turn', turns.length, 'Disposition sent, work not done', '#7c3aed')
+    + kpi('Open 14+ days', stuck.length, 'Longest first below', stuck.length ? '#e03e3e' : '#0fa86c')
+    + kpi('Longest open', turns.length ? Math.max.apply(null, turns.map(function (c) { return c.daysInStage || 0; })) + ' d' : '—', 'Days in current stage', '#d4820a')
+    + kpi('Nobody assigned', turns.filter(function (c) { return !c.assigned; }).length, 'In turn stages', '#3CC3E1')
+    + '</div><p class="pl-note">Cards in “Disposition sent- Repairs still in progress” and “Complete Repairs and Bills”, longest first. Turn steps and showing status will be added next.</p>';
+  turns = turns.slice().sort(function (a, b) { return (b.daysInStage || 0) - (a.daysInStage || 0); });
+  if (!turns.length) th += '<div class="pl-wrap"><div class="pl-empty">No units in turn right now.</div></div>';
+  else {
+    th += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Stage</th><th>In stage</th><th>Moved out</th><th>Turn items needed</th><th>Open checklist</th><th>Last activity</th><th>Flags</th></tr></thead><tbody>';
+    turns.forEach(function (c) {
+      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div></td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td></tr>';
+    });
+    th += '</tbody></table></div>';
+  }
+  T.innerHTML = th + '</div>';
+}
+async function loadPipeline(force) {
+  if (plState === 'loading' || (plState === 'done' && !force)) return;
+  plState = 'loading'; plRender();
+  try {
+    var r = await fetch('/api/moveouts/pipeline' + (force ? '?refresh=1' : ''), { credentials: 'same-origin' });
+    var j = await r.json().catch(function () { return null; });
+    if (!r.ok || !j || j.error) { PL = { error: (j && j.error) || ('The server answered ' + r.status) }; plState = 'error'; }
+    else { PL = j; plState = 'done'; }
+  } catch (e) { PL = { error: 'Could not reach the hub (' + e.message + ').' }; plState = 'error'; }
+  plRender();
+}
 
 async function loadData(live) {
   var rb = document.getElementById('refresh-btn'), fb = document.getElementById('force-btn');
@@ -490,9 +603,9 @@ async function loadData(live) {
     rb.disabled = false; fb.disabled = false;
   }
 }
-document.getElementById('refresh-btn').addEventListener('click', function () { loadData(false); });
-document.getElementById('force-btn').addEventListener('click', function () { loadData(true); });
-if (location.hash === '#recon') activeTab = 'recon';
+document.getElementById('refresh-btn').addEventListener('click', function () { loadData(false); if (plState !== 'idle') { plState = 'idle'; if (activeTab === 'pipeline' || activeTab === 'turns') loadPipeline(false); } });
+document.getElementById('force-btn').addEventListener('click', function () { loadData(true); if (plState !== 'idle') { plState = 'idle'; if (activeTab === 'pipeline' || activeTab === 'turns') loadPipeline(true); } });
+if (['recon', 'pipeline', 'turns'].indexOf(location.hash.slice(1)) >= 0) activeTab = location.hash.slice(1);
 loadData(false);
 </script>
 <script src="/hub-shell.js" defer></script>
