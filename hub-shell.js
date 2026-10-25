@@ -59,6 +59,7 @@
       '#aloe-shell .as-brand{display:flex;align-items:center;gap:10px;padding:0 8px 14px;border-bottom:1px solid #DCE6E7;margin-bottom:8px}',
       '#aloe-shell .as-brand img{height:34px;width:auto;display:block}',
       '#aloe-shell .as-brand span{font-size:12px;font-weight:700;color:#4A6466}',
+      '#aloe-shell .as-brandtext{font-size:17px;font-weight:800;color:#1B2B2E}',
       '#aloe-shell .as-gh{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:36px;padding:8px;margin-top:4px;border:0;background:transparent;border-radius:8px;cursor:pointer;font:800 11px Manrope,system-ui,sans-serif;letter-spacing:1.1px;text-transform:uppercase;color:#4A6466}',
       '#aloe-shell .as-gh:hover,#aloe-shell .as-a:hover{background:#E6EFF0}',
       '#aloe-shell .as-gh svg{transition:transform .15s}',
@@ -93,6 +94,10 @@
 
     var nav = el('nav', { id: 'aloe-shell', 'aria-label': 'Hub navigation' });
     var logo = el('img', { src: '/logo.png', alt: 'Aloe Property Management' });
+    logo.addEventListener('error', function () {
+      var t = el('strong', { 'class': 'as-brandtext', text: 'Aloe PM' });
+      if (logo.parentNode) logo.parentNode.replaceChild(t, logo);
+    });
     nav.appendChild(el('div', { 'class': 'as-brand' }, [logo, el('span', { text: 'Internal Hub' })]));
 
     GROUPS.forEach(function (g) {
