@@ -17,11 +17,11 @@
       { id: 'overview', label: 'Overview', items: [
         ['Home', '/dashboard'], ['Ask the Hub', '/chat'] ] },
       { id: 'leasing', label: 'Leasing', items: [
-        ['Vacancy', '/vacancy'], ['Vacancy risk', '/vacancy-risk'],
+        ['Vacancy risk', '/vacancy-risk'],
         ['Rent analysis', '/rent-analysis'], ['Owner report generator', '/owner-report'] ] },
       { id: 'residents', label: 'Residents', items: [
         ['Tenant resources', 'https://resident.aloepm.com/resources/tenant', true],
-        ['Lease renewals', '/renewals'], ['HOA generator', '/hoa'] ] },
+        ['Lease renewals', '/renewals'], ['Move-outs', '/move-outs'], ['HOA generator', '/hoa'] ] },
       { id: 'maint', label: 'Maintenance', items: [
         ['Vendors', '/vendors'], ['Appliance scanner', '/appliance-scanner'] ] },
       { id: 'props', label: 'Properties', items: [

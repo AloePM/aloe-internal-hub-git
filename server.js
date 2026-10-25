@@ -5183,6 +5183,7 @@ async function fetchMoveOutChargeRecon() {
   }
 }
 
+app.get('/move-outs', (req, res) => res.sendFile(new URL('./public/move-outs.html', import.meta.url).pathname));
 app.get('/suppressed-fees', (req, res) => res.sendFile(new URL('./suppressed-fees.html', import.meta.url).pathname));
 
 // ── Property Map ──────────────────────────────────────────────────────────
