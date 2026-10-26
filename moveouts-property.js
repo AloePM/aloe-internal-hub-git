@@ -264,7 +264,7 @@ async function ziGet(path, params) {
   for (const v of vars) {
     const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 20000);
     try {
-      const r = await fetch(url.toString(), { headers: { ...v.headers, Accept: 'application/json' }, signal: ac.signal });
+      const r = await fetch(url.toString(), { headers: { ...v.headers, Accept: 'application/json', Origin: 'https://hub.aloepm.com', Referer: 'https://hub.aloepm.com/' }, signal: ac.signal });
       const txt = await r.text();
       if (r.status === 401 || r.status === 403) { refused.push(v.label + ' ' + r.status); continue; }
       if (!r.ok) return { error: 'Zinspector ' + r.status + ': ' + txt.slice(0, 160), via: v.label };
