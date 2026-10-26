@@ -73,6 +73,7 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .sv-pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin:0 4px 4px 0;background:#eef2f2;color:#4b5b5b}
 .sv-pill.ok{background:#e3f6ec;color:#0b6b46}
 .sv-pill.warn{background:var(--amber-d);color:#8a5200}
+.cp-b{font-size:12px;padding:2px 10px;border:1px solid #0A5468;border-radius:6px;background:#fff;color:#0A5468;cursor:pointer;font-family:inherit}.cp-b:disabled{opacity:.5;cursor:default}.cp-wrap{margin:2px 0}
 .sv-link{font-size:12px;background:none;border:0;padding:0;color:#0A5468;text-decoration:underline;cursor:pointer;font-family:inherit}
 .sv-box{border:1px solid var(--rule);border-radius:10px;padding:10px 12px;margin:10px 0;background:#f8fbfb;font-size:13px}
 .sv-box.stop{background:#e9f7f0;border-color:#9fd8bd}
@@ -869,12 +870,51 @@ function balCell(c) {
   if (c.overdue > 0) h += '<div class="pl-small">Overdue ' + usd(c.overdue) + '</div>';
   return h;
 }
-function compTag(c) {
+function compInner(c) {
   var v = (c.comprehensive || '').trim().toLowerCase();
-  if (v === 'yes') return '<span class="pl-pill">Comprehensive: YES (tell John)</span>';
-  if (v === 'no') return '<span class="sv-pill">Comprehensive: No</span>';
-  return '';
+  var h = v === 'yes' ? '<span class="pl-pill">Comprehensive: YES (tell John)</span>' : v === 'no' ? '<span class="sv-pill">Comprehensive: No</span>' : (c.aptlyId ? '<span class="sv-pill">Comprehensive: not set</span>' : '');
+  if (c.aptlyId) h += ' <button type="button" class="sv-link" data-comp-open="' + esc(c.aptlyId) + '">Change</button>'
+    + '<span class="cp-ch" style="display:none"> <button type="button" class="cp-b" data-comp-set="Yes" data-aid="' + esc(c.aptlyId) + '">Set Yes</button> <button type="button" class="cp-b" data-comp-set="No" data-aid="' + esc(c.aptlyId) + '">Set No</button></span>'
+    + '<span class="cp-msg pl-small"></span>';
+  return h;
 }
+function compTag(c) {
+  var h = compInner(c);
+  return c.aptlyId ? '<div class="cp-wrap" data-aid="' + esc(c.aptlyId) + '">' + h + '</div>' : h;
+}
+function compFind(aid) {
+  var cs = (PL && PL.cards) || [];
+  for (var i = 0; i < cs.length; i++) if (cs[i].aptlyId === aid) return cs[i];
+  return null;
+}
+function compWraps(aid) {
+  return Array.prototype.filter.call(document.querySelectorAll('.cp-wrap'), function (w) { return w.getAttribute('data-aid') === aid; });
+}
+document.addEventListener('click', function (ev) {
+  var t = ev.target;
+  if (!t || !t.getAttribute) return;
+  var op = t.getAttribute('data-comp-open');
+  if (op) { var w0 = t.closest('.cp-wrap'); var ch = w0 && w0.querySelector('.cp-ch'); if (ch) ch.style.display = ch.style.display === 'none' ? '' : 'none'; return; }
+  var val = t.getAttribute('data-comp-set');
+  if (!val) return;
+  var aid = t.getAttribute('data-aid'), c = compFind(aid);
+  if (!c) return;
+  var was = (c.comprehensive || '').trim() || 'not set';
+  if (!window.confirm('Set Comprehensive Inspection to ' + val + ' for ' + (c.address || 'this property') + '?\n\nIt is now: ' + was + '.\nThis changes the card in Aptly and adds a comment on it.')) return;
+  var wraps = compWraps(aid);
+  wraps.forEach(function (w) { var m = w.querySelector('.cp-msg'); if (m) m.textContent = ' Saving…'; Array.prototype.forEach.call(w.querySelectorAll('button'), function (b) { b.disabled = true; }); });
+  fetch('/api/moveouts/comprehensive', { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-write': '1' }, body: JSON.stringify({ aptlyId: aid, value: val }) })
+    .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, j: j }; }); })
+    .then(function (o) {
+      if (o.ok && o.j && o.j.ok) {
+        c.comprehensive = val;
+        wraps.forEach(function (w) { w.innerHTML = compInner(c); var m = w.querySelector('.cp-msg'); if (m) m.textContent = ' Saved' + (o.j.commented === false ? ' (comment could not be added)' : '') + '.'; });
+      } else {
+        wraps.forEach(function (w) { w.innerHTML = compInner(c); var m = w.querySelector('.cp-msg'); if (m) { m.textContent = ' ' + ((o.j && o.j.error) || 'Could not save.'); m.style.color = '#b42318'; } });
+      }
+    })
+    .catch(function (e) { wraps.forEach(function (w) { w.innerHTML = compInner(c); var m = w.querySelector('.cp-msg'); if (m) { m.textContent = ' Could not reach the hub (' + e.message + '). Nothing was changed.'; m.style.color = '#b42318'; } }); });
+});
 function aptlyLink(c) {
   return c.aptlyId ? '<div class="sv-row"><a class="sv-link" target="_blank" rel="noopener" href="https://app.getaptly.com/ticket/YA3QWmPebvMwLwbB3/' + encodeURIComponent(c.aptlyId) + '">Open in Aptly</a></div>' : '';
 }
