@@ -273,6 +273,36 @@ export function installMoveoutProperty(app, rvFetch) {
       res.json({ source: via, topLevelKeys: Object.keys(parts[0] || {}).slice(0, 40), matchingFields: pairs.slice(0, 40), parsed: extractServices(parts) });
     } catch (e) { res.status(502).json({ error: 'Could not read the property.' }); }
   });
+  // READ-ONLY diagnostic for the Upcoming tab plan. Writes nothing anywhere. Reports names/shapes only, never secret values.
+  const SHEET_ID = '1b5qlwlEo8avsSRbm2id1ocN0Eh5KmvvKPHsiEoDWngk';
+  const timed = async (url, ms = 15000) => {
+    const ac = new AbortController(); const t = setTimeout(() => ac.abort(), ms);
+    try { return await fetch(url, { signal: ac.signal, redirect: 'follow' }); } finally { clearTimeout(t); }
+  };
+  app.get('/api/moveouts/zi-probe', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const out = { env: {}, sheet: {}, report: {} };
+    out.env.zinspectorVarNames = Object.keys(process.env).filter((k) => /zinspector|zi_/i.test(k)).sort();
+    out.env.aptlyVarNames = Object.keys(process.env).filter((k) => /aptly/i.test(k)).sort();
+    try {
+      const r = await timed('https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/export?format=csv');
+      const txt = await r.text();
+      const lines = txt.split(/\r?\n/);
+      out.sheet = { status: r.status, contentType: (r.headers.get('content-type') || '').slice(0, 60), bytes: txt.length, rows: lines.length, looksLikeCsv: /^Property,City/i.test(txt), header: /^Property,City/i.test(txt) ? lines[0].slice(0, 120) : null };
+    } catch (e) { out.sheet = { error: String(e.message || e).slice(0, 120) }; }
+    const docId = String(req.query.doc || '');
+    const token = /^[A-Za-z0-9]{20,64}$/.test(String(req.query.token || '')) ? String(req.query.token) : 'oLWkbn3dvQ7bNAPH5PD4K7qeYAPgmD4R';
+    try {
+      const r = await timed('https://portfolio.zinspector.com/api/document/getShareReport/' + token);
+      const html = await r.text();
+      const text = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, '\n').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+      const lines = text.split('\n').map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean);
+      const short = [...new Set(lines.filter((x) => x.length <= 40))].slice(0, 90);
+      out.report = { status: r.status, contentType: (r.headers.get('content-type') || '').slice(0, 60), bytes: html.length, images: (html.match(/<img\b/gi) || []).length, textLines: lines.length, mentionsComment: (html.match(/comment/gi) || []).length, mentionsAction: (html.match(/action/gi) || []).length, shortLines: short };
+    } catch (e) { out.report = { error: String(e.message || e).slice(0, 120) }; }
+    res.json(out);
+  });
+
   app.get('/api/moveouts/property-probe/:pid', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     if (!/^\d{1,9}$/.test(req.params.pid)) return res.status(400).json({ error: 'Bad property id.' });
