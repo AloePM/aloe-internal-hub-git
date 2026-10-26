@@ -416,6 +416,35 @@ export function installMoveoutProperty(app, rvFetch) {
     if (!v.error) inspCache.set(address, { at: Date.now(), v });
     res.status(v.error ? 502 : 200).json(v);
   });
+  // READ-ONLY auth check: which Zinspector key styles are accepted by which lists. Reports status codes and key SHAPE only (never values).
+  app.get('/api/moveouts/zi-auth-check', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const keys = { ZI_API_KEY: process.env.ZI_API_KEY || '', ZINSPECTOR_API_KEY: process.env.ZINSPECTOR_API_KEY || '' };
+    const shape = {};
+    for (const [n, v] of Object.entries(keys)) {
+      let decoded = ''; try { decoded = Buffer.from(v, 'base64').toString('utf8'); } catch (e) {}
+      shape[n] = { set: !!v, length: v.length, hasWhitespace: /\s/.test(v), startsOrEndsWithQuote: /^["']|["']$/.test(v), base64WithColonInside: /^[^:\s]+:[^:\s]+$/.test(decoded) };
+    }
+    const styles = [];
+    for (const [n, v] of Object.entries(keys)) {
+      if (!v) continue;
+      styles.push([n + ' x-api-key', { 'x-api-key': v }], [n + ' Basic', { Authorization: 'Basic ' + v }], [n + ' Bearer', { Authorization: 'Bearer ' + v }],
+        [n + ' Api-Key', { Authorization: 'Api-Key ' + v }], [n + ' Token', { Authorization: 'Token ' + v }], [n + ' X-Api-Key+Accept', { 'X-Api-Key': v, Accept: 'application/json' }]);
+    }
+    const paths = ['/api/propertiesCursor/?page_size=1', '/api/documents/?page_size=1', '/api/media/?page_size=1'];
+    const matrix = [];
+    for (const [label, headers] of styles) {
+      const row = { style: label };
+      for (const pth of paths) {
+        const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 15000);
+        try { const r = await fetch(ZI_BASE + pth, { headers, signal: ac.signal }); row[pth.split('?')[0]] = r.status; }
+        catch (e) { row[pth.split('?')[0]] = 'error'; } finally { clearTimeout(t); }
+      }
+      matrix.push(row);
+    }
+    res.json({ shape, matrix });
+  });
+
   app.get('/api/moveouts/inspection-parse', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     const token = String(req.query.token || '');
