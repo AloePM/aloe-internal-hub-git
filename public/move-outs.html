@@ -62,6 +62,9 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .pl-addr{font-weight:700;color:var(--ink)}
 .pl-small{font-size:12px;color:var(--muted)}
 .ib{display:flex;flex-wrap:wrap;gap:6px 28px;margin:8px 0 6px;padding:8px 10px;border:1px solid var(--rule);border-radius:10px;background:#f8fbfb;font-size:13px;font-weight:400}.ib-c,.ib-m{min-width:200px}
+.bl-strip{border:1px solid #f0c36d;background:#fff8e6;border-radius:12px;padding:12px 16px;margin:0 0 18px}.bl-h{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#8a5200;margin-bottom:6px}.bl-i{margin:6px 0;font-size:13px}.bl-i a,.bl-t a{color:#0A5468}
+.bl-pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin:2px 8px 2px 0;cursor:default}details.bl-d{margin:2px 0}details.bl-d>summary{list-style:none;cursor:pointer;display:inline-block}details.bl-d>summary::-webkit-details-marker{display:none}.bl-t{font-size:12px;margin:4px 0 6px;max-width:520px;white-space:normal}
+.bl-pill.red{background:var(--red-d);color:#b91c1c}.bl-pill.amb{background:var(--amber-d);color:#8a5200}.bl-pill.blue{background:#dcecf7;color:#0b4f7a}
 .tn-p{margin-bottom:6px}.tn-n{font-weight:600}.tn-l{font-size:12px;color:var(--ink);white-space:nowrap}
 .cp-btn{font:inherit;font-size:11px;font-weight:700;padding:1px 7px;margin-left:4px;border:1px solid var(--rule);border-radius:999px;background:#fff;color:#0A5468;cursor:pointer}.cp-btn:hover{background:#eef6f7}
 .pl-pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin:0 4px 4px 0;background:var(--amber-d);color:#8a5200}
@@ -319,7 +322,7 @@ function renderMoveOuts() {
   var _acctHtml = html; html = _mainHtml;
   html += '</div>';
   document.getElementById('pane-main').innerHTML = html;
-  document.getElementById('pane-recon').innerHTML = '<div class="main">' + _acctHtml + '<div id="recon-section"></div><div id="recon-upcoming-section"></div></div>';
+  document.getElementById('pane-recon').innerHTML = '<div class="main">' + _acctHtml + '<div id="bill-strip"></div><div id="recon-section"></div><div id="recon-upcoming-section"></div></div>'; if (typeof blRender === 'function') blRender();
   var _ap = document.getElementById('pane-audit'); if (_ap) _ap.innerHTML = '<div class="main"><div id="audit-section"></div></div>';
   function showReconError(msg) {
     var el = document.getElementById('recon-section');
@@ -526,7 +529,7 @@ function renderMoveOuts() {
       shown.forEach(function (it) {
         var m = it.m, open = !!ui.open[it.i];
         var stage = it.card ? esc(it.card.stage) : (plOk ? '<span class="pl-small">No card on the board</span>' : '<span class="pl-small">—</span>');
-        h += '<tr><td><button type="button" class="rc-open" data-i="' + it.i + '" aria-expanded="' + open + '" aria-controls="rc-d-' + it.i + '"><span class="rc-caret" aria-hidden="true">▶</span><span>' + esc(m.addr || '--') + '<span class="pl-small" style="display:block;font-weight:500">' + esc((m.portfolio || '--') + ' · ' + (m.tenant || '--')) + '</span>' + ibLine(it.card) + '</span></button></td>'
+        h += '<tr><td><button type="button" class="rc-open" data-i="' + it.i + '" aria-expanded="' + open + '" aria-controls="rc-d-' + it.i + '"><span class="rc-caret" aria-hidden="true">▶</span><span>' + esc(m.addr || '--') + '<span class="pl-small" style="display:block;font-weight:500">' + esc((m.portfolio || '--') + ' · ' + (m.tenant || '--')) + '</span>' + ibLine(it.card) + '</span></button>' + blBadge(akey(m.addr)) + '</td>'
           + '<td>' + esc(m.moveOut ? m.moveOut.slice(0, 10) : '--') + (it.age !== null ? '<div class="pl-small">' + (it.age < 0 ? (mode === 'todo' ? 'in ' + (-it.age) + ' d' : 'Closed early') : it.age + ' d ago') + '</div>' : '') + ((mode !== 'todo' && it.age !== null && it.age < 0 && window.__mg && window.__mg.map[m.addr] && window.__mg.map[m.addr].managed === false) ? '<div class="pl-small" style="color:#8a5200;font-weight:700">Home no longer managed</div>' : '') + '</td>'
           + (mode === 'todo' ? '<td>' + leftHtml(it.biz) + '</td>' : '')
           + '<td>' + stage + '</td><td>' + money2(it.tc) + '</td><td>' + money2(it.pb) + '</td>'
@@ -803,6 +806,59 @@ function infoBlock(c) {
   if (!c) return '';
   return '<div class="ib"><div class="ib-c">' + tenantCell(c) + '</div><div class="ib-m">' + balCell(c) + depCell(c) + wkLine(c) + compTag(c) + aptlyLink(c) + '</div></div>';
 }
+var BL = { state: 'idle', data: null };
+async function blLoad() {
+  if (BL.state === 'loading') return;
+  BL.state = 'loading';
+  try {
+    var r = await fetch('/api/moveouts/bills', { credentials: 'same-origin' });
+    var j = await r.json().catch(function () { return null; });
+    if (r.ok && j && !j.error) { BL.data = j; BL.state = 'done'; } else BL.state = 'error';
+  } catch (e) { BL.state = 'error'; }
+  plRender(); blRender();
+  if (window.reconRedraw) window.reconRedraw();
+}
+function blLink(id) { return '<a target="_blank" rel="noopener" href="https://aloepm.rentvine.com/accounting/bills/' + encodeURIComponent(id) + '">#' + esc(id) + '</a>'; }
+function blMoney(n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function blItems(f) {
+  if (f.type === 'void') {
+    var d = f.dummies.filter(function (x) { return (f.matched || []).indexOf(x.id) >= 0; });
+    return 'Dummy ' + d.map(function (x) { return blLink(x.id) + ' ' + blMoney(x.amount); }).join(' + ') + ' matches real bills totaling ' + blMoney(f.R) + ' (off by ' + blMoney(f.diff) + '). Real: '
+      + f.reals.map(function (x) { return blLink(x.id) + ' ' + blMoney(x.amount) + ' ' + esc(x.payee) + ' (' + esc(x.date) + ')'; }).join('; ');
+  }
+  if (f.type === 'multi') {
+    return 'New real bills total ' + blMoney(f.R) + ': ' + f.reals.map(function (x) { return blLink(x.id) + ' ' + blMoney(x.amount) + ' ' + esc(x.payee) + ' (' + esc(x.date) + ')'; }).join('; ')
+      + '. Open dummies: ' + f.dummies.map(function (x) { return blLink(x.id) + ' ' + blMoney(x.amount) + (x.desc ? ' (' + esc(x.desc) + ')' : ''); }).join('; ') + '. Which dummy does this replace, if any?';
+  }
+  return 'Dummy ' + f.dummies.map(function (x) { return blLink(x.id) + ' ' + blMoney(x.amount); }).join(', ') + ' open ' + f.days + ' days with no real bill yet.';
+}
+function blLabel(f) {
+  if (f.type === 'void') return ['Dummy bill: void #' + f.matched.join(' + #'), 'red', 'Void dummy'];
+  if (f.type === 'multi') return ['Dummy bill: which dummy? (' + f.dummies.length + ' open)', 'amb', 'Which dummy?'];
+  return ['Dummy open ' + f.days + ' days', 'blue', 'Open ' + f.days + ' days'];
+}
+function blAll() {
+  if (!BL.data) return [];
+  return (BL.data.findings || []).concat((BL.data.stale || []).map(function (s) { s.type = 'stale'; return s; }));
+}
+function blFor(key) {
+  if (!key) return [];
+  return blAll().filter(function (f) { return wkSame(f.key, key); });
+}
+function blBadge(key) {
+  return blFor(key).map(function (f) {
+    var l = blLabel(f);
+    return '<details class="bl-d"><summary class="bl-pill ' + l[1] + '">' + esc(l[0]) + '</summary><div class="bl-t">' + blItems(f) + '</div></details>';
+  }).join('');
+}
+function blStrip() {
+  if (BL.state === 'error') return '<p class="pl-note">Dummy-bill check unavailable right now.</p>';
+  var all = blAll(); if (!all.length) return '';
+  var h = '<div class="bl-strip"><div class="bl-h">Dummy bills needing attention · ' + all.length + '</div>';
+  all.forEach(function (f) { var l = blLabel(f); h += '<div class="bl-i"><span class="bl-pill ' + l[1] + '">' + esc(l[2]) + '</span><b>' + esc(f.address) + '</b> — ' + blItems(f) + '</div>'; });
+  return h + '<div class="pl-small" style="margin-top:8px">Hub check from Rentvine. Matt’s Slack post is the official reminder, and it also covers “reduce this dummy” and “bills exceed funds held”. Read-only: nothing is voided or edited from here.</div></div>';
+}
+function blRender() { var el = document.getElementById('bill-strip'); if (el) el.innerHTML = blStrip(); }
 function tenantCellOld(c) {
   var t = (c.tenants && c.tenants.length) ? c.tenants.join(', ') : (c.leaseName || '');
   return t ? esc(t) : '<span class="pl-small">None on card</span>';
@@ -876,7 +932,7 @@ function plRender() {
   else {
     th += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Stage</th><th>In stage</th><th>Moved out</th><th>Turn items needed</th><th>Open checklist</th><th>Last activity</th><th>Flags</th><th>Repairs</th></tr></thead><tbody>';
     turns.forEach(function (c) {
-      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div>' + infoBlock(c) + svBadges(c) + '</td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
+      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div>' + infoBlock(c) + blBadge(c.addrKey) + svBadges(c) + '</td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
     });
     th += '</tbody></table></div>';
   }
@@ -1122,7 +1178,7 @@ async function loadPipeline(force) {
     var j = await r.json().catch(function () { return null; });
     if (!r.ok || !j || j.error) { PL = { error: (j && j.error) || ('The server answered ' + r.status) }; plState = 'error'; }
     else { PL = j; plState = 'done'; await rpLoadSummaries(); await wkLoad(); }
-  if (plState === 'done') { svLoad(); tnLoad(); }
+  if (plState === 'done') { svLoad(); tnLoad(); blLoad(); }
   } catch (e) { PL = { error: 'Could not reach the hub (' + e.message + ').' }; plState = 'error'; }
   plRender();
   if (window.reconRedraw) window.reconRedraw();
