@@ -503,7 +503,16 @@ function renderMoveOuts() {
       it.i = i; it.age = ageOf(it.m); it.unres = it.st.label !== 'Matched';
       var cs = byKey[akey(it.m.addr)] || [];
       it.card = cs.filter(function (c) { return !isComplete(c); })[0] || cs[0] || null;
-      it.done = plOk ? (it.card ? isComplete(it.card) : !it.unres) : !it.unres;
+      it.arch = null;
+      if (plOk && !it.card && it.m.moveOut && PL.archived) {
+        var mo = Date.parse(String(it.m.moveOut).slice(0, 10) + 'T12:00:00Z'), ak = akey(it.m.addr);
+        PL.archived.forEach(function (a) {
+          if (a.addrKey !== ak) return;
+          var dd = Math.abs(Date.parse(a.moveOutDate + 'T12:00:00Z') - mo) / 86400000;
+          if (dd <= 60 && (!it.arch || dd < it.arch.d)) it.arch = { a: a, d: dd };
+        });
+      }
+      it.done = plOk ? (it.card ? isComplete(it.card) : (it.arch ? true : !it.unres)) : !it.unres;
       it.biz = bizLeft(it.m.moveOut);
     });
     var todo = items.filter(function (it) { return !it.done; }).sort(function (a, b) {
@@ -529,7 +538,7 @@ function renderMoveOuts() {
       var h = '<div class="pl-wrap"><table class="pl-tbl" style="min-width:820px"><thead><tr><th>Property</th><th>Move-out</th>' + (mode === 'todo' ? '<th>Time left</th>' : '') + '<th>Aptly stage</th><th>6000 charged</th><th>6070 billed</th><th>Status</th></tr></thead><tbody>';
       shown.forEach(function (it) {
         var m = it.m, open = !!ui.open[it.i];
-        var stage = it.card ? esc(it.card.stage) : (plOk ? '<span class="pl-small">No card on the board</span>' : '<span class="pl-small">—</span>');
+        var stage = it.card ? esc(it.card.stage) : it.arch ? '<span class="pl-pill">Archived in Aptly</span>' : (plOk ? '<span class="pl-small">No card on the board</span>' : '<span class="pl-small">—</span>');
         h += '<tr><td><button type="button" class="rc-open" data-i="' + it.i + '" aria-expanded="' + open + '" aria-controls="rc-d-' + it.i + '"><span class="rc-caret" aria-hidden="true">▶</span><span>' + esc(m.addr || '--') + '<span class="pl-small" style="display:block;font-weight:500">' + esc((m.portfolio || '--') + ' · ' + (m.tenant || '--')) + '</span>' + ibLine(it.card) + '</span></button>' + blBadge(akey(m.addr)) + '</td>'
           + '<td>' + esc(m.moveOut ? m.moveOut.slice(0, 10) : '--') + (it.age !== null ? '<div class="pl-small">' + (it.age < 0 ? (mode === 'todo' ? 'in ' + (-it.age) + ' d' : 'Closed early') : it.age + ' d ago') + '</div>' : '') + ((mode !== 'todo' && it.age !== null && it.age < 0 && window.__mg && window.__mg.map[m.addr] && window.__mg.map[m.addr].managed === false) ? '<div class="pl-small" style="color:#8a5200;font-weight:700">Home no longer managed</div>' : '') + '</td>'
           + (mode === 'todo' ? '<td>' + leftHtml(it.biz) + '</td>' : '')

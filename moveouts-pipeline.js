@@ -40,7 +40,7 @@ const decode = (s) => String(s == null ? '' : s).replace(/&#(\d+);/g, (m, n) => 
 const day = (d) => (d ? d.toISOString().slice(0, 10) : null);
 const daysBetween = (a, b) => Math.floor((b - a) / 86400000);
 
-export function buildPipeline(schema, cards, now = new Date()) {
+export function buildPipeline(schema, cards, now = new Date(), archivedCards = []) {
   const key = {};
   for (const f of schema || []) if (f && f.label && f.key && !(f.label in key)) key[f.label] = f.key;
   const get = (c, label) => (key[label] ? c[key[label]] : undefined);
@@ -98,7 +98,13 @@ export function buildPipeline(schema, cards, now = new Date()) {
   const by = {};
   for (const c of out) by[c.stage] = (by[c.stage] || 0) + 1;
   const missingLabels = ['Scheduled Move-Out', 'Mirror Owners', 'Move-Out Type'].filter((l) => !key[l]);
-  return { generatedAt: now.toISOString(), count: out.length, stageOrder: STAGE_ORDER, stageCounts: by, turnStages: TURN_STAGES, missingLabels, commentsAvailable: false, cards: out };
+  // Archived Move-Outs cards: used only so a finished, archived move-out is not listed as "still to close out".
+  const arch = (archivedCards || []).map((c) => {
+    const mo = toDate(get(c, 'Scheduled Move-Out')) || toDate(get(c, 'Mirror Expected Move-Out Date')) || toDate(get(c, 'Mirror Move-Out Date'));
+    const address = names(c.unit)[0] || c.name || '';
+    return { aptlyId: c._id || '', address, stage: c.stage || '', moveOutDate: day(mo), addrKey: addrKey(address) };
+  }).filter((a) => a.aptlyId && a.addrKey && a.moveOutDate && now - new Date(a.moveOutDate + 'T12:00:00Z') < 400 * 86400000);
+  return { generatedAt: now.toISOString(), count: out.length, stageOrder: STAGE_ORDER, stageCounts: by, turnStages: TURN_STAGES, missingLabels, commentsAvailable: false, cards: out, archived: arch };
 }
 
 async function fetchAll() {
@@ -110,7 +116,22 @@ async function fetchAll() {
     cards.push(...r);
     if (r.length < 100 || (j && j.count != null && cards.length >= j.count)) break;
   }
-  return buildPipeline(schema, cards.filter((c) => !c.archived));
+  const active = cards.filter((c) => !c.archived);
+  // Second, separate read that also includes archived cards. Anything not in the active list is treated as archived.
+  // If this read fails, the page simply behaves as before (no archived cards known).
+  let archivedCards = [];
+  try {
+    const seen = new Set(active.map((c) => c._id));
+    const all = [];
+    for (let page = 0; page < 60; page++) {
+      const j = await aptly('/api/board/' + BOARD + '?page=' + page + '&pageSize=100&includeArchived=true');
+      const r = rows(j);
+      all.push(...r);
+      if (r.length < 100 || (j && j.count != null && all.length >= j.count)) break;
+    }
+    archivedCards = all.filter((c) => c._id && !seen.has(c._id));
+  } catch (e) { console.error('[moveouts-pipeline] archived read failed:', e.message); }
+  return buildPipeline(schema, active, new Date(), archivedCards);
 }
 
 
