@@ -61,6 +61,7 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .pl-tbl td{padding:10px 12px;border-top:1px solid var(--rule);vertical-align:top}
 .pl-addr{font-weight:700;color:var(--ink)}
 .pl-small{font-size:12px;color:var(--muted)}
+.ib{display:flex;flex-wrap:wrap;gap:6px 28px;margin:8px 0 6px;padding:8px 10px;border:1px solid var(--rule);border-radius:10px;background:#f8fbfb;font-size:13px;font-weight:400}.ib-c,.ib-m{min-width:200px}
 .tn-p{margin-bottom:6px}.tn-n{font-weight:600}.tn-l{font-size:12px;color:var(--ink);white-space:nowrap}
 .cp-btn{font:inherit;font-size:11px;font-weight:700;padding:1px 7px;margin-left:4px;border:1px solid var(--rule);border-radius:999px;background:#fff;color:#0A5468;cursor:pointer}.cp-btn:hover{background:#eef6f7}
 .pl-pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin:0 4px 4px 0;background:var(--amber-d);color:#8a5200}
@@ -525,12 +526,12 @@ function renderMoveOuts() {
       shown.forEach(function (it) {
         var m = it.m, open = !!ui.open[it.i];
         var stage = it.card ? esc(it.card.stage) : (plOk ? '<span class="pl-small">No card on the board</span>' : '<span class="pl-small">—</span>');
-        h += '<tr><td><button type="button" class="rc-open" data-i="' + it.i + '" aria-expanded="' + open + '" aria-controls="rc-d-' + it.i + '"><span class="rc-caret" aria-hidden="true">▶</span><span>' + esc(m.addr || '--') + '<span class="pl-small" style="display:block;font-weight:500">' + esc((m.portfolio || '--') + ' · ' + (m.tenant || '--')) + '</span></span></button></td>'
+        h += '<tr><td><button type="button" class="rc-open" data-i="' + it.i + '" aria-expanded="' + open + '" aria-controls="rc-d-' + it.i + '"><span class="rc-caret" aria-hidden="true">▶</span><span>' + esc(m.addr || '--') + '<span class="pl-small" style="display:block;font-weight:500">' + esc((m.portfolio || '--') + ' · ' + (m.tenant || '--')) + '</span>' + ibLine(it.card) + '</span></button></td>'
           + '<td>' + esc(m.moveOut ? m.moveOut.slice(0, 10) : '--') + (it.age !== null ? '<div class="pl-small">' + (it.age < 0 ? (mode === 'todo' ? 'in ' + (-it.age) + ' d' : 'Closed early') : it.age + ' d ago') + '</div>' : '') + ((mode !== 'todo' && it.age !== null && it.age < 0 && window.__mg && window.__mg.map[m.addr] && window.__mg.map[m.addr].managed === false) ? '<div class="pl-small" style="color:#8a5200;font-weight:700">Home no longer managed</div>' : '') + '</td>'
           + (mode === 'todo' ? '<td>' + leftHtml(it.biz) + '</td>' : '')
           + '<td>' + stage + '</td><td>' + money2(it.tc) + '</td><td>' + money2(it.pb) + '</td>'
           + '<td><span class="rc-st" style="color:' + it.st.color + '">' + esc(it.st.label) + '</span></td></tr>'
-          + '<tr class="rc-det" id="rc-d-' + it.i + '"' + (open ? '' : ' style="display:none"') + '><td colspan="' + cols + '">' + it.ch + '</td></tr>';
+          + '<tr class="rc-det" id="rc-d-' + it.i + '"' + (open ? '' : ' style="display:none"') + '><td colspan="' + cols + '">' + infoBlock(it.card) + it.ch + '</td></tr>';
       });
       return h + '</tbody></table></div><p class="rc-note">Showing ' + shown.length + ' of ' + list.length + '.</p>';
     }
@@ -755,6 +756,7 @@ async function tnLoad() {
     if (r.ok && j && j.results) { TN.map = j.results; TN.state = 'done'; } else TN.state = 'error';
   } catch (e) { TN.state = 'error'; }
   plRender();
+  if (window.reconRedraw) window.reconRedraw();
 }
 function cpBtn(v, label) { return '<button type="button" class="cp-btn" data-copy="' + esc(v) + '" title="Copy ' + esc(label) + '">Copy</button>'; }
 document.addEventListener('click', function (ev) {
@@ -780,6 +782,26 @@ function tenantCell(c) {
   var t0 = (c.tenants && c.tenants.length) ? c.tenants.join(', ') : (c.leaseName || '');
   var note = TN.state === 'loading' ? '<div class="pl-small">Loading contact details…</div>' : (TN.state === 'error' ? '<div class="pl-small">Contact details unavailable</div>' : (TN.state === 'done' ? '<div class="pl-small">No matching lease in Rentvine, check manually</div>' : ''));
   return (t0 ? esc(t0) : '<span class="pl-small">None on card</span>') + note;
+}
+function depCell(c) { return c.deposit != null ? '<div class="pl-small">Deposit held ' + usd(c.deposit) + ' (per Aptly)</div>' : ''; }
+function wkLine(c) {
+  if (!WK || WK.error) return '';
+  var w = wkFor(c), h = '';
+  if (w.pre) h += '<div class="pl-small">Pre move-out walk: ' + esc(plDate(w.pre.date)) + '</div>';
+  if (w.out) h += '<div class="pl-small">Move-out walk: ' + esc(plDate(w.out.date)) + '</div>';
+  return h;
+}
+function ibLine(c) {
+  if (!c) return '';
+  var bits = [];
+  if (c.balance != null) bits.push(c.balance > 0 ? '<b style="color:#b91c1c">Owes ' + usd(c.balance) + '</b>' : '$0 owed');
+  if (c.overdue > 0) bits.push('<b style="color:#b91c1c">overdue ' + usd(c.overdue) + '</b>');
+  if (c.deposit != null) bits.push('Deposit ' + usd(c.deposit));
+  return bits.length ? '<span class="pl-small" style="display:block;font-weight:500">' + bits.join(' · ') + '</span>' : '';
+}
+function infoBlock(c) {
+  if (!c) return '';
+  return '<div class="ib"><div class="ib-c">' + tenantCell(c) + '</div><div class="ib-m">' + balCell(c) + depCell(c) + wkLine(c) + compTag(c) + aptlyLink(c) + '</div></div>';
 }
 function tenantCellOld(c) {
   var t = (c.tenants && c.tenants.length) ? c.tenants.join(', ') : (c.leaseName || '');
@@ -854,7 +876,7 @@ function plRender() {
   else {
     th += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Stage</th><th>In stage</th><th>Moved out</th><th>Turn items needed</th><th>Open checklist</th><th>Last activity</th><th>Flags</th><th>Repairs</th></tr></thead><tbody>';
     turns.forEach(function (c) {
-      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div>' + svBadges(c) + '</td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
+      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div>' + infoBlock(c) + svBadges(c) + '</td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
     });
     th += '</tbody></table></div>';
   }
