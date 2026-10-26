@@ -174,6 +174,21 @@ export async function readProperty(rv, pid) {
   if (cfWinner < 0) cfMiss++;
   return { parts, via: 'none' };
 }
+// Is the property still managed? Rentvine marks a lost home Inactive and stamps a deactivated date.
+// Returns false (no longer managed), true (active) or null (could not tell).
+export function managedOf(detail) {
+  const p = (detail && detail.property) || detail || {};
+  const off = (v) => v === false || v === 0 || v === '0' || /^(false|no|n)$/i.test(String(v));
+  const on = (v) => v === true || v === 1 || v === '1' || /^(true|yes|y)$/i.test(String(v));
+  let saysActive = false;
+  for (const [k, v] of Object.entries(p)) {
+    if (!prim(v)) continue;
+    if (/^(isActive|active)$/i.test(k)) { if (off(v)) return false; if (on(v)) saysActive = true; }
+    else if (/^status(name)?$/i.test(k) && typeof v === 'string') { if (/inactive/i.test(v)) return false; if (/^active$/i.test(v.trim())) saysActive = true; }
+    else if (/deactivat/i.test(k) && v !== '' && v !== 0 && v !== '0' && !/^0000/.test(String(v)) && !/^(false|no)$/i.test(String(v))) return false;
+  }
+  return saysActive ? true : null;
+}
 export function _resetDiscovery() { cfWinner = -1; cfMiss = 0; valuesOk = null; }
 
 export function installMoveoutProperty(app, rvFetch) {
@@ -203,7 +218,7 @@ export function installMoveoutProperty(app, rvFetch) {
   async function services(pid) {
     const hit = svcCache.get(pid); if (hit && Date.now() - hit.at < SERVICE_TTL) return hit.v;
     const { parts } = await readProperty(rvFetch, pid);
-    const v = extractServices(parts); svcCache.set(pid, { at: Date.now(), v }); return v;
+    const v = extractServices(parts); v.managed = managedOf(parts[0]); svcCache.set(pid, { at: Date.now(), v }); return v;
   }
   async function pool(items, n, fn) {
     const res = new Array(items.length); let i = 0;

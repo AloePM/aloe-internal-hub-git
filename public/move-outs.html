@@ -519,7 +519,7 @@ function renderMoveOuts() {
         var m = it.m, open = !!ui.open[it.i];
         var stage = it.card ? esc(it.card.stage) : (plOk ? '<span class="pl-small">No card on the board</span>' : '<span class="pl-small">—</span>');
         h += '<tr><td><button type="button" class="rc-open" data-i="' + it.i + '" aria-expanded="' + open + '" aria-controls="rc-d-' + it.i + '"><span class="rc-caret" aria-hidden="true">▶</span><span>' + esc(m.addr || '--') + '<span class="pl-small" style="display:block;font-weight:500">' + esc((m.portfolio || '--') + ' · ' + (m.tenant || '--')) + '</span></span></button></td>'
-          + '<td>' + esc(m.moveOut ? m.moveOut.slice(0, 10) : '--') + (it.age !== null ? '<div class="pl-small">' + (it.age < 0 ? 'in ' + (-it.age) + ' d' : it.age + ' d ago') + '</div>' : '') + '</td>'
+          + '<td>' + esc(m.moveOut ? m.moveOut.slice(0, 10) : '--') + (it.age !== null ? '<div class="pl-small">' + (it.age < 0 ? (mode === 'todo' ? 'in ' + (-it.age) + ' d' : 'Closed early') : it.age + ' d ago') + '</div>' : '') + ((mode !== 'todo' && it.age !== null && it.age < 0 && window.__mg && window.__mg.map[m.addr] && window.__mg.map[m.addr].managed === false) ? '<div class="pl-small" style="color:#8a5200;font-weight:700">Home no longer managed</div>' : '') + '</td>'
           + (mode === 'todo' ? '<td>' + leftHtml(it.biz) + '</td>' : '')
           + '<td>' + stage + '</td><td>' + money2(it.tc) + '</td><td>' + money2(it.pb) + '</td>'
           + '<td><span class="rc-st" style="color:' + it.st.color + '">' + esc(it.st.label) + '</span></td></tr>'
@@ -536,6 +536,15 @@ function renderMoveOuts() {
       var t1 = document.getElementById('tab-recon'), t2 = document.getElementById('tab-audit');
       if (t1) t1.textContent = 'To close out · ' + todo.length;
       if (t2) t2.textContent = 'Closed (audit) · ' + audit.length;
+      var mg = window.__mg = window.__mg || { map: {}, asked: {} };
+      var need = audit.filter(function (x) { return x.age !== null && x.age < 0 && x.m.addr && !mg.asked[x.m.addr]; }).map(function (x) { return x.m.addr; });
+      if (need.length) {
+        need.forEach(function (a) { mg.asked[a] = 1; });
+        fetch('/api/moveouts/services', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ addresses: need.slice(0, 40) }) })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) { if (j && j.results) { Object.keys(j.results).forEach(function (k) { mg.map[k] = j.results[k]; }); if (window.reconRedraw) window.reconRedraw(); } })
+          .catch(function () {});
+      }
     }
     D._rc = { ui: ui, draw: drawAll };
     if (!window.__rcBound) {
