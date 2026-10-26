@@ -294,8 +294,11 @@ export function installMoveoutProperty(app, rvFetch) {
     const token = /^[A-Za-z0-9]{20,64}$/.test(String(req.query.token || '')) ? String(req.query.token) : 'oLWkbn3dvQ7bNAPH5PD4K7qeYAPgmD4R';
     try {
       const r = await timed('https://portfolio.zinspector.com/api/document/getShareReport/' + token);
-      const html = await r.text();
+      let html = await r.text();
+      const rawBytes = html.length;
       let parsed = null; try { parsed = JSON.parse(html); } catch (e) {}
+      let wasWrapped = false;
+      if (typeof parsed === 'string') { html = parsed; parsed = null; wasWrapped = true; }
       if (parsed !== null) {
         // The share link returns JSON. Report its SHAPE only: keys, types, array lengths, and short strings that repeat
         // (those are condition codes / legend labels, not names). Free text and names are never echoed.
@@ -320,6 +323,16 @@ export function installMoveoutProperty(app, rvFetch) {
       const text = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, '\n').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
       const lines = text.split('\n').map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean);
       const short = [...new Set(lines.filter((x) => x.length <= 40))].slice(0, 90);
+      // Structure of the report page: tags, class names, and short labels only. Names/comments longer than 30 chars are never echoed.
+      const tally = (re, g) => { const m = new Map(); let x; while ((x = re.exec(html))) { const k = g(x); if (k) m.set(k, (m.get(k) || 0) + 1); } return [...m.entries()].sort((a, b) => b[1] - a[1]); };
+      const classCounts = tally(/class="([^"]{1,80})"/gi, (x) => x[1].trim()).slice(0, 50).map(([k, c]) => k + ' x' + c);
+      const tagCounts = tally(/<([a-z][a-z0-9]*)\b/gi, (x) => x[1].toLowerCase()).slice(0, 15).map(([k, c]) => k + ' x' + c);
+      const labelRe = /<([a-z0-9]+)([^>]*)>\s*([^<>]{1,30}?)\s*</gi; const labels = new Map(); let lm;
+      while ((lm = labelRe.exec(html))) { const t = lm[3].replace(/\s+/g, ' '); if (/action|comment|condition|attention|repair|damage|needs|note|photo|legend|good|fair|poor|clean|excellent|satisf/i.test(t)) { const cls = (/class="([^"]{1,60})"/.exec(lm[2]) || [])[1] || ''; const k = '<' + lm[1] + (cls ? ' class="' + cls + '"' : '') + '> ' + t; labels.set(k, (labels.get(k) || 0) + 1); } }
+      const labelList = [...labels.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, c]) => k + ' x' + c);
+      const rep = tally(/>\s*([^<>]{1,30}?)\s*</g, (x) => x[1].replace(/\s+/g, ' ')).filter(([, c]) => c >= 3).slice(0, 40).map(([k, c]) => k + ' x' + c);
+      out.report = { status: r.status, wasWrapped, rawBytes, htmlBytes: html.length, images: (html.match(/<img\b/gi) || []).length, tagCounts, classCounts, labelList, repeatedShortText: rep };
+      return res.json(out);
       out.report = { status: r.status, contentType: (r.headers.get('content-type') || '').slice(0, 60), bytes: html.length, images: (html.match(/<img\b/gi) || []).length, textLines: lines.length, mentionsComment: (html.match(/comment/gi) || []).length, mentionsAction: (html.match(/action/gi) || []).length, shortLines: short };
     } catch (e) { out.report = { error: String(e.message || e).slice(0, 120) }; }
     res.json(out);
