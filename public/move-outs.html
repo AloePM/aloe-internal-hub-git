@@ -132,11 +132,13 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 </header>
 
 <div class="nav" role="tablist" aria-label="Move-out sections">
-  <button class="tab active" role="tab" id="tab-main" data-tab="main" aria-selected="true" type="button">Move-outs</button>
-  <button class="tab" role="tab" id="tab-pipeline" data-tab="pipeline" aria-selected="false" type="button">Pipeline</button>
+  <button class="tab active" role="tab" id="tab-recon" data-tab="recon" aria-selected="true" type="button">To close out</button>
+  <button class="tab" role="tab" id="tab-upcoming" data-tab="upcoming" aria-selected="false" type="button">Upcoming</button>
   <button class="tab" role="tab" id="tab-turns" data-tab="turns" aria-selected="false" type="button">Unit turns</button>
-  <button class="tab" role="tab" id="tab-recon" data-tab="recon" aria-selected="false" type="button">To close out</button>
   <button class="tab" role="tab" id="tab-audit" data-tab="audit" aria-selected="false" type="button">Closed (audit)</button>
+  <button class="tab" role="tab" id="tab-main" data-tab="main" aria-selected="false" type="button" style="display:none">Move-outs (old)</button>
+  <button class="tab" role="tab" id="tab-pipeline" data-tab="pipeline" aria-selected="false" type="button" style="display:none">Pipeline (old)</button>
+  <button class="tab" id="old-toggle" type="button" aria-pressed="false" style="margin-left:auto;font-size:12px;font-weight:600">Show old view</button>
 </div>
 
 <div id="loading" class="loading-wrap"><div class="spinner"></div><div class="loading-text">Loading data from Rentvine…</div></div>
@@ -146,6 +148,7 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
   <div id="pane-pipeline" role="tabpanel" aria-labelledby="tab-pipeline" style="display:none"></div>
   <div id="pane-turns" role="tabpanel" aria-labelledby="tab-turns" style="display:none"></div>
   <div id="pane-recon" role="tabpanel" aria-labelledby="tab-recon" style="display:none"></div>
+  <div id="pane-upcoming" role="tabpanel" aria-labelledby="tab-upcoming" style="display:none"></div>
   <div id="pane-audit" role="tabpanel" aria-labelledby="tab-audit" style="display:none"></div>
 </div>
 
@@ -237,7 +240,8 @@ function renderMoveOuts() {
     html += '</tbody></table></div></div>';
   }
 
-  // Accounting checklist - next 30 days
+  // Accounting checklist - next 30 days (shown at the top of To close out)
+  var _mainHtml = html; html = '';
   if (accountingMoveOuts.length) {
     html += '<div class="trend-section-label" style="margin-top:20px">Accounting — Move-Out Distribution Review</div>';
     html += '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Review before distributing owner funds · Day 1-19 move-out = Prorated mgmt fee · Day 20+ = Full Month</div>';
@@ -309,9 +313,10 @@ function renderMoveOuts() {
     html += '</tbody></table></div></div>';
   }
 
+  var _acctHtml = html; html = _mainHtml;
   html += '</div>';
   document.getElementById('pane-main').innerHTML = html;
-  document.getElementById('pane-recon').innerHTML = '<div class="main"><div id="recon-section"></div><div id="recon-upcoming-section"></div></div>';
+  document.getElementById('pane-recon').innerHTML = '<div class="main">' + _acctHtml + '<div id="recon-section"></div><div id="recon-upcoming-section"></div></div>';
   var _ap = document.getElementById('pane-audit'); if (_ap) _ap.innerHTML = '<div class="main"><div id="audit-section"></div></div>';
   function showReconError(msg) {
     var el = document.getElementById('recon-section');
@@ -641,25 +646,36 @@ function renderMoveOuts() {
 
 
 var D = null;
-var activeTab = 'main';
+var activeTab = 'recon';
 
 function switchTab(id) {
   activeTab = id;
-  ['main', 'pipeline', 'turns', 'recon', 'audit'].forEach(function (t) {
+  ['main', 'pipeline', 'upcoming', 'turns', 'recon', 'audit'].forEach(function (t) {
     var on = t === id;
     var b = document.getElementById('tab-' + t);
     b.classList.toggle('active', on);
     b.setAttribute('aria-selected', String(on));
     document.getElementById('pane-' + t).style.display = on ? 'block' : 'none';
   });
-  try { history.replaceState(null, '', id === 'main' ? location.pathname : '#' + id); } catch (e) {}
-  if (id === 'pipeline' || id === 'turns' || id === 'recon' || id === 'audit') loadPipeline(false);
+  try { history.replaceState(null, '', id === 'recon' ? location.pathname : '#' + id); } catch (e) {}
+  if (id === 'pipeline' || id === 'upcoming' || id === 'turns' || id === 'recon' || id === 'audit') loadPipeline(false);
 }
 document.getElementById('tab-main').addEventListener('click', function () { switchTab('main'); });
 document.getElementById('tab-pipeline').addEventListener('click', function () { switchTab('pipeline'); });
 document.getElementById('tab-turns').addEventListener('click', function () { switchTab('turns'); });
 document.getElementById('tab-recon').addEventListener('click', function () { switchTab('recon'); });
 document.getElementById('tab-audit').addEventListener('click', function () { switchTab('audit'); });
+document.getElementById('tab-upcoming').addEventListener('click', function () { switchTab('upcoming'); });
+var OLD_VIEW = false;
+function setOldView(on) {
+  OLD_VIEW = !!on;
+  ['main', 'pipeline'].forEach(function (t) { document.getElementById('tab-' + t).style.display = OLD_VIEW ? '' : 'none'; });
+  var tg = document.getElementById('old-toggle');
+  tg.textContent = OLD_VIEW ? 'Hide old view' : 'Show old view';
+  tg.setAttribute('aria-pressed', String(OLD_VIEW));
+  if (!OLD_VIEW && (activeTab === 'main' || activeTab === 'pipeline')) switchTab('recon');
+}
+document.getElementById('old-toggle').addEventListener('click', function () { setOldView(!OLD_VIEW); });
 
 // ---- Pipeline and Unit turns (read-only, from the Aptly Move-Outs board) ----
 var PL = null, plState = 'idle';
@@ -696,9 +712,9 @@ function plChecklist(c) {
 }
 function plNotice(msg) { return '<div class="main"><div class="error-wrap" style="margin:0">' + esc(msg) + '</div></div>'; }
 function plRender() {
-  var P = document.getElementById('pane-pipeline'), T = document.getElementById('pane-turns');
-  if (plState === 'loading') { P.innerHTML = T.innerHTML = '<div class="main"><div class="pl-note">Loading the Aptly Move-Outs board…</div></div>'; return; }
-  if (plState === 'error') { P.innerHTML = T.innerHTML = plNotice(PL && PL.error ? PL.error : 'Could not load the pipeline. Press Refresh to try again.'); return; }
+  var P = document.getElementById('pane-pipeline'), T = document.getElementById('pane-turns'), U = document.getElementById('pane-upcoming');
+  if (plState === 'loading') { P.innerHTML = T.innerHTML = U.innerHTML = '<div class="main"><div class="pl-note">Loading the Aptly Move-Outs board…</div></div>'; return; }
+  if (plState === 'error') { P.innerHTML = T.innerHTML = U.innerHTML = plNotice(PL && PL.error ? PL.error : 'Could not load the pipeline. Press Refresh to try again.'); return; }
   if (!PL) return;
   var cards = PL.cards, ph = '';
   var turns = cards.filter(function (c) { return c.isTurn; });
@@ -725,12 +741,15 @@ function plRender() {
   if (!cards.length) ph += '<div class="pl-empty">No active move-out cards on the board.</div>';
   P.innerHTML = ph + '</div>';
 
+  // Unit turns = closed out (disposition sent) but repairs / remodel still going. Nothing else.
+  turns = turns.filter(function (c) { return /^disposition sent/i.test((c.stage || '').trim()); });
+  stuck = turns.filter(function (c) { return (c.daysInStage || 0) >= 14; });
   var th = '<div class="main"><div class="kpi-grid g4">'
     + kpi('Units in turn', turns.length, 'Disposition sent, work not done', '#7c3aed')
     + kpi('Open 14+ days', stuck.length, 'Longest first below', stuck.length ? '#e03e3e' : '#0fa86c')
     + kpi('Longest open', turns.length ? Math.max.apply(null, turns.map(function (c) { return c.daysInStage || 0; })) + ' d' : '—', 'Days in current stage', '#d4820a')
     + kpi('Nobody assigned', turns.filter(function (c) { return !c.assigned; }).length, 'In turn stages', '#3CC3E1')
-    + '</div><p class="pl-note">Cards in “Disposition sent- Repairs still in progress” and “Complete Repairs and Bills”, longest first. Turn steps and showing status will be added next.</p>';
+    + '</div><p class="pl-note">Cards in “Disposition sent- Repairs still in progress” only (closed out, repairs or remodel still going), longest first. Turn steps and showing status will be added next.</p>';
   turns = turns.slice().sort(function (a, b) { return (b.daysInStage || 0) - (a.daysInStage || 0); });
   if (!turns.length) th += '<div class="pl-wrap"><div class="pl-empty">No units in turn right now.</div></div>';
   else {
@@ -741,6 +760,30 @@ function plRender() {
     th += '</tbody></table></div>';
   }
   T.innerHTML = th + '</div>';
+
+  // Upcoming = Aptly stages before Move-Out Day. A card leaves this tab when it is moved to a later stage in Aptly.
+  var EARLY_ST = ['Upcoming Move-Out', '14 Days Out', '5 Days Out'];
+  var ups = cards.filter(function (c) { return EARLY_ST.indexOf((c.stage || '').trim()) >= 0; })
+    .sort(function (a, b) { return (a.moveOutDate || '9999').localeCompare(b.moveOutDate || '9999'); });
+  var soon = ups.filter(function (c) { return c.daysToMoveOut != null && c.daysToMoveOut >= 0 && c.daysToMoveOut <= 14; });
+  var stale = ups.filter(function (c) { return !c.moveOutDate || (c.daysToMoveOut != null && c.daysToMoveOut < 0); });
+  var uh = '<div class="main"><div class="kpi-grid g4">'
+    + kpi('Upcoming move-outs', ups.length, 'Before Move-Out Day', '#3CC3E1')
+    + kpi('Next 14 days', soon.length, 'Moving out soon', soon.length ? '#d4820a' : '#0fa86c')
+    + kpi('Needs attention', stale.length, 'Date passed or no date', stale.length ? '#e03e3e' : '#0fa86c')
+    + kpi('Nobody assigned', ups.filter(function (c) { return !c.assigned; }).length, 'On these cards', '#7c3aed')
+    + '</div>';
+  if (PL.stale) uh += '<p class="pl-note">Showing the last successful read; Aptly could not be reached just now.</p>';
+  uh += '<p class="pl-note">Read-only, from the Aptly Move-Outs board. A card moves to To close out when it is moved to Move-Out Day or later in Aptly. Walk dates and pre move-out inspection reports will show here next.</p>';
+  if (!ups.length) uh += '<div class="pl-wrap"><div class="pl-empty">No upcoming move-outs on the board.</div></div>';
+  else {
+    uh += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Move-out</th><th>Stage</th><th>Type</th><th>Owner</th><th>Checklist</th><th>Flags</th></tr></thead><tbody>';
+    ups.forEach(function (c) {
+      uh += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div>' + svBadges(c) + '</td><td>' + plWhen(c) + '</td><td>' + esc(c.stage) + '</td><td>' + esc(c.moveOutType || '—') + '</td><td>' + esc(c.owners.join(', ') || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td></tr>';
+    });
+    uh += '</tbody></table></div>';
+  }
+  U.innerHTML = uh + '</div>';
 }
 // ---- Repair items (saved in hub storage; never written to Aptly or Rentvine) ----
 var RP = { sums: {}, cur: null, opener: null };
@@ -994,7 +1037,8 @@ async function loadData(live) {
 }
 document.getElementById('refresh-btn').addEventListener('click', function () { loadData(false); if (plState !== 'idle') { plState = 'idle'; if (activeTab === 'pipeline' || activeTab === 'turns') loadPipeline(false); } });
 document.getElementById('force-btn').addEventListener('click', function () { loadData(true); if (plState !== 'idle') { plState = 'idle'; if (activeTab === 'pipeline' || activeTab === 'turns') loadPipeline(true); } });
-if (['recon', 'audit', 'pipeline', 'turns'].indexOf(location.hash.slice(1)) >= 0) activeTab = location.hash.slice(1);
+if (['recon', 'audit', 'pipeline', 'turns', 'upcoming', 'main'].indexOf(location.hash.slice(1)) >= 0) activeTab = location.hash.slice(1);
+if (activeTab === 'main' || activeTab === 'pipeline') setOldView(true);
 loadData(false);
 </script>
 <script src="/hub-shell.js" defer></script>
