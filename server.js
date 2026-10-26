@@ -803,6 +803,9 @@ app.post('/api/owners/weekly-batch-draft', hubAuth, async function(req, res) {
     }
     if (!results.testMode) {
       let slackText = ':email: *Weekly owner vacancy drafts* \u2014 ' + results.drafted.length + ' drafted, ' + results.skipped.length + ' skipped, ' + results.failed.length + ' failed.';
+      if (results.drafted.length === 0) {
+        slackText = ':rotating_light: *Weekly owner vacancy drafts: NOTHING was drafted* \u2014 ' + results.skipped.length + ' skipped, ' + results.failed.length + ' failed. Please check the hub (a blocked internal call or an empty owner list can cause this).';
+      }
       if (results.failed.length > 0) {
         slackText += '\n:warning: Failed: ' + results.failed.map(function(f) { return f.ownerName + ' (' + f.error + ')'; }).join(', ');
       }
