@@ -103,6 +103,37 @@ export function mapWorkOrders(raw, now = new Date()) {
   return out;
 }
 
+// Custom field values may not be part of the property record. Try the property first, then the likely custom-field
+// endpoints (object type 6 = property), keep the one that works, and report what happened.
+const CF_TRIES = [
+  (p) => ['/custom-fields/values', { objectTypeID: 6, objectID: p }],
+  (p) => ['/custom-fields/values/6/' + p, {}],
+  (p) => ['/custom-fields', { objectTypeID: 6, objectID: p }],
+  (p) => ['/custom-fields/object-values', { objectTypeID: 6, objectID: p }],
+  (p) => ['/properties/' + p + '/custom-fields', {}],
+  (p) => ['/properties/' + p + '/customFields', {}],
+  (p) => ['/customfields/values', { objectTypeID: 6, objectID: p }],
+];
+const SERVICE_LABEL = /landscaping|pest control|pool service/i;
+const hasServiceLabel = (x) => collectPairs(x).some((p) => SERVICE_LABEL.test(p.label));
+let cfWinner = -1, cfMiss = 0;
+export async function readProperty(rv, pid) {
+  const detail = await rv('/properties/' + pid);
+  if (detail && detail.error) throw new Error(detail.error);
+  const parts = [detail];
+  if (hasServiceLabel(detail)) return { parts, via: 'property' };
+  const order = cfWinner >= 0 ? [cfWinner] : cfMiss >= 5 ? [] : CF_TRIES.map((_, i) => i);
+  for (const i of order) {
+    const [path, params] = CF_TRIES[i](pid);
+    const r = await rv(path, params);
+    if (r && r.error) continue;
+    if (hasServiceLabel(r)) { cfWinner = i; parts.push(r); return { parts, via: path }; }
+  }
+  if (cfWinner < 0) cfMiss++;
+  return { parts, via: 'none' };
+}
+export function _resetDiscovery() { cfWinner = -1; cfMiss = 0; }
+
 export function installMoveoutProperty(app, rvFetch) {
   let index = null, indexAt = 0, indexInflight = null;
   async function getIndex() {
@@ -129,9 +160,8 @@ export function installMoveoutProperty(app, rvFetch) {
   const svcCache = new Map(), woCache = new Map();
   async function services(pid) {
     const hit = svcCache.get(pid); if (hit && Date.now() - hit.at < SERVICE_TTL) return hit.v;
-    const d = await rvFetch('/properties/' + pid);
-    if (d && d.error) throw new Error(d.error);
-    const v = extractServices(d); svcCache.set(pid, { at: Date.now(), v }); return v;
+    const { parts } = await readProperty(rvFetch, pid);
+    const v = extractServices(parts); svcCache.set(pid, { at: Date.now(), v }); return v;
   }
   async function pool(items, n, fn) {
     const res = new Array(items.length); let i = 0;
@@ -176,15 +206,27 @@ export function installMoveoutProperty(app, rvFetch) {
     } catch (e) { console.error('[moveouts-property] wo', e.message); res.status(502).json({ error: 'Could not read work orders from Rentvine.' }); }
   });
 
-  // Shows what the property page contains for these fields (names and short values only) so a mismatch can be diagnosed.
+  // Diagnostics (read-only): which fields were found, and which source supplied them. Names and short values only.
   app.get('/api/moveouts/property-shape/:pid', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     if (!/^\d{1,9}$/.test(req.params.pid)) return res.status(400).json({ error: 'Bad property id.' });
     try {
-      const d = await rvFetch('/properties/' + req.params.pid);
-      if (d && d.error) throw new Error(d.error);
-      const pairs = collectPairs(d).filter((p) => /landscap|pest|pool|spa|service|maintenance ?notes/i.test(p.label)).map((p) => ({ label: p.label, value: p.value.slice(0, 80) }));
-      res.json({ topLevelKeys: Object.keys(d || {}).slice(0, 40), matchingFields: pairs.slice(0, 40), parsed: extractServices(d) });
+      const { parts, via } = await readProperty(rvFetch, req.params.pid);
+      const pairs = collectPairs(parts).filter((p) => /landscap|pest|pool|spa|service|maintenance ?notes/i.test(p.label)).map((p) => ({ label: p.label, value: p.value.slice(0, 80) }));
+      res.json({ source: via, topLevelKeys: Object.keys(parts[0] || {}).slice(0, 40), matchingFields: pairs.slice(0, 40), parsed: extractServices(parts) });
     } catch (e) { res.status(502).json({ error: 'Could not read the property.' }); }
+  });
+  app.get('/api/moveouts/property-probe/:pid', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!/^\d{1,9}$/.test(req.params.pid)) return res.status(400).json({ error: 'Bad property id.' });
+    const out = [];
+    for (const f of CF_TRIES) {
+      const [path, params] = f(req.params.pid);
+      const r = await rvFetch(path, params);
+      if (r && r.error) { out.push({ path, params, ok: false, error: String(r.error).slice(0, 90) }); continue; }
+      const first = Array.isArray(r) ? r[0] : (r && Array.isArray(r.data) ? r.data[0] : null);
+      out.push({ path, params, ok: true, topLevelKeys: Array.isArray(r) ? ['(list of ' + r.length + ')'] : Object.keys(r || {}).slice(0, 20), firstItemKeys: first && typeof first === 'object' ? Object.keys(first).slice(0, 20) : null, serviceLabels: collectPairs(r).filter((p) => SERVICE_LABEL.test(p.label)).map((p) => p.label + '=' + p.value.slice(0, 40)).slice(0, 8) });
+    }
+    res.json({ propertyId: req.params.pid, tries: out });
   });
 }
