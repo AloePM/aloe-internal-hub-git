@@ -349,10 +349,11 @@ export function chooseLease(cands, cardNames) {
   if (!cands.length) return { lease: null, ambiguous: false };
   const want = new Set((cardNames || []).flatMap(tokens));
   const score = (c) => c.tenants.reduce((n, t) => n + tokens(t.name).filter((x) => want.has(x)).length, 0);
-  const ranked = cands.map((c) => ({ c, s: score(c) })).sort((a, b) => b.s - a.s);
-  const top = ranked[0];
-  const ties = ranked.filter((r) => r.s === top.s).length;
-  return { lease: top.c, ambiguous: cands.length > 1 && (top.s === 0 || ties > 1) };
+  if (!want.size) return { lease: null, ambiguous: false };
+  const ranked = cands.map((c) => ({ c, s: score(c) })).filter((r) => r.s > 0)
+    .sort((a, b) => b.s - a.s || (Number(b.c.leaseId) || 0) - (Number(a.c.leaseId) || 0));
+  if (!ranked.length) return { lease: null, ambiguous: false };
+  return { lease: ranked[0].c, ambiguous: false };
 }
 
 export function installMoveoutProperty(app, rvFetch) {
@@ -398,23 +399,30 @@ export function installMoveoutProperty(app, rvFetch) {
     if (leaseIdx && Date.now() - leaseIdxAt < LEASE_TTL) return leaseIdx;
     if (leaseInflight) return leaseInflight;
     leaseInflight = (async () => {
-      const map = new Map();
-      for (const status of [1, 3]) {
-        for (let page = 1; page <= 15; page++) {
-          const b = await rvFetch('/leases/export', { pageSize: 200, page, 'primaryLeaseStatusIDs[]': status });
-          if (b && b.error) throw new Error(b.error);
-          const items = Array.isArray(b) ? b : (b && b.data) || [];
-          for (const it of items) {
-            const key = addrKey(it && it.property && it.property.address);
-            const ts = (it && it.lease && Array.isArray(it.lease.tenants)) ? it.lease.tenants : [];
-            if (!key || !ts.length) continue;
-            const tenants = ts.map((t) => ({ name: tenantName(t), contactId: String(t.contactID || t.contactId || t.tenantContactID || t.id || ''), raw: t }));
-            if (!map.has(key)) map.set(key, []);
-            map.get(key).push({ leaseId: String((it.lease && (it.lease.leaseID || it.lease.id)) || ''), tenants });
+      const map = new Map(), seen = new Set();
+      // Union of several reads so no lease status is missed. The unfiltered read must work; the others are best-effort.
+      const readAll = async (extra, mustWork) => {
+        try {
+          for (let page = 1; page <= 20; page++) {
+            const b = await rvFetch('/leases/export', { pageSize: 200, page, ...extra });
+            if (b && b.error) throw new Error(b.error);
+            const items = Array.isArray(b) ? b : (b && b.data) || [];
+            for (const it of items) {
+              const key = addrKey(it && it.property && it.property.address);
+              if (!key) continue;
+              const L = (it && it.lease) || {};
+              const leaseId = String(L.leaseID || L.id || '');
+              if (leaseId) { if (seen.has(leaseId)) continue; seen.add(leaseId); }
+              const ts = Array.isArray(L.tenants) ? L.tenants : [];
+              const tenants = ts.map((t) => ({ name: tenantName(t), contactId: String(t.contactID || t.contactId || t.tenantContactID || t.id || ''), raw: t }));
+              if (!map.has(key)) map.set(key, []);
+              map.get(key).push({ leaseId, tenants });
+            }
+            if (items.length < 200) break;
           }
-          if (items.length < 200) break;
-        }
-      }
+        } catch (e) { if (mustWork) throw e; }
+      };
+      await Promise.all([readAll({}, true), readAll({ 'primaryLeaseStatusIDs[]': 1 }, false), readAll({ 'primaryLeaseStatusIDs[]': 2 }, false), readAll({ 'primaryLeaseStatusIDs[]': 3 }, false)]);
       leaseIdx = map; leaseIdxAt = Date.now(); return map;
     })().finally(() => { leaseInflight = null; });
     return leaseInflight;

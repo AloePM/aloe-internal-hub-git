@@ -778,7 +778,7 @@ function tenantCell(c) {
     return h;
   }
   var t0 = (c.tenants && c.tenants.length) ? c.tenants.join(', ') : (c.leaseName || '');
-  var note = TN.state === 'loading' ? '<div class="pl-small">Loading contact details…</div>' : (TN.state === 'error' ? '<div class="pl-small">Contact details unavailable</div>' : (TN.state === 'done' ? '<div class="pl-small">Not found in Rentvine</div>' : ''));
+  var note = TN.state === 'loading' ? '<div class="pl-small">Loading contact details…</div>' : (TN.state === 'error' ? '<div class="pl-small">Contact details unavailable</div>' : (TN.state === 'done' ? '<div class="pl-small">No matching lease in Rentvine, check manually</div>' : ''));
   return (t0 ? esc(t0) : '<span class="pl-small">None on card</span>') + note;
 }
 function tenantCellOld(c) {
