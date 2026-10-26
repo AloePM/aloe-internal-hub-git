@@ -2,6 +2,7 @@
 // Reads the Aptly Move-Outs board. Never writes to Aptly. Cached 5 minutes.
 import { addrKey } from './moveouts-property.js';
 import { installMoveoutsComprehensive } from './moveouts-comprehensive.js';
+import { installMoveoutsWalkComment } from './moveouts-walkcomment.js';
 const BOARD = 'YA3QWmPebvMwLwbB3';
 const API = (process.env.APTLY_API_BASE || 'https://core-api.getaptly.com').replace(/\/+$/, '');
 const TTL_MS = 5 * 60 * 1000;
@@ -159,6 +160,7 @@ export function installMoveoutsPipeline(app) {
   let walkCache = null, walkAt = 0;
   app.locals.moveoutsPipelineBust = () => { cachedAt = 0; };
   installMoveoutsComprehensive(app);
+  installMoveoutsWalkComment(app);
   app.get('/api/moveouts/walks', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     if (walkCache && Date.now() - walkAt < TTL_MS) return res.json(walkCache);

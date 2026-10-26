@@ -742,7 +742,7 @@ function wkCell(c) {
   var w = wkFor(c), h = '';
   [['pre', 'Pre move-out'], ['out', 'Move-out walk']].forEach(function (k) {
     var x = w[k[0]]; if (!x) return;
-    h += '<div><span class="pl-small">' + k[1] + ':</span> ' + esc(plDate(x.date)) + (x.past ? ' <span class="pl-pill">Date passed</span>' : '') + '</div>';
+    h += '<div><span class="pl-small">' + k[1] + ':</span> ' + esc(plDate(x.date)) + (x.past ? ' <span class="pl-pill">Date passed</span>' : '') + (x.past ? '' : wkAct(c, k[0], x.date)) + '</div>';
   });
   if (h) return h;
   return wkNoWalk(c) ? '<span class="pl-pill red">No walk scheduled</span>' : '<span class="pl-small">None yet</span>';
@@ -791,10 +791,39 @@ function depCell(c) { return c.deposit != null ? '<div class="pl-small">Deposit 
 function wkLine(c) {
   if (!WK || WK.error) return '';
   var w = wkFor(c), h = '';
-  if (w.pre) h += '<div class="pl-small">Pre move-out walk: ' + esc(plDate(w.pre.date)) + '</div>';
-  if (w.out) h += '<div class="pl-small">Move-out walk: ' + esc(plDate(w.out.date)) + '</div>';
+  if (w.pre) h += '<div class="pl-small">Pre move-out walk: ' + esc(plDate(w.pre.date)) + (w.pre.past ? '' : wkAct(c, 'pre', w.pre.date)) + '</div>';
+  if (w.out) h += '<div class="pl-small">Move-out walk: ' + esc(plDate(w.out.date)) + (w.out.past ? '' : wkAct(c, 'out', w.out.date)) + '</div>';
   return h;
 }
+function wkAct(c, kind, date) {
+  if (!c || !c.aptlyId) return '';
+  return ' <span class="wk-act"><button type="button" class="sv-link" data-walk-add="' + esc(c.aptlyId) + '" data-kind="' + kind + '" data-date="' + esc(date) + '">Add to Aptly card</button><span class="cp-msg pl-small"></span></span>';
+}
+document.addEventListener('click', function (ev) {
+  var t = ev.target;
+  if (!t || !t.getAttribute || !t.getAttribute('data-walk-add')) return;
+  var aid = t.getAttribute('data-walk-add'), kind = t.getAttribute('data-kind'), date = t.getAttribute('data-date');
+  var c = compFind(aid), label = kind === 'pre' ? 'Pre move-out' : 'Move-out';
+  var wrap = t.closest('.wk-act'), msg = wrap && wrap.querySelector('.cp-msg');
+  if (!window.confirm('Add a comment to the Aptly card for ' + ((c && c.address) || 'this property') + '?\n\n"' + label + ' walk scheduled ' + plDate(date) + ' (from John\u2019s walk sheet) via Hub."')) return;
+  function send(force) {
+    t.disabled = true; if (msg) { msg.style.color = ''; msg.textContent = ' Adding…'; }
+    return fetch('/api/moveouts/walk-comment', { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-write': '1' }, body: JSON.stringify({ aptlyId: aid, kind: kind, date: date, force: !!force }) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, s: r.status, j: j }; }); })
+      .then(function (o) {
+        if (o.ok && o.j && o.j.ok) { if (msg) msg.textContent = o.j.unchanged ? ' Already on the card.' : ' Added to the card.'; return; }
+        if (o.s === 409 && o.j && o.j.differs) {
+          t.disabled = false;
+          if (window.confirm('The card already says ' + label + ' walk ' + plDate(o.j.cardDate) + '. Add a comment saying it changed to ' + plDate(date) + '?')) return send(true);
+          if (msg) msg.textContent = ' Not added (card says ' + plDate(o.j.cardDate) + ').';
+          return;
+        }
+        t.disabled = false; if (msg) { msg.style.color = '#b42318'; msg.textContent = ' ' + ((o.j && o.j.error) || 'Could not add.'); }
+      })
+      .catch(function (e) { t.disabled = false; if (msg) { msg.style.color = '#b42318'; msg.textContent = ' Could not reach the hub (' + e.message + '). Nothing was added.'; } });
+  }
+  send(false);
+});
 function ibLine(c) {
   if (!c) return '';
   var bits = [];
