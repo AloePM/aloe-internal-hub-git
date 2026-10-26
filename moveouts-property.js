@@ -195,7 +195,7 @@ export function _resetDiscovery() { cfWinner = -1; cfMiss = 0; valuesOk = null; 
 // Pre move-out ("Tenant Completed Pre Move Out Inspection") and annual ("Annual Inspection 2.0") reports.
 // The hub only reads: it never writes to Zinspector, Aptly or Rentvine from here.
 const ZI_BASE = 'https://portfolio.zinspector.com';
-const htmlText = (h) => squash(String(h || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"'));
+const htmlText = (h) => squash(String(h || '').replace(/<[^>]*>/g, ' ').replace(/&ZeroWidthSpace;|&#8203;|&#x200b;|\u200b/gi, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"'));
 const firstByClass = (chunk, token) => {
   const m = new RegExp('<(td|th|div|span|b|p|a|i|h[1-6])\\b[^>]*class="[^"]*\\b' + token + '\\b[^"]*"[^>]*>([\\s\\S]*?)</\\1>', 'i').exec(chunk);
   return m ? m[2] : null;

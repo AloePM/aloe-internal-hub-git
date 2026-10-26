@@ -56,7 +56,7 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .trend-section-label::after{content:'';flex:1;height:1px;background:var(--rule)}
 #panes thead tr{background:#E6EFF0!important;color:#4A6466!important}
 .pl-wrap{overflow-x:auto;border:1px solid var(--rule);border-radius:var(--r);background:var(--card)}
-.pl-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:980px}
+.pl-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:1400px}
 .pl-tbl th{background:#E6EFF0;color:#4A6466;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;white-space:nowrap}
 .pl-tbl td{padding:10px 12px;border-top:1px solid var(--rule);vertical-align:top}
 .pl-addr{font-weight:700;color:var(--ink)}
@@ -701,6 +701,65 @@ function plLast(c) {
   var ago = l.daysAgo == null ? '' : l.daysAgo === 0 ? 'today' : l.daysAgo + ' d ago';
   return '<div class="pl-small">' + esc([l.type, ago].filter(Boolean).join(' · ')) + '</div>' + esc(l.text.length > 90 ? l.text.slice(0, 90) + '…' : l.text);
 }
+var WK = null;
+async function wkLoad() {
+  try {
+    var r = await fetch('/api/moveouts/walks', { credentials: 'same-origin' });
+    var j = await r.json().catch(function () { return null; });
+    WK = (r.ok && j && !j.error) ? j : { error: (j && j.error) || ('The server answered ' + r.status) };
+  } catch (e) { WK = { error: e.message }; }
+}
+function wkSame(x, y) { return !!x && !!y && (x === y || x.indexOf(y + ' ') === 0 || y.indexOf(x + ' ') === 0); }
+function wkToday() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+// For one card: nearest upcoming walk (else latest past walk) of each kind.
+function wkFor(c) {
+  var out = { pre: null, out: null }, today = wkToday();
+  if (!WK || WK.error || !c.addrKey) return out;
+  WK.walks.forEach(function (w) {
+    if (!wkSame(w.key, c.addrKey)) return;
+    var cur = out[w.kind], up = w.date >= today;
+    if (!cur) out[w.kind] = { date: w.date, past: !up };
+    else if (up && (cur.past || w.date < cur.date)) out[w.kind] = { date: w.date, past: false };
+    else if (!up && cur.past && w.date > cur.date) out[w.kind] = { date: w.date, past: true };
+  });
+  return out;
+}
+function wkNoWalk(c) {
+  if (!WK || WK.error) return false;
+  if (c.daysToMoveOut == null || c.daysToMoveOut > 10) return false;
+  var w = wkFor(c); return !w.out && !w.pre;
+}
+function wkCell(c) {
+  if (!WK) return '<span class="pl-small">Loading…</span>';
+  if (WK.error) return '<span class="pl-small">Walk sheet unavailable</span>';
+  var w = wkFor(c), h = '';
+  [['pre', 'Pre move-out'], ['out', 'Move-out walk']].forEach(function (k) {
+    var x = w[k[0]]; if (!x) return;
+    h += '<div><span class="pl-small">' + k[1] + ':</span> ' + esc(plDate(x.date)) + (x.past ? ' <span class="pl-pill">Date passed</span>' : '') + '</div>';
+  });
+  if (h) return h;
+  return wkNoWalk(c) ? '<span class="pl-pill red">No walk scheduled</span>' : '<span class="pl-small">None yet</span>';
+}
+function usd(n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }); }
+function tenantCell(c) {
+  var t = (c.tenants && c.tenants.length) ? c.tenants.join(', ') : (c.leaseName || '');
+  return t ? esc(t) : '<span class="pl-small">None on card</span>';
+}
+function balCell(c) {
+  if (c.balance == null && c.overdue == null) return '<span class="pl-small">Not on card</span>';
+  var h = (c.balance > 0 ? '<span class="pl-pill red">Owes ' + usd(c.balance) + '</span>' : c.balance < 0 ? '<span class="pl-small">Credit ' + usd(-c.balance) + '</span>' : '<span class="pl-small">$0 owed</span>');
+  if (c.overdue > 0) h += '<div class="pl-small">Overdue ' + usd(c.overdue) + '</div>';
+  return h;
+}
+function compTag(c) {
+  var v = (c.comprehensive || '').trim().toLowerCase();
+  if (v === 'yes') return '<span class="pl-pill">Comprehensive: YES (tell John)</span>';
+  if (v === 'no') return '<span class="sv-pill">Comprehensive: No</span>';
+  return '';
+}
+function aptlyLink(c) {
+  return c.aptlyId ? '<div class="sv-row"><a class="sv-link" target="_blank" rel="noopener" href="https://app.getaptly.com/ticket/YA3QWmPebvMwLwbB3/' + encodeURIComponent(c.aptlyId) + '">Open in Aptly</a></div>' : '';
+}
 function plFlags(c) {
   return c.flags.map(function (f) { return '<span class="pl-pill' + (/passed|Turn open|No move-out/.test(f) ? ' red' : '') + '">' + esc(f) + '</span>'; }).join('');
 }
@@ -774,12 +833,12 @@ function plRender() {
     + kpi('Nobody assigned', ups.filter(function (c) { return !c.assigned; }).length, 'On these cards', '#7c3aed')
     + '</div>';
   if (PL.stale) uh += '<p class="pl-note">Showing the last successful read; Aptly could not be reached just now.</p>';
-  uh += '<p class="pl-note">Read-only, from the Aptly Move-Outs board. A card moves to To close out when it is moved to Move-Out Day or later in Aptly. Walk dates and pre move-out inspection reports will show here next.</p>';
+  uh += '<p class="pl-note">Read-only, from the Aptly Move-Outs board. A card moves to To close out when it is moved to Move-Out Day or later in Aptly. Walk dates come live from John\'s walk sheet (pre move-out and move-out walks). Pre move-out inspection reports will show here next.</p>';
   if (!ups.length) uh += '<div class="pl-wrap"><div class="pl-empty">No upcoming move-outs on the board.</div></div>';
   else {
-    uh += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Move-out</th><th>Stage</th><th>Type</th><th>Owner</th><th>Checklist</th><th>Flags</th></tr></thead><tbody>';
+    uh += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Tenants</th><th>Move-out</th><th>Walks (John)</th><th>Owes</th><th>Stage</th><th>Type</th><th>Owner</th><th>Checklist</th><th>Flags</th></tr></thead><tbody>';
     ups.forEach(function (c) {
-      uh += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div>' + svBadges(c) + '</td><td>' + plWhen(c) + '</td><td>' + esc(c.stage) + '</td><td>' + esc(c.moveOutType || '—') + '</td><td>' + esc(c.owners.join(', ') || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td></tr>';
+      uh += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div>' + compTag(c) + aptlyLink(c) + svBadges(c) + '</td><td>' + tenantCell(c) + '</td><td>' + plWhen(c) + '</td><td>' + wkCell(c) + '</td><td>' + balCell(c) + '</td><td>' + esc(c.stage) + '</td><td>' + esc(c.moveOutType || '—') + '</td><td>' + esc(c.owners.join(', ') || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td></tr>';
     });
     uh += '</tbody></table></div>';
   }
@@ -1000,7 +1059,7 @@ async function loadPipeline(force) {
     var r = await fetch('/api/moveouts/pipeline' + (force ? '?refresh=1' : ''), { credentials: 'same-origin' });
     var j = await r.json().catch(function () { return null; });
     if (!r.ok || !j || j.error) { PL = { error: (j && j.error) || ('The server answered ' + r.status) }; plState = 'error'; }
-    else { PL = j; plState = 'done'; await rpLoadSummaries(); }
+    else { PL = j; plState = 'done'; await rpLoadSummaries(); await wkLoad(); }
   if (plState === 'done') svLoad();
   } catch (e) { PL = { error: 'Could not reach the hub (' + e.message + ').' }; plState = 'error'; }
   plRender();

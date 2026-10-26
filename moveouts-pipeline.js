@@ -1,5 +1,6 @@
 // Read-only Move-Outs pipeline feed for the hub (/api/moveouts/pipeline).
 // Reads the Aptly Move-Outs board. Never writes to Aptly. Cached 5 minutes.
+import { addrKey } from './moveouts-property.js';
 const BOARD = 'YA3QWmPebvMwLwbB3';
 const API = (process.env.APTLY_API_BASE || 'https://core-api.getaptly.com').replace(/\/+$/, '');
 const TTL_MS = 5 * 60 * 1000;
@@ -32,6 +33,7 @@ const text = (v) => {
   return String(v);
 };
 const names = (v) => (Array.isArray(v) ? v.map((x) => (x && x.name) || '').filter(Boolean) : []);
+const money = (v) => (v && typeof v === 'object' && typeof v.amount === 'number' ? v.amount : null);
 const day = (d) => (d ? d.toISOString().slice(0, 10) : null);
 const daysBetween = (a, b) => Math.floor((b - a) / 86400000);
 
@@ -79,6 +81,13 @@ export function buildPipeline(schema, cards, now = new Date()) {
       lastActivity: la ? { type: la.type || '', direction: la.direction || '', at: day(lastAt), daysAgo: lastAt ? Math.max(0, daysBetween(lastAt, now)) : null, text: String(la.content || '').slice(0, 240) } : null,
       flags,
       isTurn: TURN_STAGES.includes(stage),
+      addrKey: addrKey(names(c.unit)[0] || c.name || ''),
+      comprehensive: text(get(c, 'Comprehensive Inspection')),
+      tenants: [...new Set(names(get(c, 'Related Contacts')))],
+      leaseName: text(get(c, 'Lease')),
+      balance: money(get(c, 'Mirror Current Balance')),
+      overdue: money(get(c, 'Mirror Overdue Charge Balance')),
+      deposit: money(get(c, 'Mirror Current Deposit Balance')),
     };
   });
   const rank = (s) => { const i = STAGE_ORDER.indexOf(s); return i < 0 ? 99 : i; };
@@ -101,8 +110,70 @@ async function fetchAll() {
   return buildPipeline(schema, cards.filter((c) => !c.archived));
 }
 
+
+// ---- John's walk sheet (read-only). Pre move-out and move-out walks only; renewals / move-in / new-property rows are ignored.
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1b5qlwlEo8avsSRbm2id1ocN0Eh5KmvvKPHsiEoDWngk/export?format=csv';
+export function parseCsv(t) {
+  const rowsOut = []; let row = [], f = '', q = false;
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (q) { if (ch === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { row.push(f); f = ''; }
+    else if (ch === '\n') { row.push(f); rowsOut.push(row); row = []; f = ''; }
+    else if (ch !== '\r') f += ch;
+  }
+  if (f !== '' || row.length) { row.push(f); rowsOut.push(row); }
+  return rowsOut;
+}
+export function walkDate(s) {
+  const m = /^\s*(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})\s*$/.exec(String(s || ''));
+  if (!m) return null;
+  const mo = +m[1], d = +m[2];
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return m[3] + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+}
+export function walkKind(t) {
+  const s = String(t || '').trim().toLowerCase();
+  if (!s || /^move[\s-]*in\b/.test(s)) return null;
+  if (/pre[\s-]*move[\s-]*out/.test(s)) return 'pre';
+  if (/move[\s-]*out|comprehensive/.test(s)) return 'out';
+  return null;
+}
+export function parseWalks(csv) {
+  const out = []; let seenHeader = false;
+  for (const r of parseCsv(csv)) {
+    if (!seenHeader) { if (/date walk/i.test(r[2] || '')) seenHeader = true; continue; }
+    const date = walkDate(r[2]); const kind = walkKind(r[4]);
+    const key = addrKey(r[0] || '');
+    if (!date || !kind || !key) continue;
+    out.push({ key, date, kind });
+  }
+  return out;
+}
+
 export function installMoveoutsPipeline(app) {
   let cache = null, cachedAt = 0, inflight = null, lastForce = 0;
+  let walkCache = null, walkAt = 0;
+  app.get('/api/moveouts/walks', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (walkCache && Date.now() - walkAt < TTL_MS) return res.json(walkCache);
+    try {
+      const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 15000);
+      let r; try { r = await fetch(SHEET_URL, { signal: ctl.signal, redirect: 'follow' }); } finally { clearTimeout(to); }
+      if (!r.ok) throw new Error('Google answered ' + r.status);
+      const text = await r.text();
+      if (/^\s*<(!doctype|html)/i.test(text)) throw new Error('Google asked for sign-in (sheet is not shared by link)');
+      const walks = parseWalks(text);
+      walkCache = { generatedAt: new Date().toISOString(), count: walks.length, walks }; walkAt = Date.now();
+      res.json(walkCache);
+    } catch (e) {
+      console.error('[moveouts-walks]', e.message);
+      if (walkCache) return res.json({ ...walkCache, stale: true });
+      res.status(502).json({ error: 'Could not read John’s walk sheet (' + e.message + ').' });
+    }
+  });
+
   app.get('/api/moveouts/pipeline', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     if (!token()) return res.status(503).json({ error: 'The Aptly connection is not set up on the hub.' });
