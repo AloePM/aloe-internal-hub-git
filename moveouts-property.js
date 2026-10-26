@@ -191,6 +191,109 @@ export function managedOf(detail) {
 }
 export function _resetDiscovery() { cfWinner = -1; cfMiss = 0; valuesOk = null; }
 
+// ---------- Zinspector inspection reports (READ-ONLY) ----------
+// Pre move-out ("Tenant Completed Pre Move Out Inspection") and annual ("Annual Inspection 2.0") reports.
+// The hub only reads: it never writes to Zinspector, Aptly or Rentvine from here.
+const ZI_BASE = 'https://portfolio.zinspector.com';
+const htmlText = (h) => squash(String(h || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"'));
+const firstByClass = (chunk, token) => {
+  const m = new RegExp('<(td|th|div|span|b|p|a|i|h[1-6])\\b[^>]*class="[^"]*\\b' + token + '\\b[^"]*"[^>]*>([\\s\\S]*?)</\\1>', 'i').exec(chunk);
+  return m ? m[2] : null;
+};
+const NO_COMMENT = /^(none|n\/a|[–—-])?$/i;
+export function parseReport(html) {
+  html = String(html || '');
+  const marks = [];
+  const hdr = /<([a-z0-9]+)\b[^>]*class="[^"]*\barea-header\b[^"]*"[^>]*>([\s\S]*?)<\/\1>/gi; let m;
+  while ((m = hdr.exec(html))) marks.push({ at: m.index, area: htmlText(m[2]).slice(0, 60) });
+  const rows = [];
+  const rowRe = /<tr\b[^>]*class="[^"]*\beditRow\b[^"]*"[^>]*>([\s\S]*?)<\/tr>/gi;
+  while ((m = rowRe.exec(html))) {
+    const row = m[1]; let area = '';
+    for (const k of marks) if (k.at < m.index) area = k.area;
+    const item = htmlText(firstByClass(row, 'table-v3-design-detail-name') || '').slice(0, 80);
+    const b = /<(?:span|div|b|i)\b[^>]*class="([^"]*\bcond-badge\b[^"]*)"[^>]*>([\s\S]*?)<\/(?:span|div|b|i)>/i.exec(row);
+    const code = b ? htmlText(b[2]).slice(0, 12) : '';
+    const cls = b ? (b[1].match(/\bcond-[a-z0-9_-]+/gi) || []).map((x) => x.slice(5).toLowerCase()).filter((x) => x !== 'badge') : [];
+    const unknown = !b || cls.includes('unknown') || /^[–—-]?$/.test(code);
+    const act = firstByClass(row, 'table-v3-design-action-cell');
+    const action = !!act && /table-v3-design-action-icon|ph-wrench|ph-warning|ph-exclamation/i.test(act);
+    const comment = htmlText(firstByClass(row, 'table-v3-design-comment') || '').slice(0, 400);
+    const hasComment = !NO_COMMENT.test(comment);
+    const photos = (row.match(/View Image/gi) || []).length;
+    const reasons = [];
+    if (action) reasons.push('action');
+    if (!unknown) reasons.push('condition ' + code);
+    if (hasComment) reasons.push('comment');
+    rows.push({ area, item, condition: unknown ? '' : code, conditionClass: cls.join(' '), action, comment: hasComment ? comment : '', photos, flagged: reasons.length > 0, reasons });
+  }
+  return { total: rows.length, flagged: rows.filter((r) => r.flagged).length, rows };
+}
+export function skeleton(html) {
+  html = String(html || '');
+  const strip = (x) => x.replace(/\s(?:src|href|srcset|style|alt|title|data-[a-z-]+)="[^"]*"/gi, '').replace(/>([^<]+)</g, (mm, t) => (t.trim() ? '>…<' : mm));
+  const h = /<([a-z0-9]+)\b[^>]*class="[^"]*\barea-header\b[^"]*"[^>]*>[\s\S]*?<\/\1>/i.exec(html);
+  const r = /<tr\b[^>]*class="[^"]*\beditRow\b[^"]*"[^>]*>[\s\S]*?<\/tr>/i.exec(html);
+  return { areaHeader: h ? strip(h[0]).slice(0, 700) : null, firstRow: r ? strip(r[0]).slice(0, 2500) : null };
+}
+async function ziGet(path, params) {
+  const key = process.env.ZI_API_KEY;
+  if (!key) return { error: 'ZI_API_KEY is not set on the server' };
+  const url = new URL(path, ZI_BASE);
+  Object.entries(params || {}).forEach(([k, v]) => { if (v != null && v !== '') url.searchParams.set(k, String(v)); });
+  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 20000);
+  try {
+    const r = await fetch(url.toString(), { headers: { 'x-api-key': key, Accept: 'application/json' }, signal: ac.signal });
+    const txt = await r.text();
+    if (!r.ok) return { error: 'Zinspector ' + r.status + ': ' + txt.slice(0, 160) };
+    try { return { data: JSON.parse(txt) }; } catch (e) { return { error: 'Zinspector returned something that is not JSON' }; }
+  } catch (e) { return { error: String(e.message || e).slice(0, 120) }; } finally { clearTimeout(t); }
+}
+async function readShare(token) {
+  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 20000);
+  try {
+    const r = await fetch('https://portfolio.zinspector.com/api/document/getShareReport/' + token, { signal: ac.signal });
+    const raw = await r.text();
+    if (!r.ok) return { error: 'Report link answered ' + r.status };
+    let html = raw; try { const j = JSON.parse(raw); if (typeof j === 'string') html = j; } catch (e) {}
+    return { html };
+  } catch (e) { return { error: String(e.message || e).slice(0, 120) }; } finally { clearTimeout(t); }
+}
+const tokenOf = (u) => { const m = /([A-Za-z0-9]{20,64})\/?(?:\?.*)?$/.exec(String(u || '')); return m ? m[1] : ''; };
+const KIND = [[/pre\s*move[\s-]*out/i, 'pre-move-out'], [/annual\s+inspection/i, 'annual']];
+export async function findReports(address, zget = ziGet, readS = readShare) {
+  const want = addrKey(address);
+  if (!want) return { error: 'Address could not be read' };
+  const term = String(address).split(',')[0].trim();
+  const r = await zget('/api/documents/', { search: term, page_size: 50, ordering: '-Date' });
+  if (r.error) return { error: r.error };
+  const d = r.data; const list = Array.isArray(d) ? d : (d && (d.results || d.documents)) || [];
+  // John's sheet writes "1825 West Ray Road Chandler, AZ" (no comma), Zinspector writes "1825 West Ray Road, Chandler, AZ": accept either as a whole-word prefix of the other.
+  const same = (x, y) => !!x && !!y && (x === y || x.startsWith(y + ' ') || y.startsWith(x + ' '));
+  const keyOf = (x) => addrKey(x.PropertyAddress || x.property_address || x.address || x.PropertyName || '');
+  const exact = list.filter((x) => keyOf(x) === want);
+  const mine = exact.length ? exact : list.filter((x) => same(keyOf(x), want));
+  const best = {};
+  for (const x of mine) {
+    const title = String(x.Title || x.title || '');
+    const k = (KIND.find(([re]) => re.test(title)) || [])[1]; if (!k) continue;
+    const when = String(x.Date || x.date || '');
+    if (!best[k] || when > best[k].when) best[k] = { x, title, when };
+  }
+  const reports = [];
+  for (const [kind, b] of Object.entries(best)) {
+    const x = b.x, tok = tokenOf(x.shareable_raw_html_url || x.shareable_report_url || '');
+    const rep = { kind, title: b.title, date: b.when, id: x.id, reportUrl: x.shareable_report_url || x.HTML_URL || '' };
+    if (!tok) { rep.error = 'No share link on this report'; reports.push(rep); continue; }
+    const s = await readS(tok);
+    if (s.error) { rep.error = s.error; reports.push(rep); continue; }
+    const p = parseReport(s.html);
+    rep.total = p.total; rep.flagged = p.flagged; rep.rows = p.rows.filter((q) => q.flagged);
+    reports.push(rep);
+  }
+  return { address: term, searched: list.length, matchedAddress: mine.length, firstItemKeys: list[0] ? Object.keys(list[0]).slice(0, 30) : null, reports };
+}
+
 export function installMoveoutProperty(app, rvFetch) {
   let index = null, indexAt = 0, indexInflight = null;
   async function getIndex() {
@@ -279,62 +382,26 @@ export function installMoveoutProperty(app, rvFetch) {
     const ac = new AbortController(); const t = setTimeout(() => ac.abort(), ms);
     try { return await fetch(url, { signal: ac.signal, redirect: 'follow' }); } finally { clearTimeout(t); }
   };
-  app.get('/api/moveouts/zi-probe', async (req, res) => {
+  // READ-ONLY routes (login required, under /api/moveouts). They write nothing anywhere.
+  const inspCache = new Map();
+  app.get('/api/moveouts/inspection', async (req, res) => {
     res.set('Cache-Control', 'no-store');
-    const out = { env: {}, sheet: {}, report: {} };
-    out.env.zinspectorVarNames = Object.keys(process.env).filter((k) => /zinspector|zi_/i.test(k)).sort();
-    out.env.aptlyVarNames = Object.keys(process.env).filter((k) => /aptly/i.test(k)).sort();
-    try {
-      const r = await timed('https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/export?format=csv');
-      const txt = await r.text();
-      const lines = txt.split(/\r?\n/);
-      out.sheet = { status: r.status, contentType: (r.headers.get('content-type') || '').slice(0, 60), bytes: txt.length, rows: lines.length, looksLikeCsv: /^Property,City/i.test(txt), header: /^Property,City/i.test(txt) ? lines[0].slice(0, 120) : null };
-    } catch (e) { out.sheet = { error: String(e.message || e).slice(0, 120) }; }
-    const docId = String(req.query.doc || '');
-    const token = /^[A-Za-z0-9]{20,64}$/.test(String(req.query.token || '')) ? String(req.query.token) : 'oLWkbn3dvQ7bNAPH5PD4K7qeYAPgmD4R';
-    try {
-      const r = await timed('https://portfolio.zinspector.com/api/document/getShareReport/' + token);
-      let html = await r.text();
-      const rawBytes = html.length;
-      let parsed = null; try { parsed = JSON.parse(html); } catch (e) {}
-      let wasWrapped = false;
-      if (typeof parsed === 'string') { html = parsed; parsed = null; wasWrapped = true; }
-      if (parsed !== null) {
-        // The share link returns JSON. Report its SHAPE only: keys, types, array lengths, and short strings that repeat
-        // (those are condition codes / legend labels, not names). Free text and names are never echoed.
-        const counts = new Map();
-        const walk = (n, depth) => {
-          if (typeof n === 'string') { const t = n.trim(); if (t && t.length <= 30) counts.set(t, (counts.get(t) || 0) + 1); return typeof n === 'string' ? 'string(' + Math.min(n.length, 9999) + ')' : ''; }
-          if (n === null) return 'null';
-          if (typeof n !== 'object') return typeof n;
-          if (depth > 6) return Array.isArray(n) ? 'array' : 'object';
-          if (Array.isArray(n)) {
-            const kinds = n.slice(0, 40).map((x) => walk(x, depth + 1));
-            n.slice(40).forEach((x) => walk(x, depth + 1));
-            return { array: n.length, first: kinds[0] === undefined ? null : kinds[0] };
-          }
-          const o = {}; for (const k of Object.keys(n).slice(0, 40)) o[k] = walk(n[k], depth + 1); return o;
-        };
-        const tree = walk(parsed, 0);
-        const repeated = [...counts.entries()].filter(([, c]) => c >= 3).sort((x, y) => y[1] - x[1]).slice(0, 40).map(([t, c]) => t + ' x' + c);
-        out.report = { status: r.status, contentType: (r.headers.get('content-type') || '').slice(0, 60), bytes: html.length, json: true, shape: tree, repeatedShortValues: repeated };
-        return res.json(out);
-      }
-      const text = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, '\n').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
-      const lines = text.split('\n').map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean);
-      const short = [...new Set(lines.filter((x) => x.length <= 40))].slice(0, 90);
-      // Structure of the report page: tags, class names, and short labels only. Names/comments longer than 30 chars are never echoed.
-      const tally = (re, g) => { const m = new Map(); let x; while ((x = re.exec(html))) { const k = g(x); if (k) m.set(k, (m.get(k) || 0) + 1); } return [...m.entries()].sort((a, b) => b[1] - a[1]); };
-      const classCounts = tally(/class="([^"]{1,80})"/gi, (x) => x[1].trim()).slice(0, 50).map(([k, c]) => k + ' x' + c);
-      const tagCounts = tally(/<([a-z][a-z0-9]*)\b/gi, (x) => x[1].toLowerCase()).slice(0, 15).map(([k, c]) => k + ' x' + c);
-      const labelRe = /<([a-z0-9]+)([^>]*)>\s*([^<>]{1,30}?)\s*</gi; const labels = new Map(); let lm;
-      while ((lm = labelRe.exec(html))) { const t = lm[3].replace(/\s+/g, ' '); if (/action|comment|condition|attention|repair|damage|needs|note|photo|legend|good|fair|poor|clean|excellent|satisf/i.test(t)) { const cls = (/class="([^"]{1,60})"/.exec(lm[2]) || [])[1] || ''; const k = '<' + lm[1] + (cls ? ' class="' + cls + '"' : '') + '> ' + t; labels.set(k, (labels.get(k) || 0) + 1); } }
-      const labelList = [...labels.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, c]) => k + ' x' + c);
-      const rep = tally(/>\s*([^<>]{1,30}?)\s*</g, (x) => x[1].replace(/\s+/g, ' ')).filter(([, c]) => c >= 3).slice(0, 40).map(([k, c]) => k + ' x' + c);
-      out.report = { status: r.status, wasWrapped, rawBytes, htmlBytes: html.length, images: (html.match(/<img\b/gi) || []).length, tagCounts, classCounts, labelList, repeatedShortText: rep };
-      return res.json(out);
-      out.report = { status: r.status, contentType: (r.headers.get('content-type') || '').slice(0, 60), bytes: html.length, images: (html.match(/<img\b/gi) || []).length, textLines: lines.length, mentionsComment: (html.match(/comment/gi) || []).length, mentionsAction: (html.match(/action/gi) || []).length, shortLines: short };
-    } catch (e) { out.report = { error: String(e.message || e).slice(0, 120) }; }
+    const address = String(req.query.address || '').slice(0, 200);
+    if (!address) return res.status(400).json({ error: 'Send ?address=' });
+    const hit = inspCache.get(address); if (hit && Date.now() - hit.at < 10 * 60 * 1000) return res.json(hit.v);
+    const v = await findReports(address);
+    if (!v.error) inspCache.set(address, { at: Date.now(), v });
+    res.status(v.error ? 502 : 200).json(v);
+  });
+  app.get('/api/moveouts/inspection-parse', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const token = String(req.query.token || '');
+    if (!/^[A-Za-z0-9]{20,64}$/.test(token)) return res.status(400).json({ error: 'Send ?token= (the end of a report share link)' });
+    const s = await readShare(token);
+    if (s.error) return res.status(502).json({ error: s.error });
+    const p = parseReport(s.html);
+    const out = { total: p.total, flagged: p.flagged, rows: p.rows };
+    if (req.query.skeleton) out.skeleton = skeleton(s.html);
     res.json(out);
   });
 
