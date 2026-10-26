@@ -6633,6 +6633,10 @@ app.post('/api/jobs', async (req, res) => {
 });
 
 
+app.get('/', (req, res) => {
+  res.sendFile('/app/public/home.html');
+});
+
 app.get('*', function(req, res) {
   res.send(`<!DOCTYPE html>
 <html lang="en">
