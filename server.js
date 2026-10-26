@@ -345,7 +345,7 @@ async function checkRentChanges() {
   const history = await readRentHistory();
   let changed = false;
   try {
-    const unitsRes = await fetch('http://localhost:' + PORT + '/api/aptly/units').then(r => r.json());
+    const unitsRes = await fetch('http://localhost:' + PORT + '/api/aptly/units', internalOpts()).then(r => r.json());
     const units = (unitsRes.units || []).filter(u => u.publishedForRent === true || u.syndicate === true);
     for (const u of units) {
       const cardId = u.cardId;
@@ -541,7 +541,7 @@ app.get('/api/pet-policy', async function(req, res) {
 });
 app.get('/api/owners/vacant-summary', async function(req, res) {
   try {
-    const unitsRes = await fetch('http://localhost:' + PORT + '/api/aptly/units').then(r => r.json());
+    const unitsRes = await fetch('http://localhost:' + PORT + '/api/aptly/units', internalOpts()).then(r => r.json());
     const units = unitsRes.units || [];
     const ownerMap = await readOwnerMap();
     const result = groupVacantPropertiesByOwner(units, ownerMap);
@@ -566,7 +566,7 @@ app.post('/api/owners/refresh-map', hubAuth, async function(req, res) {
 });
 app.get('/api/owners/email-preview/:contactID', async function(req, res) {
   try {
-    const unitsRes = await fetch('http://localhost:' + PORT + '/api/aptly/units').then(function(r) { return r.json(); });
+    const unitsRes = await fetch('http://localhost:' + PORT + '/api/aptly/units', internalOpts()).then(function(r) { return r.json(); });
     const units = unitsRes.units || [];
     const ownerMap = await readOwnerMap();
     const grouped = groupVacantPropertiesByOwner(units, ownerMap);
@@ -574,9 +574,9 @@ app.get('/api/owners/email-preview/:contactID', async function(req, res) {
     if (!group) return res.status(404).send('No vacant properties found for contactID ' + req.params.contactID);
 
     const [leadsRes, appsRes, listPropRes, rentHistory, listedDateOverrides, vacancyStartOverrides] = await Promise.all([
-      fetch('http://localhost:' + PORT + '/api/aptly/leads-rich').then(function(r) { return r.json(); }),
-      fetch('http://localhost:' + PORT + '/api/aptly/applications-rich').then(function(r) { return r.json(); }),
-      fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich').then(function(r) { return r.json(); }),
+      fetch('http://localhost:' + PORT + '/api/aptly/leads-rich', internalOpts()).then(function(r) { return r.json(); }),
+      fetch('http://localhost:' + PORT + '/api/aptly/applications-rich', internalOpts()).then(function(r) { return r.json(); }),
+      fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich', internalOpts()).then(function(r) { return r.json(); }),
       readRentHistory(),
       readListedDateOverrides(),
       readVacancyStartOverrides()
@@ -681,12 +681,12 @@ const LEADS_RICH_CACHE_MS = 15 * 60 * 1000;
 app.get('/api/owners/batch-export', hubAuth, async function(req, res) {
   try {
     const skipContactIds = ['4195', '4806', '4382', '336', '5023'];
-    const summaryRes = await fetch('http://localhost:' + PORT + '/api/owners/vacant-summary').then(r => r.json());
+    const summaryRes = await fetch('http://localhost:' + PORT + '/api/owners/vacant-summary', internalOpts()).then(r => r.json());
     const groups = summaryRes.groups || summaryRes;
     const [leadsRes, appsRes, listPropRes, rentHistory, listedDateOverrides, vacancyStartOverrides] = await Promise.all([
-      fetch('http://localhost:' + PORT + '/api/aptly/leads-rich').then(r => r.json()),
-      fetch('http://localhost:' + PORT + '/api/aptly/applications-rich').then(r => r.json()),
-      fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich').then(r => r.json()),
+      fetch('http://localhost:' + PORT + '/api/aptly/leads-rich', internalOpts()).then(r => r.json()),
+      fetch('http://localhost:' + PORT + '/api/aptly/applications-rich', internalOpts()).then(r => r.json()),
+      fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich', internalOpts()).then(r => r.json()),
       readRentHistory(),
       readListedDateOverrides(),
       readVacancyStartOverrides()
@@ -739,12 +739,12 @@ app.post('/api/owners/weekly-batch-draft', hubAuth, async function(req, res) {
     const skipContactIds = ['4195', '4806', '4382', '336', '5023'];
     const APTLY_INFO_CHANNEL_ID = '6c8783b9-3fb4-5911-9468-a7c6b91ee25e';
     const testContactId = req.query.testContactId || null;
-    const summaryRes = await fetch('http://localhost:' + PORT + '/api/owners/vacant-summary').then(r => r.json());
+    const summaryRes = await fetch('http://localhost:' + PORT + '/api/owners/vacant-summary', internalOpts()).then(r => r.json());
     const groups = summaryRes.groups || summaryRes;
     const [leadsRes, appsRes, listPropRes, rentHistory, listedDateOverrides, vacancyStartOverrides] = await Promise.all([
-      fetch('http://localhost:' + PORT + '/api/aptly/leads-rich').then(r => r.json()),
-      fetch('http://localhost:' + PORT + '/api/aptly/applications-rich').then(r => r.json()),
-      fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich').then(r => r.json()),
+      fetch('http://localhost:' + PORT + '/api/aptly/leads-rich', internalOpts()).then(r => r.json()),
+      fetch('http://localhost:' + PORT + '/api/aptly/applications-rich', internalOpts()).then(r => r.json()),
+      fetch('http://localhost:' + PORT + '/api/aptly/list-property-rich', internalOpts()).then(r => r.json()),
       readRentHistory(),
       readListedDateOverrides(),
       readVacancyStartOverrides()
@@ -5343,6 +5343,11 @@ async function aptlyCall(method, path, body = null) {
 function hubAuth(req, res, next) {
   if (req.headers['x-hub-token'] !== HUB_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   next();
+}
+
+// Calls the hub makes to itself must carry the internal secret, or the API gate refuses them.
+function internalOpts() {
+  return HUB_SECRET ? { headers: { 'x-hub-token': HUB_SECRET } } : {};
 }
 
 initCustomFieldUpdateRoutes(app, { RENTVINE_BASE, RENTVINE_AUTH, RENTVINE_ACCOUNT, SLACK_TOKEN: process.env.SLACK_TOKEN, hubAuth });
