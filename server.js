@@ -5185,6 +5185,7 @@ async function fetchMoveOutChargeRecon() {
 
 const { installMoveoutsPipeline } = await import('./moveouts-pipeline.js'); installMoveoutsPipeline(app);
 const { installMoveoutRepairs } = await import('./moveouts-repairs.js'); installMoveoutRepairs(app, storage, BUCKET);
+const { installMoveoutProperty } = await import('./moveouts-property.js'); installMoveoutProperty(app, rvFetch);
 app.get('/move-outs', (req, res) => res.sendFile(new URL('./public/move-outs.html', import.meta.url).pathname));
 app.get('/suppressed-fees', (req, res) => res.sendFile(new URL('./suppressed-fees.html', import.meta.url).pathname));
 

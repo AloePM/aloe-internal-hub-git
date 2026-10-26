@@ -63,6 +63,17 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .pl-small{font-size:12px;color:var(--muted)}
 .pl-pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin:0 4px 4px 0;background:var(--amber-d);color:#8a5200}
 .pl-pill.red{background:var(--red-d);color:#b91c1c}
+.sv-row{margin-top:4px}
+.sv-pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin:0 4px 4px 0;background:#eef2f2;color:#4b5b5b}
+.sv-pill.ok{background:#e3f6ec;color:#0b6b46}
+.sv-pill.warn{background:var(--amber-d);color:#8a5200}
+.sv-link{font-size:12px;background:none;border:0;padding:0;color:#0A5468;text-decoration:underline;cursor:pointer;font-family:inherit}
+.sv-box{border:1px solid var(--rule);border-radius:10px;padding:10px 12px;margin:10px 0;background:#f8fbfb;font-size:13px}
+.sv-box.stop{background:#e9f7f0;border-color:#9fd8bd}
+.sv-warn{background:var(--amber-d);color:#7a4700;border-radius:8px;padding:8px 10px;margin:8px 0;font-size:13px;font-weight:600}
+.wo-tbl{width:100%;border-collapse:collapse;font-size:12px}
+.wo-tbl th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:6px 8px;border-bottom:2px solid var(--rule)}
+.wo-tbl td{padding:7px 8px;border-bottom:1px solid var(--rule);vertical-align:top}
 .pl-days{font-family:'DM Mono',monospace;font-weight:500}
 .pl-days.warn{color:var(--amber);font-weight:700}
 .pl-days.bad{color:var(--red);font-weight:700}
@@ -124,7 +135,8 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
   <button class="tab active" role="tab" id="tab-main" data-tab="main" aria-selected="true" type="button">Move-outs</button>
   <button class="tab" role="tab" id="tab-pipeline" data-tab="pipeline" aria-selected="false" type="button">Pipeline</button>
   <button class="tab" role="tab" id="tab-turns" data-tab="turns" aria-selected="false" type="button">Unit turns</button>
-  <button class="tab" role="tab" id="tab-recon" data-tab="recon" aria-selected="false" type="button">Charge reconciliation</button>
+  <button class="tab" role="tab" id="tab-recon" data-tab="recon" aria-selected="false" type="button">To close out</button>
+  <button class="tab" role="tab" id="tab-audit" data-tab="audit" aria-selected="false" type="button">Closed (audit)</button>
 </div>
 
 <div id="loading" class="loading-wrap"><div class="spinner"></div><div class="loading-text">Loading data from Rentvine…</div></div>
@@ -134,6 +146,7 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
   <div id="pane-pipeline" role="tabpanel" aria-labelledby="tab-pipeline" style="display:none"></div>
   <div id="pane-turns" role="tabpanel" aria-labelledby="tab-turns" style="display:none"></div>
   <div id="pane-recon" role="tabpanel" aria-labelledby="tab-recon" style="display:none"></div>
+  <div id="pane-audit" role="tabpanel" aria-labelledby="tab-audit" style="display:none"></div>
 </div>
 
 <script>
@@ -299,6 +312,7 @@ function renderMoveOuts() {
   html += '</div>';
   document.getElementById('pane-main').innerHTML = html;
   document.getElementById('pane-recon').innerHTML = '<div class="main"><div id="recon-section"></div><div id="recon-upcoming-section"></div></div>';
+  var _ap = document.getElementById('pane-audit'); if (_ap) _ap.innerHTML = '<div class="main"><div id="audit-section"></div></div>';
   function showReconError(msg) {
     var el = document.getElementById('recon-section');
     if (el) el.innerHTML = '<div class="error-wrap" style="margin:0">Could not load the charge reconciliation (' + String(msg).replace(/</g,'&lt;') + '). Press Refresh to try again.</div>';
@@ -428,67 +442,121 @@ function renderMoveOuts() {
       if (!s) return null;
       return Math.floor((today0 - new Date(s + 'T00:00:00')) / 86400000);
     }
-    var ui = D._reconUI = D._reconUI || { f: 'work', q: '', open: {} };
-    items.forEach(function (it, i) {
-      it.i = i; it.age = ageOf(it.m); it.unres = it.st.label !== 'Matched'; it.recent = it.age === null || it.age <= 30;
-    });
-    items.sort(function (a, b) {
-      if (a.unres !== b.unres) return a.unres ? -1 : 1;
-      if (a.unres) return (a.days === null ? 9999 : a.days) - (b.days === null ? 9999 : b.days);
-      return (b.m.moveOut || '').localeCompare(a.m.moveOut || '');
-    });
-    var nAttn = items.filter(function (it) { return it.unres; }).length;
-    var nWork = items.filter(function (it) { return it.unres || it.recent; }).length;
-    recon.innerHTML = '<div class="trend-section-label" style="margin-top:20px">6000 vs 6070 Charge Reconciliation — Move-Outs, Last 90 Days</div>'
-      + '<div class="rc-bar" role="group" aria-label="Filter move-outs">'
-      + '<button type="button" class="rc-chip" data-f="work">Working list · ' + nWork + '</button>'
-      + '<button type="button" class="rc-chip" data-f="attention">Needs attention · ' + nAttn + '</button>'
-      + '<button type="button" class="rc-chip" data-f="all">All 90 days · ' + items.length + '</button>'
-      + '<input class="rc-search" id="rc-q" type="search" placeholder="Search address, tenant or owner" aria-label="Search move-outs" value="' + esc(ui.q) + '">'
-      + '</div><div id="rc-list"></div>';
-    function money2(n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-    function drawList() {
-      var q = ui.q.trim().toLowerCase();
-      var shown = items.filter(function (it) {
-        if (ui.f === 'attention' && !it.unres) return false;
-        if (ui.f === 'work' && !(it.unres || it.recent)) return false;
-        if (q && ((it.m.addr || '') + ' ' + (it.m.tenant || '') + ' ' + (it.m.portfolio || '')).toLowerCase().indexOf(q) < 0) return false;
-        return true;
-      });
-      recon.querySelectorAll('.rc-chip').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-f') === ui.f)); });
-      var html = '';
-      if (!shown.length) html = '<div style="padding:16px;color:var(--muted);font-size:13px">Nothing matches' + (q ? ' that search' : ' this view') + '.</div>';
-      else {
-        html = '<div class="pl-wrap"><table class="pl-tbl" style="min-width:760px"><thead><tr><th>Property</th><th>Move-out</th><th>14-day clock</th><th>6000 charged</th><th>6070 billed</th><th>Status</th></tr></thead><tbody>';
-        shown.forEach(function (it) {
-          var m = it.m, open = !!ui.open[it.i];
-          html += '<tr><td><button type="button" class="rc-open" data-i="' + it.i + '" aria-expanded="' + open + '" aria-controls="rc-d-' + it.i + '"><span class="rc-caret" aria-hidden="true">▶</span><span>' + esc(m.addr || '--') + '<span class="pl-small" style="display:block;font-weight:500">' + esc((m.portfolio || '--') + ' · ' + (m.tenant || '--')) + '</span></span></button></td>'
-            + '<td>' + esc(m.moveOut ? m.moveOut.slice(0, 10) : '--') + (it.age !== null ? '<div class="pl-small">' + (it.age < 0 ? 'in ' + (-it.age) + ' d' : it.age + ' d ago') + '</div>' : '') + '</td>'
-            + '<td>' + it.clockHtml + '</td><td>' + money2(it.tc) + '</td><td>' + money2(it.pb) + '</td>'
-            + '<td><span class="rc-st" style="color:' + it.st.color + '">' + esc(it.st.label) + '</span></td></tr>'
-            + '<tr class="rc-det" id="rc-d-' + it.i + '"' + (open ? '' : ' style="display:none"') + '><td colspan="6">' + it.ch + '</td></tr>';
-        });
-        html += '</tbody></table></div>';
-      }
-      var hidden = items.length - shown.length;
-      html += '<p class="rc-note">Showing ' + shown.length + ' of ' + items.length + (ui.f === 'work' ? '. The working list shows everything that needs attention plus the last 30 days. Older matched move-outs are under “All 90 days”.' : '.') + '</p>';
-      document.getElementById('rc-list').innerHTML = html;
+    // ---- Business-day countdown: the deadline is the 14th business day after the move-out date (Mon-Fri, minus US federal holidays) ----
+    function isoMs(s) { var p = String(s).slice(0, 10).split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]); }
+    function msIso(ms) { return new Date(ms).toISOString().slice(0, 10); }
+    function holSet(y) {
+      function nth(m, wd, n) { var d = Date.UTC(y, m, 1), c = 0; for (;;) { if (new Date(d).getUTCDay() === wd) { c++; if (c === n) return msIso(d); } d += 864e5; } }
+      function lastWd(m, wd) { var d = Date.UTC(y, m + 1, 0); while (new Date(d).getUTCDay() !== wd) d -= 864e5; return msIso(d); }
+      var o = {};
+      [y + '-01-01', nth(0, 1, 3), nth(1, 1, 3), lastWd(4, 1), y + '-06-19', y + '-07-04', nth(8, 1, 1), nth(9, 1, 2), y + '-11-11', nth(10, 4, 4), y + '-12-25'].forEach(function (d) { o[d] = 1; });
+      return o;
     }
-    recon.addEventListener('click', function (e) {
-      var c = e.target.closest && e.target.closest('.rc-chip');
-      if (c) { ui.f = c.getAttribute('data-f'); drawList(); return; }
-      var o = e.target.closest && e.target.closest('.rc-open');
-      if (o) {
-        var i = o.getAttribute('data-i'); ui.open[i] = !ui.open[i];
-        var row = document.getElementById('rc-d-' + i); if (row) row.style.display = ui.open[i] ? '' : 'none';
-        o.setAttribute('aria-expanded', String(!!ui.open[i]));
-      }
+    var holCache = {};
+    function isBiz(ms) { var wd = new Date(ms).getUTCDay(); if (wd === 0 || wd === 6) return false; var y = new Date(ms).getUTCFullYear(); var h = holCache[y] || (holCache[y] = holSet(y)); return !h[msIso(ms)]; }
+    var todayMs = isoMs(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Phoenix' }));
+    function bizLeft(moveOutStr) {
+      if (!moveOutStr) return null;
+      var d = isoMs(moveOutStr), n = 0;
+      while (n < 14) { d += 864e5; if (isBiz(d)) n++; }
+      var deadline = d, left = 0;
+      if (todayMs < deadline) { for (var t = todayMs + 864e5; t <= deadline; t += 864e5) if (isBiz(t)) left++; }
+      else if (todayMs > deadline) { for (var u = deadline + 864e5; u <= todayMs; u += 864e5) if (isBiz(u)) left--; }
+      return { left: left, deadline: msIso(deadline), late: todayMs > deadline, today: todayMs === deadline };
+    }
+    function leftHtml(b) {
+      if (!b) return '<span class="pl-small">No move-out date</span>';
+      var t, c;
+      if (b.late) { t = b.left < 0 ? (-b.left) + ' business day' + (b.left === -1 ? '' : 's') + ' overdue' : 'Overdue'; c = '#c0392b'; }
+      else if (b.today) { t = 'Due today'; c = '#c0392b'; }
+      else { t = b.left + ' business day' + (b.left === 1 ? '' : 's') + ' left'; c = b.left <= 3 ? '#b45309' : 'var(--ink)'; }
+      return '<span style="color:' + c + ';font-weight:700">' + t + '</span><div class="pl-small">due ' + esc(plDate(b.deadline)) + '</div>';
+    }
+    // ---- Match each move-out to its Aptly card by address; "done" = the card is in the Complete stage ----
+    var DIRS = { n: 1, s: 1, e: 1, w: 1, ne: 1, nw: 1, se: 1, sw: 1, north: 1, south: 1, east: 1, west: 1 };
+    var SUF = { avenue: 'ave', av: 'ave', drive: 'dr', street: 'st', road: 'rd', lane: 'ln', court: 'ct', place: 'pl', boulevard: 'blvd', circle: 'cir', trail: 'trl', terrace: 'ter', parkway: 'pkwy', highway: 'hwy' };
+    function akey(raw) {
+      var s = String(raw || '').toLowerCase().split(',')[0].replace(/\b(apt|unit|suite|ste|bldg|building)\b.*$/, '').replace(/#.*$/, '').replace(/[.\-]/g, ' ').replace(/[^a-z0-9 ]/g, ' ');
+      var p = s.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      if (!p.length || !/^\d+$/.test(p[0])) return '';
+      var rest = p.slice(1).filter(function (w) { return !DIRS[w]; }).map(function (w) { return SUF[w] || w; });
+      return rest.length ? p[0] + ' ' + rest.join(' ') : '';
+    }
+    var plOk = !!(PL && PL.cards && plState === 'done');
+    var byKey = {};
+    if (plOk) PL.cards.forEach(function (c) { var k = akey(c.address); if (k) (byKey[k] = byKey[k] || []).push(c); });
+    var isComplete = function (c) { return /^complete$/i.test((c && c.stage) || ''); };
+    var ui = D._reconUI = D._reconUI || { q: '', qa: '', open: {} };
+    items.forEach(function (it, i) {
+      it.i = i; it.age = ageOf(it.m); it.unres = it.st.label !== 'Matched';
+      var cs = byKey[akey(it.m.addr)] || [];
+      it.card = cs.filter(function (c) { return !isComplete(c); })[0] || cs[0] || null;
+      it.done = plOk ? (it.card ? isComplete(it.card) : !it.unres) : !it.unres;
+      it.biz = bizLeft(it.m.moveOut);
     });
-    document.getElementById('rc-q').addEventListener('input', function (e) { ui.q = e.target.value; drawList(); });
-    drawList();
+    var todo = items.filter(function (it) { return !it.done; }).sort(function (a, b) {
+      var x = a.biz ? a.biz.deadline : '9999', y = b.biz ? b.biz.deadline : '9999';
+      return x < y ? -1 : x > y ? 1 : String(a.m.addr || '').localeCompare(String(b.m.addr || ''));
+    });
+    var audit = items.filter(function (it) { return it.done; }).sort(function (a, b) { return (b.m.moveOut || '').localeCompare(a.m.moveOut || ''); });
+    var nLate = todo.filter(function (it) { return it.biz && (it.biz.late || it.biz.today); }).length;
+    var nSoon = todo.filter(function (it) { return it.biz && !it.biz.late && !it.biz.today && it.biz.left <= 3; }).length;
+    recon.innerHTML = '<div class="trend-section-label" style="margin-top:20px">To close out — oldest deadline first</div>'
+      + '<p class="rc-note" id="rc-sum"></p>'
+      + '<div class="rc-bar"><input class="rc-search" id="rc-q" type="search" placeholder="Search address, tenant or owner" aria-label="Search move-outs to close out" value="' + esc(ui.q) + '"></div><div id="rc-list"></div>';
+    var auditEl = document.getElementById('audit-section');
+    if (auditEl) auditEl.innerHTML = '<div class="trend-section-label" style="margin-top:20px">Closed move-outs (audit) — last 90 days, newest first</div>'
+      + '<p class="rc-note">Finished in Aptly (Complete). Open any row to see the 6000 and 6070 charges. A red status here means the charges still do not match.</p>'
+      + '<div class="rc-bar"><input class="rc-search" id="ad-q" type="search" placeholder="Search address, tenant or owner" aria-label="Search closed move-outs" value="' + esc(ui.qa) + '"></div><div id="ad-list"></div>';
+    function money2(n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    function listHtml(list, q, mode) {
+      var ql = q.trim().toLowerCase();
+      var shown = list.filter(function (it) { return !ql || ((it.m.addr || '') + ' ' + (it.m.tenant || '') + ' ' + (it.m.portfolio || '')).toLowerCase().indexOf(ql) >= 0; });
+      if (!shown.length) return '<div style="padding:16px;color:var(--muted);font-size:13px">' + (ql ? 'Nothing matches that search.' : (mode === 'todo' ? 'Nothing to close out right now.' : 'No closed move-outs in the last 90 days.')) + '</div>';
+      var cols = mode === 'todo' ? 7 : 6;
+      var h = '<div class="pl-wrap"><table class="pl-tbl" style="min-width:820px"><thead><tr><th>Property</th><th>Move-out</th>' + (mode === 'todo' ? '<th>Time left</th>' : '') + '<th>Aptly stage</th><th>6000 charged</th><th>6070 billed</th><th>Status</th></tr></thead><tbody>';
+      shown.forEach(function (it) {
+        var m = it.m, open = !!ui.open[it.i];
+        var stage = it.card ? esc(it.card.stage) : (plOk ? '<span class="pl-small">No card on the board</span>' : '<span class="pl-small">—</span>');
+        h += '<tr><td><button type="button" class="rc-open" data-i="' + it.i + '" aria-expanded="' + open + '" aria-controls="rc-d-' + it.i + '"><span class="rc-caret" aria-hidden="true">▶</span><span>' + esc(m.addr || '--') + '<span class="pl-small" style="display:block;font-weight:500">' + esc((m.portfolio || '--') + ' · ' + (m.tenant || '--')) + '</span></span></button></td>'
+          + '<td>' + esc(m.moveOut ? m.moveOut.slice(0, 10) : '--') + (it.age !== null ? '<div class="pl-small">' + (it.age < 0 ? 'in ' + (-it.age) + ' d' : it.age + ' d ago') + '</div>' : '') + '</td>'
+          + (mode === 'todo' ? '<td>' + leftHtml(it.biz) + '</td>' : '')
+          + '<td>' + stage + '</td><td>' + money2(it.tc) + '</td><td>' + money2(it.pb) + '</td>'
+          + '<td><span class="rc-st" style="color:' + it.st.color + '">' + esc(it.st.label) + '</span></td></tr>'
+          + '<tr class="rc-det" id="rc-d-' + it.i + '"' + (open ? '' : ' style="display:none"') + '><td colspan="' + cols + '">' + it.ch + '</td></tr>';
+      });
+      return h + '</tbody></table></div><p class="rc-note">Showing ' + shown.length + ' of ' + list.length + '.</p>';
+    }
+    function drawAll() {
+      var a = document.getElementById('rc-list'), b = document.getElementById('ad-list'), sum = document.getElementById('rc-sum');
+      if (a) a.innerHTML = listHtml(todo, ui.q, 'todo');
+      if (b) b.innerHTML = listHtml(audit, ui.qa, 'audit');
+      if (sum) sum.innerHTML = '<b>' + nLate + ' overdue or due today</b> · ' + nSoon + ' due within 3 business days · ' + todo.length + ' to close out. The deadline is the 14th business day after the move-out date (weekends and US federal holidays skipped).'
+        + (plOk ? '' : (plState === 'error' ? ' <b>Aptly could not be reached, so “done” is decided by matching charges for now.</b>' : ' Checking Aptly for which cards are Complete…'));
+      var t1 = document.getElementById('tab-recon'), t2 = document.getElementById('tab-audit');
+      if (t1) t1.textContent = 'To close out · ' + todo.length;
+      if (t2) t2.textContent = 'Closed (audit) · ' + audit.length;
+    }
+    D._rc = { ui: ui, draw: drawAll };
+    if (!window.__rcBound) {
+      window.__rcBound = true;
+      document.addEventListener('click', function (e) {
+        var o = e.target.closest && e.target.closest('.rc-open');
+        if (!o || !D || !D._rc) return;
+        var i = o.getAttribute('data-i'), u = D._rc.ui; u.open[i] = !u.open[i];
+        var row = document.getElementById('rc-d-' + i); if (row) row.style.display = u.open[i] ? '' : 'none';
+        o.setAttribute('aria-expanded', String(!!u.open[i]));
+      });
+      document.addEventListener('input', function (e) {
+        if (!D || !D._rc) return;
+        if (e.target.id === 'rc-q') { D._rc.ui.q = e.target.value; D._rc.draw(); }
+        else if (e.target.id === 'ad-q') { D._rc.ui.qa = e.target.value; D._rc.draw(); }
+      });
+    }
+    drawAll();
 
     var upcoming = unresolvedClosed.slice().sort(function(a,b){ return (b.moveOut||b.closedDate||'').localeCompare(a.moveOut||a.closedDate||''); });
-    var upcomingEl = document.getElementById('recon-upcoming-section');
+    var upcomingEl = null; /* folded into the To close out list */
     if (upcomingEl) {
       if (!upcoming.length) {
         upcomingEl.innerHTML = '<div class="trend-section-label" style="margin-top:20px">Closed Move-Outs \u2014 Pending Disposition</div><div style="padding:12px;color:var(--muted);font-size:12px">No upcoming move-outs.</div>';
@@ -547,6 +615,7 @@ function renderMoveOuts() {
       }
     }
   }
+  window.reconRedraw = function () { if (D && D._moveOutCharges) renderReconSection(D._moveOutCharges); };
   if (D._moveOutCharges) {
     renderReconSection(D._moveOutCharges);
   } else {
@@ -567,7 +636,7 @@ var activeTab = 'main';
 
 function switchTab(id) {
   activeTab = id;
-  ['main', 'pipeline', 'turns', 'recon'].forEach(function (t) {
+  ['main', 'pipeline', 'turns', 'recon', 'audit'].forEach(function (t) {
     var on = t === id;
     var b = document.getElementById('tab-' + t);
     b.classList.toggle('active', on);
@@ -575,12 +644,13 @@ function switchTab(id) {
     document.getElementById('pane-' + t).style.display = on ? 'block' : 'none';
   });
   try { history.replaceState(null, '', id === 'main' ? location.pathname : '#' + id); } catch (e) {}
-  if (id === 'pipeline' || id === 'turns') loadPipeline(false);
+  if (id === 'pipeline' || id === 'turns' || id === 'recon' || id === 'audit') loadPipeline(false);
 }
 document.getElementById('tab-main').addEventListener('click', function () { switchTab('main'); });
 document.getElementById('tab-pipeline').addEventListener('click', function () { switchTab('pipeline'); });
 document.getElementById('tab-turns').addEventListener('click', function () { switchTab('turns'); });
 document.getElementById('tab-recon').addEventListener('click', function () { switchTab('recon'); });
+document.getElementById('tab-audit').addEventListener('click', function () { switchTab('audit'); });
 
 // ---- Pipeline and Unit turns (read-only, from the Aptly Move-Outs board) ----
 var PL = null, plState = 'idle';
@@ -639,7 +709,7 @@ function plRender() {
     if (!list.length) return;
     ph += '<div class="trend-section-label">' + esc(st || 'No stage') + ' · ' + list.length + '</div><div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Move-out</th><th>Type</th><th>Owner</th><th>In stage</th><th>Checklist</th><th>Last activity</th><th>Flags</th><th>Repairs</th></tr></thead><tbody>';
     list.forEach(function (c) {
-      ph += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div></td><td>' + plWhen(c) + '</td><td>' + esc(c.moveOutType || '—') + '</td><td>' + esc(c.owners.join(', ') || '—') + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
+      ph += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div>' + svBadges(c) + '</td><td>' + plWhen(c) + '</td><td>' + esc(c.moveOutType || '—') + '</td><td>' + esc(c.owners.join(', ') || '—') + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
     });
     ph += '</tbody></table></div>';
   });
@@ -657,7 +727,7 @@ function plRender() {
   else {
     th += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Stage</th><th>In stage</th><th>Moved out</th><th>Turn items needed</th><th>Open checklist</th><th>Last activity</th><th>Flags</th><th>Repairs</th></tr></thead><tbody>';
     turns.forEach(function (c) {
-      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div></td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
+      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div>' + svBadges(c) + '</td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
     });
     th += '</tbody></table></div>';
   }
@@ -716,7 +786,7 @@ function rpClose() {
   if (o) o.focus();
 }
 function rpKey_(e) { if (e.key === 'Escape') rpClose(); }
-function rpRefreshTotals() { var el = document.getElementById('rp-tot'); if (el) el.innerHTML = rpTotalsHtml(rpCollect()); }
+function rpRefreshTotals() { var el = document.getElementById('rp-tot'); if (el) el.innerHTML = rpTotalsHtml(rpCollect()); svWarn(); }
 async function rpOpen(id, addr, opener) {
   RP.opener = opener; RP.openerKey = id;
   var back = document.createElement('div'); back.className = 'rp-back'; back.id = 'rp-back';
@@ -738,7 +808,7 @@ async function rpOpen(id, addr, opener) {
 }
 function rpDraw() {
   var c = RP.cur, ed = ''; try { ed = localStorage.getItem('aloe_moveout_editor') || ''; } catch (e) {}
-  var h = '<p class="pl-note">Saved in the hub only. Nothing here is sent to the tenant or owner, and nothing changes in Aptly or Rentvine. “Not decided” = who pays is still open.</p>'
+  var h = svBox(c.addr) + '<div id="rp-warn"></div><p class="pl-note">Saved in the hub only. Nothing here is sent to the tenant or owner, and nothing changes in Aptly or Rentvine. “Not decided” = who pays is still open.</p>'
     + '<div class="rp-grid"><table class="rp-tbl"><thead><tr><th>Repair item</th><th>Area</th><th>Who pays</th><th>Estimate source</th><th>Vendor</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody id="rp-body">'
     + c.items.map(rpRow).join('') + '</tbody></table></div>'
     + '<button type="button" class="btn btn-line" id="rp-add">Add item</button>'
@@ -746,7 +816,7 @@ function rpDraw() {
     + '<div class="pl-small">' + (c.updatedAt ? 'Last saved ' + esc(new Date(c.updatedAt).toLocaleString('en-US', { timeZone: 'America/Phoenix', dateStyle: 'medium', timeStyle: 'short' })) + ' by ' + esc(c.updatedBy) : 'Not saved yet') + '</div>'
     + '<div class="rp-ed"><div class="f"><label for="rp-by">Edited by (your name)</label><input id="rp-by" maxlength="40" value="' + esc(ed) + '"></div>'
     + '<button type="button" class="btn btn-line" id="rp-save" style="background:#0A5468;color:#fff;border-color:#0A5468">Save</button><button type="button" class="btn btn-line" id="rp-close">Close</button></div>';
-  document.getElementById('rp-content').className = ''; document.getElementById('rp-content').innerHTML = h;
+  document.getElementById('rp-content').className = ''; document.getElementById('rp-content').innerHTML = h; svWarn();
   var body = document.getElementById('rp-body');
   body.addEventListener('input', rpRefreshTotals); body.addEventListener('change', rpRefreshTotals);
   body.addEventListener('click', function (e) { var d = e.target.getAttribute && e.target.getAttribute('data-del'); if (d != null) { RP.cur.items = rpCollect(); RP.cur.items.splice(+d, 1); rpDraw(); } });
@@ -780,6 +850,97 @@ document.addEventListener('click', function (e) {
   var b = e.target.closest && e.target.closest('[data-rp]');
   if (b) rpOpen(b.getAttribute('data-rp'), b.getAttribute('data-addr'), b);
 });
+// ---- Included services + past work orders (read from the Rentvine property page; read-only) ----
+var SV = { map: {}, state: 'idle' };
+var SV_RULES = { landscaping: /yard|lawn|landscap|weed|irrigation|sprinkler|shrub|bush|tree|prune|trim/i, pest: /pest|roach|scorpion|termite|rodent|\bmice\b|\bants?\b|\bbugs?\b/i, pool: /\bpool\b|hot tub|\bspa\b/i };
+async function svLoad() {
+  if (!PL || !PL.cards || SV.state === 'loading') return;
+  var addrs = PL.cards.map(function (c) { return c.address; }).filter(Boolean);
+  if (!addrs.length) return;
+  SV.state = 'loading';
+  try {
+    var r = await fetch('/api/moveouts/services', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ addresses: addrs }) });
+    var j = await r.json().catch(function () { return null; });
+    if (r.ok && j && j.results) { SV.map = j.results; SV.state = 'done'; } else SV.state = 'error';
+  } catch (e) { SV.state = 'error'; }
+  plRender();
+}
+function svWho(s) { return s.who === 'owner' ? 'Owner pays' : s.who === 'hoa' ? 'HOA covers' : s.who === 'tenant' ? 'Tenant' : s.who === 'unknown' ? 'not recorded' : (s.text || s.raw || 'see property'); }
+function svBadges(c) {
+  var h = '<div class="sv-row">';
+  var e = SV.map[c.address];
+  if (SV.state === 'loading' || SV.state === 'idle') return h + '<span class="pl-small">Checking services…</span></div>';
+  if (SV.state === 'error' && !e) return h + '<span class="pl-small">Services could not be read</span></div>';
+  if (!e) return h + '</div>';
+  if (!e.matched) return h + '<span class="pl-small" title="' + esc(e.reason || '') + '">Property not matched in Rentvine</span></div>';
+  if (e.error) return h + '<span class="pl-small">Services could not be read for this property</span></div>';
+  (e.services || []).forEach(function (s) {
+    if (s.doNotCharge) h += '<span class="sv-pill ok" title="' + esc(s.provider || '') + '">Do not charge: ' + esc(s.label) + ' (' + esc(svWho(s)) + ')</span>';
+    else h += '<span class="sv-pill" title="' + esc(s.provider || '') + '">' + esc(s.label) + ': ' + esc(svWho(s)) + '</span>';
+  });
+  if (e.warnings && e.warnings.length) h += '<span class="sv-pill warn" title="Maintenance notes mention this; check before charging">Check notes</span>';
+  h += '<div><button type="button" class="sv-link" data-wo="' + esc(e.propertyId) + '" data-addr="' + esc(c.address) + '">Past work orders</button></div></div>';
+  return h;
+}
+function svBox(addr) {
+  var e = SV.map[addr];
+  if (!e) return '<div class="sv-box">Services have not loaded for this address yet.</div>';
+  if (!e.matched) return '<div class="sv-box">Property not matched in Rentvine (' + esc(e.reason || '') + '). Check services on the Rentvine property page.</div>';
+  if (e.error) return '<div class="sv-box">Could not read this property page just now. Check services in Rentvine.</div>';
+  var stop = (e.services || []).some(function (s) { return s.doNotCharge; });
+  var h = '<div class="sv-box' + (stop ? ' stop' : '') + '"><b>Included services (from Rentvine)</b>';
+  (e.services || []).forEach(function (s) {
+    h += '<div>' + (s.doNotCharge ? '<b>Do not charge tenant</b> — ' : '') + esc(s.label) + ': ' + esc(svWho(s)) + (s.provider ? ' · ' + esc(s.provider) : '') + '</div>';
+  });
+  if (!e.found) h += '<div class="pl-small">No service fields were found on the property page. Check Rentvine.</div>';
+  (e.warnings || []).forEach(function (w) { h += '<div class="sv-warn">Check notes (' + esc(w.label) + '): “…' + esc(w.snippet) + '…”</div>'; });
+  return h + '</div>';
+}
+function svWarnList(addr, items) {
+  var e = SV.map[addr], out = [];
+  if (!e || !e.matched || !e.services) return out;
+  e.services.forEach(function (s) {
+    if (!s.doNotCharge || !SV_RULES[s.key]) return;
+    items.forEach(function (it) {
+      if (it.payer === 'tenant' && SV_RULES[s.key].test(String(it.description || '') + ' ' + String(it.area || ''))) out.push(String(it.description || 'An item').trim() + ' looks like ' + s.label.toLowerCase() + ' work, and ' + s.label.toLowerCase() + ' is covered (' + svWho(s) + ').');
+    });
+  });
+  return out;
+}
+function svWarn() {
+  var el = document.getElementById('rp-warn'); if (!el || !RP.cur) return;
+  var w = svWarnList(RP.cur.addr, rpCollect());
+  el.innerHTML = w.map(function (t) { return '<div class="sv-warn">Do not charge the tenant? ' + esc(t) + '</div>'; }).join('');
+}
+function woClose() { var b = document.getElementById('wo-back'); if (b) b.remove(); document.removeEventListener('keydown', woKey_); var o = SV.opener; if (o && document.contains(o)) o.focus(); }
+function woKey_(e) { if (e.key === 'Escape') woClose(); }
+function woStatusBadge(w) { return '<span class="sv-pill' + (/^Completed|Rejected|Cancelled/.test(w.status) ? '' : ' warn') + '">' + esc(w.status || '—') + '</span>'; }
+async function woOpen(pid, addr, opener) {
+  SV.opener = opener;
+  var back = document.createElement('div'); back.className = 'rp-back'; back.id = 'wo-back';
+  back.innerHTML = '<div class="rp-dlg" role="dialog" aria-modal="true" aria-labelledby="wo-title"><h2 id="wo-title">Past work orders</h2><div class="pl-small">' + esc(addr) + ' · last 24 months · staff only</div>' + svBox(addr) + '<div id="wo-content" class="pl-note">Loading work orders…</div><div class="rp-ed"><button type="button" class="btn btn-line" id="wo-close">Close</button></div></div>';
+  document.body.appendChild(back);
+  back.addEventListener('mousedown', function (e) { if (e.target === back) woClose(); });
+  document.getElementById('wo-close').addEventListener('click', woClose);
+  document.addEventListener('keydown', woKey_);
+  document.getElementById('wo-close').focus();
+  try {
+    var r = await fetch('/api/moveouts/workorders/' + encodeURIComponent(pid), { credentials: 'same-origin' });
+    var j = await r.json().catch(function () { return null; });
+    if (!r.ok || !j || j.error) throw new Error((j && j.error) || 'The server answered ' + r.status);
+    var list = j.workOrders || [], el = document.getElementById('wo-content'); if (!el) return;
+    if (!list.length) { el.className = 'pl-note'; el.textContent = 'No work orders in the last 24 months.'; return; }
+    var h = '<div style="overflow-x:auto"><table class="wo-tbl"><thead><tr><th>Created</th><th>#</th><th>Status</th><th>Vendor</th><th>What</th><th>Estimate</th><th>Notes</th></tr></thead><tbody>';
+    list.forEach(function (w) {
+      h += '<tr><td>' + esc(w.created) + (w.closed ? '<div class="pl-small">closed ' + esc(w.closed) + '</div>' : '') + '</td><td>' + esc(w.number) + '</td><td>' + woStatusBadge(w) + '</td><td>' + esc(w.vendor || '—') + '</td><td>' + esc(w.summary || '—') + '</td><td>' + (w.estimated != null ? esc(money(w.estimated)) : '—') + '</td><td>' + (w.tenantFinancial ? '<span class="sv-pill warn">Tenant responsible</span>' : '') + (w.vacant ? '<span class="sv-pill">Vacant</span>' : '') + '</td></tr>';
+    });
+    el.className = ''; el.innerHTML = h + '</tbody></table></div><p class="pl-small" style="margin-top:8px">' + list.length + ' work orders. Read from Rentvine; nothing here changes Rentvine.</p>';
+  } catch (e) { var el2 = document.getElementById('wo-content'); if (el2) { el2.className = 'rp-msg err'; el2.style.display = 'block'; el2.textContent = 'Could not load work orders (' + e.message + '). Check Rentvine.'; } }
+}
+document.addEventListener('click', function (e) {
+  var b = e.target.closest && e.target.closest('[data-wo]');
+  if (b) woOpen(b.getAttribute('data-wo'), b.getAttribute('data-addr'), b);
+});
 async function loadPipeline(force) {
   if (plState === 'loading' || (plState === 'done' && !force)) return;
   plState = 'loading'; plRender();
@@ -788,8 +949,10 @@ async function loadPipeline(force) {
     var j = await r.json().catch(function () { return null; });
     if (!r.ok || !j || j.error) { PL = { error: (j && j.error) || ('The server answered ' + r.status) }; plState = 'error'; }
     else { PL = j; plState = 'done'; await rpLoadSummaries(); }
+  if (plState === 'done') svLoad();
   } catch (e) { PL = { error: 'Could not reach the hub (' + e.message + ').' }; plState = 'error'; }
   plRender();
+  if (window.reconRedraw) window.reconRedraw();
 }
 
 async function loadData(live) {
@@ -822,7 +985,7 @@ async function loadData(live) {
 }
 document.getElementById('refresh-btn').addEventListener('click', function () { loadData(false); if (plState !== 'idle') { plState = 'idle'; if (activeTab === 'pipeline' || activeTab === 'turns') loadPipeline(false); } });
 document.getElementById('force-btn').addEventListener('click', function () { loadData(true); if (plState !== 'idle') { plState = 'idle'; if (activeTab === 'pipeline' || activeTab === 'turns') loadPipeline(true); } });
-if (['recon', 'pipeline', 'turns'].indexOf(location.hash.slice(1)) >= 0) activeTab = location.hash.slice(1);
+if (['recon', 'audit', 'pipeline', 'turns'].indexOf(location.hash.slice(1)) >= 0) activeTab = location.hash.slice(1);
 loadData(false);
 </script>
 <script src="/hub-shell.js" defer></script>
