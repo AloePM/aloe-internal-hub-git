@@ -485,7 +485,7 @@ function renderMoveOuts() {
     var plOk = !!(PL && PL.cards && plState === 'done');
     var byKey = {};
     if (plOk) PL.cards.forEach(function (c) { var k = akey(c.address); if (k) (byKey[k] = byKey[k] || []).push(c); });
-    var isComplete = function (c) { return /^complete$/i.test((c && c.stage) || ''); };
+    var isComplete = function (c) { return /^(complete$|disposition sent)/i.test(((c && c.stage) || '').trim()); };
     var ui = D._reconUI = D._reconUI || { q: '', qa: '', open: {} };
     items.forEach(function (it, i) {
       it.i = i; it.age = ageOf(it.m); it.unres = it.st.label !== 'Matched';
@@ -506,7 +506,7 @@ function renderMoveOuts() {
       + '<div class="rc-bar"><input class="rc-search" id="rc-q" type="search" placeholder="Search address, tenant or owner" aria-label="Search move-outs to close out" value="' + esc(ui.q) + '"></div><div id="rc-list"></div>';
     var auditEl = document.getElementById('audit-section');
     if (auditEl) auditEl.innerHTML = '<div class="trend-section-label" style="margin-top:20px">Closed move-outs (audit) — last 90 days, newest first</div>'
-      + '<p class="rc-note">Finished in Aptly (Complete). Open any row to see the 6000 and 6070 charges. A red status here means the charges still do not match.</p>'
+      + '<p class="rc-note">Disposition sent or Complete in Aptly. Open any row to see the 6000 and 6070 charges. A red status here means the charges still do not match.</p>'
       + '<div class="rc-bar"><input class="rc-search" id="ad-q" type="search" placeholder="Search address, tenant or owner" aria-label="Search closed move-outs" value="' + esc(ui.qa) + '"></div><div id="ad-list"></div>';
     function money2(n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
     function listHtml(list, q, mode) {
@@ -531,7 +531,7 @@ function renderMoveOuts() {
       var a = document.getElementById('rc-list'), b = document.getElementById('ad-list'), sum = document.getElementById('rc-sum');
       if (a) a.innerHTML = listHtml(todo, ui.q, 'todo');
       if (b) b.innerHTML = listHtml(audit, ui.qa, 'audit');
-      if (sum) sum.innerHTML = '<b>' + nLate + ' overdue or due today</b> · ' + nSoon + ' due within 3 business days · ' + todo.length + ' to close out. The deadline is the 14th business day after the move-out date (weekends and US federal holidays skipped).'
+      if (sum) sum.innerHTML = '<b>' + nLate + ' overdue or due today</b> · ' + nSoon + ' due within 3 business days · ' + todo.length + ' to close out. The deadline is the 14th business day after the move-out date (weekends and US federal holidays skipped). A move-out leaves this list when its Aptly card reaches “Disposition sent” or “Complete”.'
         + (plOk ? '' : (plState === 'error' ? ' <b>Aptly could not be reached, so “done” is decided by matching charges for now.</b>' : ' Checking Aptly for which cards are Complete…'));
       var t1 = document.getElementById('tab-recon'), t2 = document.getElementById('tab-audit');
       if (t1) t1.textContent = 'To close out · ' + todo.length;
