@@ -243,6 +243,8 @@ function ziVariants() {
   const out = []; const seen = new Set();
   const add = (label, val, mk) => { if (!val) return; const id = label.split(':')[0] + '|' + val; if (seen.has(id)) return; seen.add(id); out.push({ label, headers: mk(val) }); };
   const zi = process.env.ZI_API_KEY, zin = process.env.ZINSPECTOR_API_KEY;
+  // New dedicated key for the hub's report reader; Zinspector says to send the Encoded API Key as the X-API-KEY header.
+  add('x-api-key:ZI_REPORTS_API_KEY', process.env.ZI_REPORTS_API_KEY, (v) => ({ 'x-api-key': v }));
   add('x-api-key:ZI_API_KEY', zi, (v) => ({ 'x-api-key': v }));
   add('x-api-key:ZINSPECTOR_API_KEY', zin, (v) => ({ 'x-api-key': v }));
   add('basic:ZI_API_KEY', zi, (v) => ({ Authorization: 'Basic ' + v }));
@@ -254,7 +256,7 @@ function ziVariants() {
 export function _resetZi() { ziWinner = null; }
 async function ziGet(path, params) {
   let vars = ziVariants();
-  if (!vars.length) return { error: 'Neither ZI_API_KEY nor ZINSPECTOR_API_KEY is set on the server' };
+  if (!vars.length) return { error: 'Neither ZI_REPORTS_API_KEY, ZI_API_KEY nor ZINSPECTOR_API_KEY is set on the server' };
   if (ziWinner) { const w = vars.find((v) => v.label === ziWinner); if (w) vars = [w, ...vars.filter((v) => v !== w)]; }
   const url = new URL(path, ZI_BASE);
   Object.entries(params || {}).forEach(([k, v]) => { if (v != null && v !== '') url.searchParams.set(k, String(v)); });
@@ -419,7 +421,7 @@ export function installMoveoutProperty(app, rvFetch) {
   // READ-ONLY auth check: which Zinspector key styles are accepted by which lists. Reports status codes and key SHAPE only (never values).
   app.get('/api/moveouts/zi-auth-check', async (req, res) => {
     res.set('Cache-Control', 'no-store');
-    const keys = { ZI_API_KEY: process.env.ZI_API_KEY || '', ZINSPECTOR_API_KEY: process.env.ZINSPECTOR_API_KEY || '' };
+    const keys = { ZI_REPORTS_API_KEY: process.env.ZI_REPORTS_API_KEY || '', ZI_API_KEY: process.env.ZI_API_KEY || '', ZINSPECTOR_API_KEY: process.env.ZINSPECTOR_API_KEY || '' };
     const shape = {};
     for (const [n, v] of Object.entries(keys)) {
       let decoded = ''; try { decoded = Buffer.from(v, 'base64').toString('utf8'); } catch (e) {}
