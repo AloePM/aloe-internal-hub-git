@@ -106,6 +106,8 @@ export function mapWorkOrders(raw, now = new Date()) {
 // Custom field values may not be part of the property record. Try the property first, then the likely custom-field
 // endpoints (object type 6 = property), keep the one that works, and report what happened.
 const CF_TRIES = [
+  (p) => ['/custom-fields/values/5/' + p, {}],
+  (p) => ['/custom-fields', { objectTypeID: 5, objectID: p }],
   (p) => ['/custom-fields/values', { objectTypeID: 6, objectID: p }],
   (p) => ['/custom-fields/values/6/' + p, {}],
   (p) => ['/custom-fields', { objectTypeID: 6, objectID: p }],
@@ -117,11 +119,51 @@ const CF_TRIES = [
 const SERVICE_LABEL = /landscaping|pest control|pool service/i;
 const hasServiceLabel = (x) => collectPairs(x).some((p) => SERVICE_LABEL.test(p.label));
 let cfWinner = -1, cfMiss = 0;
+// Rentvine's own page reads property custom fields from /custom-fields/values/5/{propertyId} (object type 5 here).
+// If the values come back without field names, join them to the field definitions by ID.
+const idOf = (o) => {
+  if (!o || typeof o !== 'object') return null;
+  for (const k of ['customFieldID', 'fieldID', 'customFieldId']) if (o[k] != null) return String(o[k]);
+  if (o.customField && typeof o.customField === 'object') { const x = idOf(o.customField); if (x) return x; }
+  if (o.id != null) return String(o.id);
+  return null;
+};
+const nameOf = (o) => {
+  if (!o || typeof o !== 'object') return '';
+  for (const k of LABEL_KEYS) if (typeof o[k] === 'string') return o[k];
+  if (o.customField && typeof o.customField === 'object') return nameOf(o.customField);
+  return '';
+};
+export function joinValues(vals, defs) {
+  const names = new Map();
+  (Array.isArray(defs) ? defs : []).forEach((d) => { const id = idOf(d), n = nameOf(d); if (id && n) names.set(id, n); });
+  const out = [];
+  (Array.isArray(vals) ? vals : []).forEach((v) => {
+    const own = nameOf(v), id = idOf(v);
+    const label = own || (id && names.get(id)) || '';
+    const vk = VALUE_KEYS.find((k) => v && prim(v[k]));
+    if (label && vk) out.push({ name: label, value: v[vk] });
+  });
+  return out;
+}
+let valuesOk = null; // remembers whether /custom-fields/values/5/{id} works
 export async function readProperty(rv, pid) {
   const detail = await rv('/properties/' + pid);
   if (detail && detail.error) throw new Error(detail.error);
   const parts = [detail];
   if (hasServiceLabel(detail)) return { parts, via: 'property' };
+  if (valuesOk !== false) {
+    const vals = await rv('/custom-fields/values/5/' + pid, {});
+    if (vals && !vals.error) {
+      if (hasServiceLabel(vals)) { valuesOk = true; parts.push(vals); return { parts, via: '/custom-fields/values/5' }; }
+      if (Array.isArray(vals) && vals.length) {
+        const defs = await rv('/custom-fields', { objectTypeID: 5, objectID: pid });
+        const joined = joinValues(vals, defs && !defs.error ? defs : []);
+        if (hasServiceLabel(joined)) { valuesOk = true; parts.push(joined); return { parts, via: '/custom-fields/values/5+definitions' }; }
+      }
+      if (Array.isArray(vals) && !vals.length) return { parts, via: 'none' };
+    } else if (valuesOk === null) valuesOk = false;
+  }
   const order = cfWinner >= 0 ? [cfWinner] : cfMiss >= 5 ? [] : CF_TRIES.map((_, i) => i);
   for (const i of order) {
     const [path, params] = CF_TRIES[i](pid);
@@ -132,7 +174,7 @@ export async function readProperty(rv, pid) {
   if (cfWinner < 0) cfMiss++;
   return { parts, via: 'none' };
 }
-export function _resetDiscovery() { cfWinner = -1; cfMiss = 0; }
+export function _resetDiscovery() { cfWinner = -1; cfMiss = 0; valuesOk = null; }
 
 export function installMoveoutProperty(app, rvFetch) {
   let index = null, indexAt = 0, indexInflight = null;
