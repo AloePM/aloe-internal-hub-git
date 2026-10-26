@@ -34,6 +34,7 @@ const text = (v) => {
 };
 const names = (v) => (Array.isArray(v) ? v.map((x) => (x && x.name) || '').filter(Boolean) : []);
 const money = (v) => (v && typeof v === 'object' && typeof v.amount === 'number' ? v.amount : null);
+const decode = (s) => String(s == null ? '' : s).replace(/&#(\d+);/g, (m, n) => String.fromCharCode(+n)).replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCharCode(parseInt(h, 16))).replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 const day = (d) => (d ? d.toISOString().slice(0, 10) : null);
 const daysBetween = (a, b) => Math.floor((b - a) / 86400000);
 
@@ -78,7 +79,7 @@ export function buildPipeline(schema, cards, now = new Date()) {
       checklistDone: cl.length - open.length,
       checklistTotal: cl.length,
       checklistOpen: open,
-      lastActivity: la ? { type: la.type || '', direction: la.direction || '', at: day(lastAt), daysAgo: lastAt ? Math.max(0, daysBetween(lastAt, now)) : null, text: String(la.content || '').slice(0, 240) } : null,
+      lastActivity: la ? { type: la.type || '', direction: la.direction || '', at: day(lastAt), daysAgo: lastAt ? Math.max(0, daysBetween(lastAt, now)) : null, text: decode(la.content).slice(0, 240) } : null,
       flags,
       isTurn: TURN_STAGES.includes(stage),
       addrKey: addrKey(names(c.unit)[0] || c.name || ''),

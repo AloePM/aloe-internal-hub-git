@@ -319,6 +319,42 @@ export async function findReports(address, zget = ziGet, readS = readShare) {
   return { address: term, authVia: r.via || null, searched: list.length, matchedAddress: mine.length, firstItemKeys: list[0] ? Object.keys(list[0]).slice(0, 30) : null, reports };
 }
 
+
+// ---- Tenant contacts for the Upcoming tab (read-only). Names, phones and emails come from Rentvine.
+const digits = (s) => String(s || '').replace(/\D/g, '');
+export function pickContacts(o) {
+  const phones = new Map(), emails = new Map();
+  (function walk(v, key, depth) {
+    if (v == null || depth > 5) return;
+    if (Array.isArray(v)) { v.forEach((x) => walk(x, key, depth + 1)); return; }
+    if (typeof v === 'object') { for (const k of Object.keys(v)) walk(v[k], (key ? key.split('.').pop() + '.' : '') + k, depth + 1); return; }
+    const s = String(v).trim();
+    if (!s) return;
+    if (/e-?mail/i.test(key) && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)) emails.set(s.toLowerCase(), s);
+    else if (/phone|mobile|cell/i.test(key) && !/(type|id|label|extension|verified)/i.test(key)) {
+      const d = digits(s); if (d.length >= 10 && d.length <= 11) phones.set(d.slice(-10), d.slice(-10));
+    }
+  })(o, '', 0);
+  const fmt = (d) => '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6);
+  return { phones: [...phones.values()].map(fmt), emails: [...emails.values()] };
+}
+export function tenantName(t) {
+  if (!t || typeof t !== 'object') return '';
+  const n = squash(t.name || t.fullName || [t.firstName, t.lastName].filter(Boolean).join(' '));
+  return n;
+}
+const tokens = (s) => squash(s).toLowerCase().split(/[^a-z]+/).filter((x) => x.length >= 3);
+// Choose the Rentvine lease that matches the card: same address, preferring one whose tenants share a name with the card.
+export function chooseLease(cands, cardNames) {
+  if (!cands.length) return { lease: null, ambiguous: false };
+  const want = new Set((cardNames || []).flatMap(tokens));
+  const score = (c) => c.tenants.reduce((n, t) => n + tokens(t.name).filter((x) => want.has(x)).length, 0);
+  const ranked = cands.map((c) => ({ c, s: score(c) })).sort((a, b) => b.s - a.s);
+  const top = ranked[0];
+  const ties = ranked.filter((r) => r.s === top.s).length;
+  return { lease: top.c, ambiguous: cands.length > 1 && (top.s === 0 || ties > 1) };
+}
+
 export function installMoveoutProperty(app, rvFetch) {
   let index = null, indexAt = 0, indexInflight = null;
   async function getIndex() {
@@ -353,6 +389,79 @@ export function installMoveoutProperty(app, rvFetch) {
     await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) { const k = i++; res[k] = await fn(items[k]); } }));
     return res;
   }
+
+
+  // ---- tenant phones / emails (read-only) ----
+  const LEASE_TTL = 15 * 60 * 1000, CONTACT_TTL = 30 * 60 * 1000;
+  let leaseIdx = null, leaseIdxAt = 0, leaseInflight = null;
+  async function getLeaseIndex() {
+    if (leaseIdx && Date.now() - leaseIdxAt < LEASE_TTL) return leaseIdx;
+    if (leaseInflight) return leaseInflight;
+    leaseInflight = (async () => {
+      const map = new Map();
+      for (const status of [1, 3]) {
+        for (let page = 1; page <= 15; page++) {
+          const b = await rvFetch('/leases/export', { pageSize: 200, page, 'primaryLeaseStatusIDs[]': status });
+          if (b && b.error) throw new Error(b.error);
+          const items = Array.isArray(b) ? b : (b && b.data) || [];
+          for (const it of items) {
+            const key = addrKey(it && it.property && it.property.address);
+            const ts = (it && it.lease && Array.isArray(it.lease.tenants)) ? it.lease.tenants : [];
+            if (!key || !ts.length) continue;
+            const tenants = ts.map((t) => ({ name: tenantName(t), contactId: String(t.contactID || t.contactId || t.tenantContactID || t.id || ''), raw: t }));
+            if (!map.has(key)) map.set(key, []);
+            map.get(key).push({ leaseId: String((it.lease && (it.lease.leaseID || it.lease.id)) || ''), tenants });
+          }
+          if (items.length < 200) break;
+        }
+      }
+      leaseIdx = map; leaseIdxAt = Date.now(); return map;
+    })().finally(() => { leaseInflight = null; });
+    return leaseInflight;
+  }
+  const contactCache = new Map();
+  async function contactFor(t) {
+    let found = pickContacts(t.raw);
+    if (found.phones.length || found.emails.length || !/^\d{1,9}$/.test(t.contactId)) return found;
+    const hit = contactCache.get(t.contactId); if (hit && Date.now() - hit.at < CONTACT_TTL) return hit.v;
+    try {
+      const b = await rvFetch('/contacts/tenants/' + t.contactId);
+      if (b && !b.error) found = pickContacts(b);
+    } catch (e) { /* leave empty */ }
+    contactCache.set(t.contactId, { at: Date.now(), v: found });
+    return found;
+  }
+  const sameKey = (x, y) => !!x && !!y && (x === y || x.startsWith(y + ' ') || y.startsWith(x + ' '));
+  app.post('/api/moveouts/tenants', express.json({ limit: '200kb' }), async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const items = Array.isArray(req.body && req.body.cards) ? req.body.cards.slice(0, 80) : null;
+    if (!items) return res.status(400).json({ error: 'Send {"cards":[{"key":"...","names":[...]}]}.' });
+    try {
+      const idx = await getLeaseIndex();
+      const results = {};
+      await pool(items, 4, async (c) => {
+        const key = String((c && c.key) || ''); if (!key) return;
+        const cands = []; for (const [k, v] of idx) if (sameKey(k, key)) cands.push(...v);
+        const pick = chooseLease(cands, Array.isArray(c.names) ? c.names.map(String) : []);
+        if (!pick.lease) return (results[key] = { matched: false });
+        const people = await pool(pick.lease.tenants, 3, async (t) => ({ name: t.name, ...(await contactFor(t)) }));
+        results[key] = { matched: true, ambiguous: !!pick.ambiguous, tenants: people };
+      });
+      res.json({ results });
+    } catch (e) { console.error('[moveouts-tenants]', e.message); res.status(502).json({ error: 'Could not read tenants from Rentvine.' }); }
+  });
+  // Diagnostic (read-only): field NAMES only, never values.
+  app.get('/api/moveouts/tenant-shape', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+      const key = addrKey(String(req.query.address || '')); if (!key) return res.status(400).json({ error: 'Pass ?address=' });
+      const idx = await getLeaseIndex(); const cands = []; for (const [k, v] of idx) if (sameKey(k, key)) cands.push(...v);
+      const names = (o, d = 0) => (o && typeof o === 'object' && d < 4) ? Object.fromEntries(Object.entries(o).slice(0, 40).map(([k, v]) => [k, Array.isArray(v) ? ['array', v[0] ? names(v[0], d + 1) : null] : (v && typeof v === 'object') ? names(v, d + 1) : typeof v])) : typeof o;
+      const t = cands[0] && cands[0].tenants[0];
+      let contact = null; if (t && /^\d{1,9}$/.test(t.contactId)) { try { contact = names(await rvFetch('/contacts/tenants/' + t.contactId)); } catch (e) { contact = 'error: ' + e.message; } }
+      res.json({ leasesFound: cands.length, tenantFields: t ? names(t.raw) : null, contactFields: contact });
+    } catch (e) { res.status(502).json({ error: e.message }); }
+  });
 
   app.post('/api/moveouts/services', express.json({ limit: '100kb' }), async (req, res) => {
     res.set('Cache-Control', 'no-store');

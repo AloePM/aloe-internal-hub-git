@@ -61,6 +61,8 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .pl-tbl td{padding:10px 12px;border-top:1px solid var(--rule);vertical-align:top}
 .pl-addr{font-weight:700;color:var(--ink)}
 .pl-small{font-size:12px;color:var(--muted)}
+.tn-p{margin-bottom:6px}.tn-n{font-weight:600}.tn-l{font-size:12px;color:var(--ink);white-space:nowrap}
+.cp-btn{font:inherit;font-size:11px;font-weight:700;padding:1px 7px;margin-left:4px;border:1px solid var(--rule);border-radius:999px;background:#fff;color:#0A5468;cursor:pointer}.cp-btn:hover{background:#eef6f7}
 .pl-pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin:0 4px 4px 0;background:var(--amber-d);color:#8a5200}
 .pl-pill.red{background:var(--red-d);color:#b91c1c}
 .sv-row{margin-top:4px}
@@ -741,7 +743,45 @@ function wkCell(c) {
   return wkNoWalk(c) ? '<span class="pl-pill red">No walk scheduled</span>' : '<span class="pl-small">None yet</span>';
 }
 function usd(n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }); }
+var TN = { state: 'idle', map: {} };
+async function tnLoad() {
+  if (!PL || !PL.cards || TN.state === 'loading') return;
+  var cards = PL.cards.filter(function (c) { return c.addrKey; }).map(function (c) { return { key: c.addrKey, names: (c.tenants && c.tenants.length ? c.tenants : [c.leaseName]).filter(Boolean) }; });
+  if (!cards.length) return;
+  TN.state = 'loading';
+  try {
+    var r = await fetch('/api/moveouts/tenants', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cards: cards }) });
+    var j = await r.json().catch(function () { return null; });
+    if (r.ok && j && j.results) { TN.map = j.results; TN.state = 'done'; } else TN.state = 'error';
+  } catch (e) { TN.state = 'error'; }
+  plRender();
+}
+function cpBtn(v, label) { return '<button type="button" class="cp-btn" data-copy="' + esc(v) + '" title="Copy ' + esc(label) + '">Copy</button>'; }
+document.addEventListener('click', function (ev) {
+  var b = ev.target && ev.target.closest ? ev.target.closest('.cp-btn') : null; if (!b) return;
+  var v = b.getAttribute('data-copy') || '';
+  function done() { var o = b.textContent; b.textContent = 'Copied'; setTimeout(function () { b.textContent = o; }, 1200); }
+  try { navigator.clipboard.writeText(v).then(done, function () { fallback(); }); } catch (e) { fallback(); }
+  function fallback() { var t = document.createElement('textarea'); t.value = v; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); done(); } catch (e) {} document.body.removeChild(t); }
+});
 function tenantCell(c) {
+  var tn = TN.map && c.addrKey ? TN.map[c.addrKey] : null;
+  if (tn && tn.matched && tn.tenants && tn.tenants.length) {
+    var h = tn.tenants.map(function (t) {
+      var l = '<div class="tn-p"><div class="tn-n">' + esc(t.name || 'Tenant') + '</div>';
+      (t.phones || []).forEach(function (p) { l += '<div class="tn-l">' + esc(p) + ' ' + cpBtn(p, 'phone') + '</div>'; });
+      (t.emails || []).forEach(function (e) { l += '<div class="tn-l">' + esc(e) + ' ' + cpBtn(e, 'email') + '</div>'; });
+      if (!(t.phones || []).length && !(t.emails || []).length) l += '<div class="pl-small">No phone or email on file</div>';
+      return l + '</div>';
+    }).join('');
+    if (tn.ambiguous) h += '<div class="pl-small">More than one lease at this address, check names</div>';
+    return h;
+  }
+  var t0 = (c.tenants && c.tenants.length) ? c.tenants.join(', ') : (c.leaseName || '');
+  var note = TN.state === 'loading' ? '<div class="pl-small">Loading contact details…</div>' : (TN.state === 'error' ? '<div class="pl-small">Contact details unavailable</div>' : (TN.state === 'done' ? '<div class="pl-small">Not found in Rentvine</div>' : ''));
+  return (t0 ? esc(t0) : '<span class="pl-small">None on card</span>') + note;
+}
+function tenantCellOld(c) {
   var t = (c.tenants && c.tenants.length) ? c.tenants.join(', ') : (c.leaseName || '');
   return t ? esc(t) : '<span class="pl-small">None on card</span>';
 }
@@ -1060,7 +1100,7 @@ async function loadPipeline(force) {
     var j = await r.json().catch(function () { return null; });
     if (!r.ok || !j || j.error) { PL = { error: (j && j.error) || ('The server answered ' + r.status) }; plState = 'error'; }
     else { PL = j; plState = 'done'; await rpLoadSummaries(); await wkLoad(); }
-  if (plState === 'done') svLoad();
+  if (plState === 'done') { svLoad(); tnLoad(); }
   } catch (e) { PL = { error: 'Could not reach the hub (' + e.message + ').' }; plState = 'error'; }
   plRender();
   if (window.reconRedraw) window.reconRedraw();
