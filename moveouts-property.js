@@ -295,6 +295,28 @@ export function installMoveoutProperty(app, rvFetch) {
     try {
       const r = await timed('https://portfolio.zinspector.com/api/document/getShareReport/' + token);
       const html = await r.text();
+      let parsed = null; try { parsed = JSON.parse(html); } catch (e) {}
+      if (parsed !== null) {
+        // The share link returns JSON. Report its SHAPE only: keys, types, array lengths, and short strings that repeat
+        // (those are condition codes / legend labels, not names). Free text and names are never echoed.
+        const counts = new Map();
+        const walk = (n, depth) => {
+          if (typeof n === 'string') { const t = n.trim(); if (t && t.length <= 30) counts.set(t, (counts.get(t) || 0) + 1); return typeof n === 'string' ? 'string(' + Math.min(n.length, 9999) + ')' : ''; }
+          if (n === null) return 'null';
+          if (typeof n !== 'object') return typeof n;
+          if (depth > 6) return Array.isArray(n) ? 'array' : 'object';
+          if (Array.isArray(n)) {
+            const kinds = n.slice(0, 40).map((x) => walk(x, depth + 1));
+            n.slice(40).forEach((x) => walk(x, depth + 1));
+            return { array: n.length, first: kinds[0] === undefined ? null : kinds[0] };
+          }
+          const o = {}; for (const k of Object.keys(n).slice(0, 40)) o[k] = walk(n[k], depth + 1); return o;
+        };
+        const tree = walk(parsed, 0);
+        const repeated = [...counts.entries()].filter(([, c]) => c >= 3).sort((x, y) => y[1] - x[1]).slice(0, 40).map(([t, c]) => t + ' x' + c);
+        out.report = { status: r.status, contentType: (r.headers.get('content-type') || '').slice(0, 60), bytes: html.length, json: true, shape: tree, repeatedShortValues: repeated };
+        return res.json(out);
+      }
       const text = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, '\n').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
       const lines = text.split('\n').map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean);
       const short = [...new Set(lines.filter((x) => x.length <= 40))].slice(0, 90);
