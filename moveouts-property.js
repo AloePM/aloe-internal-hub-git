@@ -207,9 +207,9 @@ export function parseReport(html) {
   const hdr = /<([a-z0-9]+)\b[^>]*class="[^"]*\barea-header\b[^"]*"[^>]*>([\s\S]*?)<\/\1>/gi; let m;
   while ((m = hdr.exec(html))) marks.push({ at: m.index, area: htmlText(m[2]).slice(0, 60) });
   const rows = [];
-  const rowRe = /<tr\b[^>]*class="[^"]*\beditRow\b[^"]*"[^>]*>([\s\S]*?)<\/tr>/gi;
+  const rowRe = /<(tr|tbody)\b[^>]*class="[^"]*\beditRow\b[^"]*"[^>]*>([\s\S]*?)<\/\1>/gi;
   while ((m = rowRe.exec(html))) {
-    const row = m[1]; let area = '';
+    const row = m[2]; let area = '';
     for (const k of marks) if (k.at < m.index) area = k.area;
     const item = htmlText(firstByClass(row, 'table-v3-design-detail-name') || '').slice(0, 80);
     const b = /<(?:span|div|b|i)\b[^>]*class="([^"]*\bcond-badge\b[^"]*)"[^>]*>([\s\S]*?)<\/(?:span|div|b|i)>/i.exec(row);
@@ -233,7 +233,7 @@ export function skeleton(html) {
   html = String(html || '');
   const strip = (x) => x.replace(/\s(?:src|href|srcset|style|alt|title|data-[a-z-]+)="[^"]*"/gi, '').replace(/>([^<]+)</g, (mm, t) => (t.trim() ? '>…<' : mm));
   const h = /<([a-z0-9]+)\b[^>]*class="[^"]*\barea-header\b[^"]*"[^>]*>[\s\S]*?<\/\1>/i.exec(html);
-  const r = /<tr\b[^>]*class="[^"]*\beditRow\b[^"]*"[^>]*>[\s\S]*?<\/tr>/i.exec(html);
+  const r = /<(tr|tbody)\b[^>]*class="[^"]*\beditRow\b[^"]*"[^>]*>[\s\S]*?<\/\1>/i.exec(html);
   return { areaHeader: h ? strip(h[0]).slice(0, 700) : null, firstRow: r ? strip(r[0]).slice(0, 2500) : null };
 }
 // The hub holds two Zinspector keys (ZI_API_KEY and ZINSPECTOR_API_KEY) and Zinspector has accepted keys in more than one header style.
