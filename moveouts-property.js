@@ -236,18 +236,41 @@ export function skeleton(html) {
   const r = /<tr\b[^>]*class="[^"]*\beditRow\b[^"]*"[^>]*>[\s\S]*?<\/tr>/i.exec(html);
   return { areaHeader: h ? strip(h[0]).slice(0, 700) : null, firstRow: r ? strip(r[0]).slice(0, 2500) : null };
 }
+// The hub holds two Zinspector keys (ZI_API_KEY and ZINSPECTOR_API_KEY) and Zinspector has accepted keys in more than one header style.
+// Try each combination in order, stop at the first that is not refused, and remember it. Names only are ever reported, never values.
+let ziWinner = null;
+function ziVariants() {
+  const out = []; const seen = new Set();
+  const add = (label, val, mk) => { if (!val) return; const id = label.split(':')[0] + '|' + val; if (seen.has(id)) return; seen.add(id); out.push({ label, headers: mk(val) }); };
+  const zi = process.env.ZI_API_KEY, zin = process.env.ZINSPECTOR_API_KEY;
+  add('x-api-key:ZI_API_KEY', zi, (v) => ({ 'x-api-key': v }));
+  add('x-api-key:ZINSPECTOR_API_KEY', zin, (v) => ({ 'x-api-key': v }));
+  add('basic:ZI_API_KEY', zi, (v) => ({ Authorization: 'Basic ' + v }));
+  add('basic:ZINSPECTOR_API_KEY', zin, (v) => ({ Authorization: 'Basic ' + v }));
+  add('bearer:ZI_API_KEY', zi, (v) => ({ Authorization: 'Bearer ' + v }));
+  add('bearer:ZINSPECTOR_API_KEY', zin, (v) => ({ Authorization: 'Bearer ' + v }));
+  return out;
+}
+export function _resetZi() { ziWinner = null; }
 async function ziGet(path, params) {
-  const key = process.env.ZI_API_KEY;
-  if (!key) return { error: 'ZI_API_KEY is not set on the server' };
+  let vars = ziVariants();
+  if (!vars.length) return { error: 'Neither ZI_API_KEY nor ZINSPECTOR_API_KEY is set on the server' };
+  if (ziWinner) { const w = vars.find((v) => v.label === ziWinner); if (w) vars = [w, ...vars.filter((v) => v !== w)]; }
   const url = new URL(path, ZI_BASE);
   Object.entries(params || {}).forEach(([k, v]) => { if (v != null && v !== '') url.searchParams.set(k, String(v)); });
-  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 20000);
-  try {
-    const r = await fetch(url.toString(), { headers: { 'x-api-key': key, Accept: 'application/json' }, signal: ac.signal });
-    const txt = await r.text();
-    if (!r.ok) return { error: 'Zinspector ' + r.status + ': ' + txt.slice(0, 160) };
-    try { return { data: JSON.parse(txt) }; } catch (e) { return { error: 'Zinspector returned something that is not JSON' }; }
-  } catch (e) { return { error: String(e.message || e).slice(0, 120) }; } finally { clearTimeout(t); }
+  const refused = [];
+  for (const v of vars) {
+    const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 20000);
+    try {
+      const r = await fetch(url.toString(), { headers: { ...v.headers, Accept: 'application/json' }, signal: ac.signal });
+      const txt = await r.text();
+      if (r.status === 401 || r.status === 403) { refused.push(v.label + ' ' + r.status); continue; }
+      if (!r.ok) return { error: 'Zinspector ' + r.status + ': ' + txt.slice(0, 160), via: v.label };
+      ziWinner = v.label;
+      try { return { data: JSON.parse(txt), via: v.label }; } catch (e) { return { error: 'Zinspector returned something that is not JSON', via: v.label }; }
+    } catch (e) { return { error: String(e.message || e).slice(0, 120) }; } finally { clearTimeout(t); }
+  }
+  return { error: 'Zinspector refused every key style tried: ' + refused.join('; ') };
 }
 async function readShare(token) {
   const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 20000);
@@ -291,7 +314,7 @@ export async function findReports(address, zget = ziGet, readS = readShare) {
     rep.total = p.total; rep.flagged = p.flagged; rep.rows = p.rows.filter((q) => q.flagged);
     reports.push(rep);
   }
-  return { address: term, searched: list.length, matchedAddress: mine.length, firstItemKeys: list[0] ? Object.keys(list[0]).slice(0, 30) : null, reports };
+  return { address: term, authVia: r.via || null, searched: list.length, matchedAddress: mine.length, firstItemKeys: list[0] ? Object.keys(list[0]).slice(0, 30) : null, reports };
 }
 
 export function installMoveoutProperty(app, rvFetch) {
