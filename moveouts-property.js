@@ -450,6 +450,33 @@ export function installMoveoutProperty(app, rvFetch) {
       res.json({ results });
     } catch (e) { console.error('[moveouts-tenants]', e.message); res.status(502).json({ error: 'Could not read tenants from Rentvine.' }); }
   });
+  // Diagnostic (read-only): which status filters return the lease at an address. Counts and status numbers only.
+  app.get('/api/moveouts/lease-probe', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const key = addrKey(String(req.query.address || '')); if (!key) return res.status(400).json({ error: 'Pass ?address=' });
+    const variants = [['none', {}], ['primary 1', { 'primaryLeaseStatusIDs[]': 1 }], ['primary 2', { 'primaryLeaseStatusIDs[]': 2 }], ['primary 3', { 'primaryLeaseStatusIDs[]': 3 }], ['primary 4', { 'primaryLeaseStatusIDs[]': 4 }], ['lease status 3', { 'leaseStatusIDs[]': 3 }], ['lease status 10', { 'leaseStatusIDs[]': 10 }]];
+    const out = [];
+    try {
+      for (const [label, extra] of variants) {
+        let scanned = 0, pages = 0, hits = [];
+        for (let page = 1; page <= 15; page++) {
+          const b = await rvFetch('/leases/export', { pageSize: 200, page, ...extra });
+          if (b && b.error) { out.push({ filter: label, error: String(b.error).slice(0, 80) }); break; }
+          const items = Array.isArray(b) ? b : (b && b.data) || [];
+          pages++; scanned += items.length;
+          for (const it of items) {
+            if (!sameKey(addrKey(it && it.property && it.property.address), key)) continue;
+            const L = (it && it.lease) || {};
+            const st = {}; for (const k of Object.keys(L)) if (/status|end|move|term/i.test(k) && (L[k] == null || typeof L[k] !== 'object')) st[k] = L[k];
+            hits.push({ tenantsCount: Array.isArray(L.tenants) ? L.tenants.length : null, leaseKeys: Object.keys(L).slice(0, 30), status: st });
+          }
+          if (items.length < 200) break;
+        }
+        if (!out.find((o) => o.filter === label)) out.push({ filter: label, pages, scanned, matches: hits.length, hits: hits.slice(0, 3) });
+      }
+      res.json({ key, results: out });
+    } catch (e) { res.status(502).json({ error: e.message, partial: out }); }
+  });
   // Diagnostic (read-only): field NAMES only, never values.
   app.get('/api/moveouts/tenant-shape', async (req, res) => {
     res.set('Cache-Control', 'no-store');
