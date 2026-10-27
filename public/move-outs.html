@@ -155,7 +155,7 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
   <div id="pane-pipeline" role="tabpanel" aria-labelledby="tab-pipeline" style="display:none"></div>
   <div id="pane-turns" role="tabpanel" aria-labelledby="tab-turns" style="display:none"></div>
   <div id="pane-recon" role="tabpanel" aria-labelledby="tab-recon" style="display:none"></div>
-  <div id="pane-upcoming" role="tabpanel" aria-labelledby="tab-upcoming" style="display:none"></div>
+  <div id="pane-upcoming" role="tabpanel" aria-labelledby="tab-upcoming" style="display:none"><div id="acct-host"></div><div id="up-body"></div></div>
   <div id="pane-audit" role="tabpanel" aria-labelledby="tab-audit" style="display:none"></div>
 </div>
 
@@ -323,7 +323,8 @@ function renderMoveOuts() {
   var _acctHtml = html; html = _mainHtml;
   html += '</div>';
   document.getElementById('pane-main').innerHTML = html;
-  document.getElementById('pane-recon').innerHTML = '<div class="main">' + _acctHtml + '<div id="bill-strip"></div><div id="recon-section"></div><div id="recon-upcoming-section"></div></div>'; if (typeof blRender === 'function') blRender();
+  var _ah = document.getElementById('acct-host'); if (_ah) _ah.innerHTML = '<div class="main">' + _acctHtml + '</div>';
+  document.getElementById('pane-recon').innerHTML = '<div class="main"><div id="bill-strip"></div><div id="recon-section"></div><div id="recon-upcoming-section"></div></div>'; if (typeof blRender === 'function') blRender();
   var _ap = document.getElementById('pane-audit'); if (_ap) _ap.innerHTML = '<div class="main"><div id="audit-section"></div></div>';
   function showReconError(msg) {
     var el = document.getElementById('recon-section');
@@ -333,6 +334,8 @@ function renderMoveOuts() {
     var recon = document.getElementById('recon-section');
     if (!recon) return;
     var moveOuts = (data && data.moveOuts) || [];
+    var hidMap = (D && D._hidden) || {}, hidList = [];
+    moveOuts = moveOuts.filter(function (m) { var h = m.leaseID != null && hidMap[String(m.leaseID)]; if (h) hidList.push(h.address || m.addr || ''); return !h; });
     if (!moveOuts.length) {
       recon.innerHTML = '<div class="trend-section-label" style="margin-top:20px">6000 vs 6070 Charge Reconciliation \u2014 Move-Outs, Last 90 Days</div><div style="padding:12px;color:var(--muted);font-size:12px">No move-outs found in the last 90 days.</div>';
       return;
@@ -523,6 +526,7 @@ function renderMoveOuts() {
     var nLate = todo.filter(function (it) { return it.biz && (it.biz.late || it.biz.today); }).length;
     var nSoon = todo.filter(function (it) { return it.biz && !it.biz.late && !it.biz.today && it.biz.left <= 3; }).length;
     recon.innerHTML = '<div class="trend-section-label" style="margin-top:20px">To close out — oldest deadline first</div>'
+      + (hidList.length ? '<p class="rc-note">' + hidList.length + ' closed lease' + (hidList.length === 1 ? '' : 's') + ' hidden because no move-out date was set, or the lease closed before its move-in, so the tenant probably never moved in: ' + esc(hidList.join('; ')) + '.</p>' : '')
       + '<p class="rc-note" id="rc-sum"></p>'
       + '<div class="rc-bar"><input class="rc-search" id="rc-q" type="search" placeholder="Search address, tenant or owner" aria-label="Search move-outs to close out" value="' + esc(ui.q) + '"></div><div id="rc-list"></div>';
     var auditEl = document.getElementById('audit-section');
@@ -649,7 +653,10 @@ function renderMoveOuts() {
   if (D._moveOutCharges) {
     renderReconSection(D._moveOutCharges);
   } else {
-    fetch('/api/moveout-charges', { credentials: 'same-origin' }).then(function(r){
+    fetch('/api/moveouts/hidden', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }).then(function (h) {
+      var hm = {}; if (h && h.leases) h.leases.forEach(function (x) { hm[x.leaseID] = x; }); D._hidden = hm;
+      return fetch('/api/moveout-charges', { credentials: 'same-origin' });
+    }).then(function(r){
       if (!r.ok) throw new Error('The server answered ' + r.status);
       return r.json();
     }).then(function(data){
@@ -967,7 +974,7 @@ function plChecklist(c) {
 }
 function plNotice(msg) { return '<div class="main"><div class="error-wrap" style="margin:0">' + esc(msg) + '</div></div>'; }
 function plRender() {
-  var P = document.getElementById('pane-pipeline'), T = document.getElementById('pane-turns'), U = document.getElementById('pane-upcoming');
+  var P = document.getElementById('pane-pipeline'), T = document.getElementById('pane-turns'), U = document.getElementById('up-body');
   if (plState === 'loading') { P.innerHTML = T.innerHTML = U.innerHTML = '<div class="main"><div class="pl-note">Loading the Aptly Move-Outs board…</div></div>'; return; }
   if (plState === 'error') { P.innerHTML = T.innerHTML = U.innerHTML = plNotice(PL && PL.error ? PL.error : 'Could not load the pipeline. Press Refresh to try again.'); return; }
   if (!PL) return;
