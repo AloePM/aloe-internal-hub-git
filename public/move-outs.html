@@ -337,7 +337,7 @@ function renderMoveOuts() {
     if (!recon) return;
     var moveOuts = (data && data.moveOuts) || [];
     var hidMap = (D && D._hidden) || {}, hidList = [];
-    moveOuts = moveOuts.filter(function (m) { var h = m.leaseID != null && hidMap[String(m.leaseID)]; if (h) hidList.push(h.address || m.addr || ''); return !h; });
+    moveOuts = moveOuts.filter(function (m) { var h = m.leaseID != null && hidMap[String(m.leaseID)]; if (h && h.reason !== 'property inactive') { hidList.push(h.address || m.addr || ''); return false; } return true; });
     if (!moveOuts.length) {
       recon.innerHTML = '<div class="trend-section-label" style="margin-top:20px">6000 vs 6070 Charge Reconciliation \u2014 Move-Outs, Last 90 Days</div><div style="padding:12px;color:var(--muted);font-size:12px">No move-outs found in the last 90 days.</div>';
       return;
@@ -520,32 +520,40 @@ function renderMoveOuts() {
       it.done = plOk ? (it.card ? isComplete(it.card) : (it.arch ? true : !it.unres)) : !it.unres;
       it.biz = bizLeft(it.m.moveOut);
     });
+    var inactiveList = [];
+    items = items.filter(function (it) {
+      var h = it.m.leaseID != null && hidMap[String(it.m.leaseID)];
+      it.inactive = !!(h && h.reason === 'property inactive');
+      if (it.inactive && plOk && (!it.card || isComplete(it.card))) { inactiveList.push(h.address || it.m.addr || ''); return false; }
+      return true;
+    });
     var todo = items.filter(function (it) { return !it.done; }).sort(function (a, b) {
       var x = a.biz ? a.biz.deadline : '9999', y = b.biz ? b.biz.deadline : '9999';
       return x < y ? -1 : x > y ? 1 : String(a.m.addr || '').localeCompare(String(b.m.addr || ''));
     });
     var audit = items.filter(function (it) { return it.done; }).sort(function (a, b) { return (b.m.moveOut || '').localeCompare(a.m.moveOut || ''); });
-    function isZero(it) { return Math.abs(it.tc) < 0.005 && Math.abs(it.pb) < 0.005; }
+    function isMatched(it) { return it.st.label === 'Matched'; }
     var AUTO_HIDE_DAYS = 75;
-    var auditAuto = audit.filter(function (it) { return isZero(it) && it.age !== null && it.age >= AUTO_HIDE_DAYS; });
+    var auditAuto = audit.filter(function (it) { return isMatched(it) && it.age !== null && it.age >= AUTO_HIDE_DAYS; });
     var auditShow = audit.filter(function (it) { return auditAuto.indexOf(it) < 0; });
     var nLate = todo.filter(function (it) { return it.biz && (it.biz.late || it.biz.today); }).length;
     var nSoon = todo.filter(function (it) { return it.biz && !it.biz.late && !it.biz.today && it.biz.left <= 3; }).length;
     recon.innerHTML = '<div class="trend-section-label" style="margin-top:20px">To close out — oldest deadline first</div>'
       + (hidList.length ? '<p class="rc-note">' + hidList.length + ' closed lease' + (hidList.length === 1 ? '' : 's') + ' hidden because no move-out date was set, or the lease closed before its move-in, so the tenant probably never moved in: ' + esc(hidList.join('; ')) + '.</p>' : '')
+      + (inactiveList.length ? '<p class="rc-note">' + inactiveList.length + ' move-out' + (inactiveList.length === 1 ? '' : 's') + ' hidden because the home is no longer active in Rentvine and its Aptly card is finished or missing: ' + esc(inactiveList.join('; ')) + '. A home with a card still open stays here, tagged, until the card is finished.</p>' : '')
       + '<p class="rc-note" id="rc-sum"></p>'
-      + '<div class="rc-bar"><input class="rc-search" id="rc-q" type="search" placeholder="Search address, tenant or owner" aria-label="Search move-outs to close out" value="' + esc(ui.q) + '"><label class="rc-hz"><input type="checkbox" class="rc-hzbox"' + (ui.hz ? ' checked' : '') + '> Hide $0 / $0</label></div><div id="rc-list"></div>';
+      + '<div class="rc-bar"><input class="rc-search" id="rc-q" type="search" placeholder="Search address, tenant or owner" aria-label="Search move-outs to close out" value="' + esc(ui.q) + '"><label class="rc-hz"><input type="checkbox" class="rc-hzbox"' + (ui.hz ? ' checked' : '') + '> Hide matched</label></div><div id="rc-list"></div>';
     var auditEl = document.getElementById('audit-section');
     if (auditEl) auditEl.innerHTML = '<div class="trend-section-label" style="margin-top:20px">Closed move-outs (audit) — last 90 days, newest first</div>'
       + '<p class="rc-note">Disposition sent or Complete in Aptly. Open any row to see the 6000 and 6070 charges. A red status here means the charges still do not match.</p>'
-      + '<div class="rc-bar"><input class="rc-search" id="ad-q" type="search" placeholder="Search address, tenant or owner" aria-label="Search closed move-outs" value="' + esc(ui.qa) + '"><label class="rc-hz"><input type="checkbox" class="rc-hzbox"' + (ui.hz ? ' checked' : '') + '> Hide $0 / $0</label></div><div id="ad-list"></div>';
+      + '<div class="rc-bar"><input class="rc-search" id="ad-q" type="search" placeholder="Search address, tenant or owner" aria-label="Search closed move-outs" value="' + esc(ui.qa) + '"><label class="rc-hz"><input type="checkbox" class="rc-hzbox"' + (ui.hz ? ' checked' : '') + '> Hide matched</label></div><div id="ad-list"></div>';
     function money2(n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
     function listHtml(list, q, mode) {
       var ql = q.trim().toLowerCase();
       var shown = list.filter(function (it) { return !ql || ((it.m.addr || '') + ' ' + (it.m.tenant || '') + ' ' + (it.m.portfolio || '')).toLowerCase().indexOf(ql) >= 0; });
       var zHidden = 0;
-      if (ui.hz) { var nz = shown.filter(function (it) { return !isZero(it); }); zHidden = shown.length - nz.length; shown = nz; }
-      if (!shown.length && zHidden) return '<div style="padding:16px;color:var(--muted);font-size:13px">Every row here has $0 charged and $0 billed (' + zHidden + ' hidden). Untick "Hide $0 / $0" to see them.</div>';
+      if (ui.hz) { var nz = shown.filter(function (it) { return !isMatched(it); }); zHidden = shown.length - nz.length; shown = nz; }
+      if (!shown.length && zHidden) return '<div style="padding:16px;color:var(--muted);font-size:13px">Every row here is matched (' + zHidden + ' hidden). Untick "Hide matched" to see them.</div>';
       if (!shown.length) return '<div style="padding:16px;color:var(--muted);font-size:13px">' + (ql ? 'Nothing matches that search.' : (mode === 'todo' ? 'Nothing to close out right now.' : 'No closed move-outs in the last 90 days.')) + '</div>';
       var cols = mode === 'todo' ? 7 : 6;
       var h = '<div class="pl-wrap"><table class="pl-tbl" style="min-width:820px"><thead><tr><th>Property</th><th>Move-out</th>' + (mode === 'todo' ? '<th>Time left</th>' : '') + '<th>Aptly stage</th><th>6000 charged</th><th>6070 billed</th><th>Status</th></tr></thead><tbody>';
@@ -555,16 +563,16 @@ function renderMoveOuts() {
         h += '<tr><td><button type="button" class="rc-open" data-i="' + it.i + '" aria-expanded="' + open + '" aria-controls="rc-d-' + it.i + '"><span class="rc-caret" aria-hidden="true">▶</span><span>' + esc(m.addr || '--') + '<span class="pl-small" style="display:block;font-weight:500">' + esc((m.portfolio || '--') + ' · ' + (m.tenant || '--')) + '</span>' + ibLine(it.card) + '</span></button>' + blBadge(akey(m.addr)) + '</td>'
           + '<td>' + esc(m.moveOut ? m.moveOut.slice(0, 10) : '--') + (it.age !== null ? '<div class="pl-small">' + (it.age < 0 ? (mode === 'todo' ? 'in ' + (-it.age) + ' d' : 'Closed early') : it.age + ' d ago') + '</div>' : '') + ((mode !== 'todo' && it.age !== null && it.age < 0 && window.__mg && window.__mg.map[m.addr] && window.__mg.map[m.addr].managed === false) ? '<div class="pl-small" style="color:#8a5200;font-weight:700">Home no longer managed</div>' : '') + '</td>'
           + (mode === 'todo' ? '<td>' + leftHtml(it.biz) + '</td>' : '')
-          + '<td>' + stage + '</td><td>' + money2(it.tc) + '</td><td>' + money2(it.pb) + '</td>'
+          + '<td>' + stage + (it.inactive ? '<div class="pl-small" style="color:#b45309">Property inactive in Rentvine</div>' : '') + '</td><td>' + money2(it.tc) + '</td><td>' + money2(it.pb) + '</td>'
           + '<td><span class="rc-st" style="color:' + it.st.color + '">' + esc(it.st.label) + '</span></td></tr>'
           + '<tr class="rc-det" id="rc-d-' + it.i + '"' + (open ? '' : ' style="display:none"') + '><td colspan="' + cols + '">' + infoBlock(it.card) + it.ch + '</td></tr>';
       });
-      return h + '</tbody></table></div><p class="rc-note">Showing ' + shown.length + ' of ' + list.length + (zHidden ? ' (' + zHidden + ' with $0 charged and $0 billed hidden)' : '') + '.</p>';
+      return h + '</tbody></table></div><p class="rc-note">Showing ' + shown.length + ' of ' + list.length + (zHidden ? ' (' + zHidden + ' matched hidden)' : '') + '.</p>';
     }
     function drawAll() {
       var a = document.getElementById('rc-list'), b = document.getElementById('ad-list'), sum = document.getElementById('rc-sum');
       if (a) a.innerHTML = listHtml(todo, ui.q, 'todo');
-      if (b) { var aq = ui.qa.trim(); b.innerHTML = listHtml(aq ? audit : auditShow, ui.qa, 'audit') + ((auditAuto.length && !aq) ? '<p class="rc-note">' + auditAuto.length + ' closed move-out' + (auditAuto.length === 1 ? '' : 's') + ' with $0 charged and $0 billed hidden because the move-out was ' + AUTO_HIDE_DAYS + ' or more days ago. Search an address to find one.</p>' : ''); }
+      if (b) { var aq = ui.qa.trim(); b.innerHTML = listHtml(aq ? audit : auditShow, ui.qa, 'audit') + ((auditAuto.length && !aq) ? '<p class="rc-note">' + auditAuto.length + ' matched closed move-out' + (auditAuto.length === 1 ? '' : 's') + ' hidden because the move-out was ' + AUTO_HIDE_DAYS + ' or more days ago. They come back by themselves if charges and bills stop matching. Search an address to find one.</p>' : ''); }
       if (sum) sum.innerHTML = '<b>' + nLate + ' overdue or due today</b> · ' + nSoon + ' due within 3 business days · ' + todo.length + ' to close out. The deadline is the 14th business day after the move-out date (weekends and US federal holidays skipped). A move-out leaves this list when its Aptly card reaches “Disposition sent” or “Complete”.'
         + (plOk ? '' : (plState === 'error' ? ' <b>Aptly could not be reached, so “done” is decided by matching charges for now.</b>' : ' Checking Aptly for which cards are Complete…'));
       var t1 = document.getElementById('tab-recon'), t2 = document.getElementById('tab-audit');

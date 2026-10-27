@@ -2,10 +2,10 @@
 // the tenant never moved in. Rule: no move-out date AND no expected move-out date, OR move-in date after the closed date.
 // The hub otherwise falls back to the closed date as the move-out date, which wrongly lists these.
 const TTL_MS = 10 * 60 * 1000;
-const COLS = ['leaseID', 'unitAddress', 'moveInDate', 'moveOutDate', 'expectedMoveOutDate', 'closedDate'];
+const COLS = ['leaseID', 'propertyID', 'unitAddress', 'moveInDate', 'moveOutDate', 'expectedMoveOutDate', 'closedDate'];
 const t = (v) => (v == null ? '' : String(v).trim());
 const ms = (v) => { const x = Date.parse(t(v)); return isNaN(x) ? null : x; };
-export function classify(rows) {
+export function classify(rows, inactive) {
   const out = [];
   for (const r of rows || []) {
     const d = (r && r.data) || r || {};
@@ -13,6 +13,7 @@ export function classify(rows) {
     let reason = '';
     if (!t(d.moveOutDate) && !t(d.expectedMoveOutDate)) reason = 'no move-out date';
     else { const mi = ms(d.moveInDate), cl = ms(d.closedDate); if (mi != null && cl != null && mi > cl) reason = 'closed before move-in'; }
+    if (!reason && inactive && d.propertyID != null && inactive.has(String(d.propertyID))) reason = 'property inactive';
     if (reason) out.push({ leaseID: String(d.leaseID), address: t(d.unitAddress), reason });
   }
   return out;
@@ -26,7 +27,15 @@ export function installMoveoutsHidden(app, rvFetch) {
     if (b && b.error) throw new Error(String(b.error).slice(0, 80));
     const rows = (b && b.rows) || (Array.isArray(b) ? b : (b && b.data) || []);
     if (!Array.isArray(rows)) throw new Error('Unexpected report shape');
-    return { generatedAt: new Date().toISOString(), leases: classify(rows) };
+    // Properties no longer active in Rentvine (not managed anymore). If this read fails, nothing is hidden for that reason.
+    let inactive = null;
+    try {
+      const pj = JSON.stringify({ displayColumns: ['propertyID'], filters: [{ name: 'isActive', comparator: 'booleanFalse' }] });
+      const pb = await rvFetch('/reports/property', { exportTypeID: 1, json: pj });
+      const prow = (pb && pb.rows) || (Array.isArray(pb) ? pb : (pb && pb.data) || []);
+      if (!(pb && pb.error) && Array.isArray(prow)) inactive = new Set(prow.map((r) => String(((r && r.data) || r || {}).propertyID)).filter((x) => x && x !== 'undefined' && x !== 'null'));
+    } catch (e) { console.error('[moveouts-hidden] inactive properties unavailable:', e.message); }
+    return { generatedAt: new Date().toISOString(), inactiveChecked: !!inactive, leases: classify(rows, inactive) };
   }
   app.get('/api/moveouts/hidden', async (req, res) => {
     res.set('Cache-Control', 'no-store');
