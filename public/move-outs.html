@@ -73,6 +73,14 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .sv-pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin:0 4px 4px 0;background:#eef2f2;color:#4b5b5b}
 .sv-pill.ok{background:#e3f6ec;color:#0b6b46}
 .sv-pill.warn{background:var(--amber-d);color:#8a5200}
+.sv-pill.bad{background:#fde8e8;color:#a11d16}
+.rb-back{position:fixed;inset:0;background:rgba(20,41,46,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.rb-box{background:#fff;border-radius:14px;padding:20px 22px;max-width:480px;width:100%;max-height:90vh;overflow:auto}
+.rb-box h3{margin:0 0 6px;font-size:16px}
+.rb-box label{display:block;font-size:12px;font-weight:700;margin-top:10px;color:#44585E}
+.rb-box input{display:block;width:100%;box-sizing:border-box;margin-top:4px;padding:8px 10px;border:1px solid #B4C3C3;border-radius:8px;font:inherit;font-size:14px}
+.rb-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.rb-msg{margin-top:10px;padding:8px 10px;border-radius:8px;background:#fde8e8;color:#a11d16;font-size:13px}
 .cp-b{font-size:12px;padding:2px 10px;border:1px solid #0A5468;border-radius:6px;background:#fff;color:#0A5468;cursor:pointer;font-family:inherit}.cp-b:disabled{opacity:.5;cursor:default}.cp-wrap{margin:2px 0}
 .sv-link{font-size:12px;background:none;border:0;padding:0;color:#0A5468;text-decoration:underline;cursor:pointer;font-family:inherit}
 .sv-box{border:1px solid var(--rule);border-radius:10px;padding:10px 12px;margin:10px 0;background:#f8fbfb;font-size:13px}
@@ -555,14 +563,14 @@ function renderMoveOuts() {
       if (ui.hz) { var nz = shown.filter(function (it) { return !isMatched(it); }); zHidden = shown.length - nz.length; shown = nz; }
       if (!shown.length && zHidden) return '<div style="padding:16px;color:var(--muted);font-size:13px">Every row here is matched (' + zHidden + ' hidden). Untick "Hide matched" to see them.</div>';
       if (!shown.length) return '<div style="padding:16px;color:var(--muted);font-size:13px">' + (ql ? 'Nothing matches that search.' : (mode === 'todo' ? 'Nothing to close out right now.' : 'No closed move-outs in the last 90 days.')) + '</div>';
-      var cols = mode === 'todo' ? 7 : 6;
-      var h = '<div class="pl-wrap"><table class="pl-tbl" style="min-width:820px"><thead><tr><th>Property</th><th>Move-out</th>' + (mode === 'todo' ? '<th>Time left</th>' : '') + '<th>Aptly stage</th><th>6000 charged</th><th>6070 billed</th><th>Status</th></tr></thead><tbody>';
+      var cols = mode === 'todo' ? 8 : 6;
+      var h = '<div class="pl-wrap"><table class="pl-tbl" style="min-width:820px"><thead><tr><th>Property</th><th>Move-out</th>' + (mode === 'todo' ? '<th>Time left</th><th>Ready by</th>' : '') + '<th>Aptly stage</th><th>6000 charged</th><th>6070 billed</th><th>Status</th></tr></thead><tbody>';
       shown.forEach(function (it) {
         var m = it.m, open = !!ui.open[it.i];
         var stage = it.card ? esc(it.card.stage) : it.arch ? '<span class="pl-pill">Archived in Aptly</span>' : (plOk ? '<span class="pl-small">No card on the board</span>' : '<span class="pl-small">—</span>');
         h += '<tr><td><button type="button" class="rc-open" data-i="' + it.i + '" aria-expanded="' + open + '" aria-controls="rc-d-' + it.i + '"><span class="rc-caret" aria-hidden="true">▶</span><span>' + esc(m.addr || '--') + '<span class="pl-small" style="display:block;font-weight:500">' + esc((m.portfolio || '--') + ' · ' + (m.tenant || '--')) + '</span>' + ibLine(it.card) + '</span></button>' + blBadge(akey(m.addr)) + '</td>'
           + '<td>' + esc(m.moveOut ? m.moveOut.slice(0, 10) : '--') + (it.age !== null ? '<div class="pl-small">' + (it.age < 0 ? (mode === 'todo' ? 'in ' + (-it.age) + ' d' : 'Closed early') : it.age + ' d ago') + '</div>' : '') + ((mode !== 'todo' && it.age !== null && it.age < 0 && window.__mg && window.__mg.map[m.addr] && window.__mg.map[m.addr].managed === false) ? '<div class="pl-small" style="color:#8a5200;font-weight:700">Home no longer managed</div>' : '') + '</td>'
-          + (mode === 'todo' ? '<td>' + leftHtml(it.biz) + '</td>' : '')
+          + (mode === 'todo' ? '<td>' + leftHtml(it.biz) + '</td><td>' + rbCell(m.addr, akey(m.addr), m.moveOut) + '</td>' : '')
           + '<td>' + stage + (it.inactive ? '<div class="pl-small" style="color:#b45309">Property inactive in Rentvine</div>' : '') + '</td><td>' + money2(it.tc) + '</td><td>' + money2(it.pb) + '</td>'
           + '<td><span class="rc-st" style="color:' + it.st.color + '">' + esc(it.st.label) + '</span></td></tr>'
           + '<tr class="rc-det" id="rc-d-' + it.i + '"' + (open ? '' : ' style="display:none"') + '><td colspan="' + cols + '">' + infoBlock(it.card) + it.ch + '</td></tr>';
@@ -1039,9 +1047,9 @@ function plRender() {
   turns = turns.slice().sort(function (a, b) { return (b.daysInStage || 0) - (a.daysInStage || 0); });
   if (!turns.length) th += '<div class="pl-wrap"><div class="pl-empty">No units in turn right now.</div></div>';
   else {
-    th += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Stage</th><th>In stage</th><th>Moved out</th><th>Turn items needed</th><th>Open checklist</th><th>Last activity</th><th>Flags</th><th>Repairs</th></tr></thead><tbody>';
+    th += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Stage</th><th>In stage</th><th>Moved out</th><th>Ready by</th><th>Turn items needed</th><th>Open checklist</th><th>Last activity</th><th>Flags</th><th>Repairs</th></tr></thead><tbody>';
     turns.forEach(function (c) {
-      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div>' + infoBlock(c) + blBadge(c.addrKey) + svBadges(c) + '</td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
+      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div>' + infoBlock(c) + blBadge(c.addrKey) + svBadges(c) + '</td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + rbCell(c.address, c.addrKey, c.moveOutDate) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
     });
     th += '</tbody></table></div>';
   }
@@ -1063,13 +1071,103 @@ function plRender() {
   uh += '<p class="pl-note">Read-only, from the Aptly Move-Outs board. A card moves to To close out when it is moved to Move-Out Day or later in Aptly. Walk dates come live from John\'s walk sheet (pre move-out and move-out walks). Pre move-out inspection reports will show here next.</p>';
   if (!ups.length) uh += '<div class="pl-wrap"><div class="pl-empty">No upcoming move-outs on the board.</div></div>';
   else {
-    uh += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Tenants</th><th>Move-out</th><th>Walks (John)</th><th>Owes</th><th>Stage</th><th>Type</th><th>Owner</th><th>Checklist</th><th>Flags</th></tr></thead><tbody>';
+    uh += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Tenants</th><th>Move-out</th><th>Ready by</th><th>Walks (John)</th><th>Owes</th><th>Stage</th><th>Type</th><th>Owner</th><th>Checklist</th><th>Flags</th></tr></thead><tbody>';
     ups.forEach(function (c) {
-      uh += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div>' + compTag(c) + aptlyLink(c) + svBadges(c) + '</td><td>' + tenantCell(c) + '</td><td>' + plWhen(c) + '</td><td>' + wkCell(c) + '</td><td>' + balCell(c) + '</td><td>' + esc(c.stage) + '</td><td>' + esc(c.moveOutType || '—') + '</td><td>' + esc(c.owners.join(', ') || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td></tr>';
+      uh += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div>' + compTag(c) + aptlyLink(c) + svBadges(c) + '</td><td>' + tenantCell(c) + '</td><td>' + plWhen(c) + '</td><td>' + rbCell(c.address, c.addrKey, c.moveOutDate) + '</td><td>' + wkCell(c) + '</td><td>' + balCell(c) + '</td><td>' + esc(c.stage) + '</td><td>' + esc(c.moveOutType || '—') + '</td><td>' + esc(c.owners.join(', ') || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td></tr>';
     });
     uh += '</tbody></table></div>';
   }
   U.innerHTML = uh + '</div>';
+}
+// ---- Ready by, Show from and Move-in. Ready by is saved in hub storage; Move-in is read from Rentvine; nothing is written to Aptly or Rentvine ----
+var RB = { ready: {}, moveins: {}, ok: false, loaded: false, settings: { showFromDays: 3, readyDays: 14 }, opener: null, rev: 0 };
+function rbIso(s) { s = String(s || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : ''; }
+function rbAdd(iso, n) { return new Date(Date.parse(iso + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10); }
+function rbDiff(a, b) { return Math.round((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / 86400000); }
+function rbId(ak, mo) { mo = rbIso(mo); var s = String(ak || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); return s && mo ? s.slice(0, 50) + '_' + mo : ''; }
+function rbCalc(ak, moveOut) {
+  var mo = rbIso(moveOut), id = rbId(ak, mo);
+  if (!mo || !id) return null;
+  var rec = RB.ready[id] || null;
+  var est = rbAdd(mo, RB.settings.readyDays);
+  var ready = rec && rec.readyBy ? rec.readyBy : est;
+  var show = rbAdd(mo, RB.settings.showFromDays); if (show > ready) show = ready;
+  var list = (ak && RB.moveins[ak]) || [], mi = '';
+  for (var i = 0; i < list.length; i++) { if (list[i].moveIn >= mo) { mi = list[i].moveIn; break; } }
+  var st = '', tone = '', gap = null;
+  if (mi) { gap = rbDiff(ready, mi); if (gap < 0) { st = 'Late'; tone = 'bad'; } else if (gap <= 3) { st = 'Tight'; tone = 'warn'; } else { st = 'On track'; tone = 'ok'; } }
+  else if (ready <= wkToday()) { if (rec && rec.readyBy) { st = 'Ready now'; tone = 'ok'; } else { st = 'Estimate passed'; tone = 'warn'; } }
+  return { id: id, mo: mo, ready: ready, est: est, show: show, mi: mi, gap: gap, st: st, tone: tone, rec: rec };
+}
+function rbCell(addr, ak, moveOut) {
+  var c = rbCalc(ak, moveOut);
+  if (!c) return '<span class="pl-small">No move-out date</span>';
+  var h = '<b>' + esc(plDate(c.ready)) + '</b>' + (c.st ? ' <span class="sv-pill ' + c.tone + '">' + c.st + '</span>' : '')
+    + '<div class="pl-small">' + (c.rec && c.rec.readyBy ? 'Set by ' + esc(c.rec.by || 'staff') : 'Estimate: ' + RB.settings.readyDays + ' days after move-out') + '</div>'
+    + '<div class="pl-small">Show from ' + esc(plDate(c.show)) + '</div>';
+  if (c.mi) h += '<div class="pl-small">Move-in ' + esc(plDate(c.mi)) + ' · ' + (c.gap < 0 ? Math.abs(c.gap) + ' d after move-in' : c.gap + ' d before') + '</div>';
+  else h += '<div class="pl-small">' + (!RB.loaded ? 'Checking move-in…' : RB.ok ? 'No move-in lease yet' : 'Move-in unavailable') + '</div>';
+  return h + '<button type="button" class="cp-btn rb-set" data-id="' + esc(c.id) + '" data-ak="' + esc(ak) + '" data-mo="' + esc(c.mo) + '" data-addr="' + esc(addr) + '">Set</button>';
+}
+function rbClose() { var b = document.getElementById('rb-back'); if (b) b.remove(); document.removeEventListener('keydown', rbKey_); var o = RB.opener; if (o && document.contains(o)) o.focus(); }
+function rbKey_(e) { if (e.key === 'Escape') rbClose(); }
+function rbMsg(t) { var m = document.getElementById('rb-msg'); if (m) { m.textContent = t || ''; m.style.display = t ? 'block' : 'none'; } }
+async function rbSave(id, reset) {
+  var by = document.getElementById('rb-by').value.trim(), reason = document.getElementById('rb-reason').value.trim(), date = reset ? '' : document.getElementById('rb-date').value;
+  if (!by) return rbMsg('Enter your name in "Edited by".');
+  if (reason.length < 3) return rbMsg('Add a short reason so the history makes sense.');
+  if (!reset && !rbIso(date)) return rbMsg('Pick a Ready by date.');
+  try { localStorage.setItem('rbEditor', by); } catch (e) {}
+  var sv = document.getElementById('rb-save'); sv.disabled = true; rbMsg('');
+  try {
+    var r = await fetch('/api/moveouts/turn/' + encodeURIComponent(id), { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'x-hub-write': '1' }, body: JSON.stringify({ readyBy: date, reason: reason, editor: by, baseRev: RB.rev }) });
+    var j = await r.json().catch(function () { return null; });
+    if (!r.ok || !j || j.error) { sv.disabled = false; return rbMsg((j && j.error) || ('The server answered ' + r.status)); }
+    RB.ready[id] = { readyBy: j.readyBy, reason: j.reason, by: j.updatedBy, at: j.updatedAt, rev: j.rev };
+    rbClose();
+    if (plState === 'done') plRender();
+    if (window.reconRedraw) window.reconRedraw();
+  } catch (e) { sv.disabled = false; rbMsg('Could not reach the hub (' + e.message + ').'); }
+}
+async function rbOpen(btn) {
+  var id = btn.getAttribute('data-id'), ak = btn.getAttribute('data-ak'), mo = btn.getAttribute('data-mo'), addr = btn.getAttribute('data-addr') || '';
+  var c = rbCalc(ak, mo); if (!c) return;
+  RB.opener = btn; RB.rev = (RB.ready[id] && RB.ready[id].rev) || 0;
+  var ed = ''; try { ed = localStorage.getItem('rbEditor') || ''; } catch (e) {}
+  var back = document.createElement('div'); back.id = 'rb-back'; back.className = 'rb-back';
+  back.innerHTML = '<div class="rb-box" role="dialog" aria-modal="true" aria-labelledby="rb-h"><h3 id="rb-h">Ready by: ' + esc(addr) + '</h3>'
+    + '<p class="pl-small">Moved out ' + esc(plDate(c.mo)) + '. The estimate is ' + esc(plDate(c.est)) + '. Show from follows Ready by.</p>'
+    + '<label>Ready by<input type="date" id="rb-date" value="' + esc(c.ready) + '"></label>'
+    + '<label>Reason<input type="text" id="rb-reason" maxlength="200" placeholder="e.g. Saw the home at the walk; carpet needs replacing"></label>'
+    + '<label>Edited by<input type="text" id="rb-by" maxlength="40" value="' + esc(ed) + '"></label>'
+    + '<div id="rb-msg" class="rb-msg" role="alert" style="display:none"></div>'
+    + '<div class="rb-btns"><button type="button" class="cp-btn" id="rb-save">Save</button><button type="button" class="cp-btn" id="rb-reset">Back to estimate</button><button type="button" class="cp-btn" id="rb-cancel">Cancel</button></div>'
+    + '<div class="pl-small" style="margin-top:12px"><b>History</b></div><div id="rb-hist" class="pl-small">Loading…</div></div>';
+  document.body.appendChild(back); document.addEventListener('keydown', rbKey_);
+  back.addEventListener('click', function (e) { if (e.target === back) rbClose(); });
+  document.getElementById('rb-cancel').onclick = rbClose;
+  document.getElementById('rb-save').onclick = function () { rbSave(id, false); };
+  document.getElementById('rb-reset').onclick = function () { rbSave(id, true); };
+  document.getElementById('rb-date').focus();
+  try {
+    var r = await fetch('/api/moveouts/turn/' + encodeURIComponent(id), { credentials: 'same-origin' });
+    var j = await r.json().catch(function () { return null; });
+    var hist = document.getElementById('rb-hist'); if (!hist) return;
+    if (!r.ok || !j || j.error) { hist.textContent = 'Could not load the history.'; return; }
+    RB.rev = j.rev || 0;
+    hist.innerHTML = (j.log && j.log.length) ? j.log.slice().reverse().map(function (l) { return '<div>' + esc((l.at || '').slice(0, 10)) + ' · ' + (l.readyBy ? esc(plDate(l.readyBy)) : 'estimate') + ' · ' + esc(l.by || '') + ' · ' + esc(l.reason || '') + '</div>'; }).join('') : 'Nothing saved yet. This is the estimate.';
+  } catch (e) { var h2 = document.getElementById('rb-hist'); if (h2) h2.textContent = 'Could not load the history.'; }
+}
+document.addEventListener('click', function (e) { var b = e.target.closest && e.target.closest('.rb-set'); if (b) rbOpen(b); });
+async function rbLoad() {
+  try {
+    var r = await fetch('/api/moveouts/turn', { credentials: 'same-origin' });
+    var j = await r.json().catch(function () { return null; });
+    if (r.ok && j && !j.error) { RB.ready = j.ready || {}; RB.moveins = j.moveins || {}; RB.ok = !!j.moveinsChecked; if (j.settings) RB.settings = j.settings; }
+  } catch (e) {}
+  RB.loaded = true;
+  if (plState === 'done') plRender();
+  if (window.reconRedraw) window.reconRedraw();
 }
 // ---- Repair items (saved in hub storage; never written to Aptly or Rentvine) ----
 var RP = { sums: {}, cur: null, opener: null };
@@ -1326,6 +1424,7 @@ document.getElementById('force-btn').addEventListener('click', function () { loa
 if (['recon', 'audit', 'pipeline', 'turns', 'upcoming', 'main'].indexOf(location.hash.slice(1)) >= 0) activeTab = location.hash.slice(1);
 if (activeTab === 'main' || activeTab === 'pipeline') setOldView(true);
 loadData(false);
+rbLoad();
 </script>
 <script src="/hub-shell.js" defer></script>
 </body>

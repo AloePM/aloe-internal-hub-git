@@ -4,6 +4,7 @@
 import express from 'express';
 import { installMoveoutsBills } from './moveouts-bills.js';
 import { installMoveoutsHidden } from './moveouts-hidden.js';
+import { installMoveoutTurn } from './moveouts-turn.js';
 
 const SERVICE_TTL = 6 * 3600 * 1000, INDEX_TTL = 6 * 3600 * 1000, WO_TTL = 10 * 60 * 1000;
 const MONTHS_BACK = 24;
@@ -383,6 +384,7 @@ export function installMoveoutProperty(app, rvFetch) {
   }
   installMoveoutsBills(app, rvFetch, addrKey);
   installMoveoutsHidden(app, rvFetch);
+  installMoveoutTurn(app, rvFetch, addrKey);
   const svcCache = new Map(), woCache = new Map();
   async function services(pid) {
     const hit = svcCache.get(pid); if (hit && Date.now() - hit.at < SERVICE_TTL) return hit.v;
