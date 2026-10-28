@@ -75,6 +75,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 .trow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,2.2fr) minmax(0,1.5fr) 110px 140px 270px;gap:12px;align-items:center;padding:11px 16px;min-height:56px;border-top:1px solid var(--rule)}
 .trow.head{background:#E6EFF0;border-top:0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);min-height:36px}
 .trow .why{font-size:12px;color:var(--muted)}.trow .nt{font-size:12px;color:#243030;background:#F8FAFC;border-left:3px solid var(--teal);padding:2px 8px;margin-top:3px;overflow-wrap:anywhere}
+.lks{font-size:12px;font-weight:700;white-space:nowrap}.lks a{color:#0A5468;margin-right:10px;text-decoration:underline;display:inline-block;padding:4px 0}.lks a:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}.wwrap .cbx{margin:0 10px;flex:none;width:98px;display:flex;flex-direction:column;align-items:stretch}.wwrap .cbx .cbtn{margin:0;width:auto}.wwrap .cbx .lks{text-align:center}.wwrap .cbx .lks a{margin:0 5px}
 .mini{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid #B4C3C3;background:#fff;color:#0A5468;font:700 12px Manrope,system-ui,sans-serif;cursor:pointer}.mini:hover:not(:disabled){background:#E6EFF0}.mini:disabled{opacity:.55;cursor:default}.mini:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}
 .trow .nt.stale{border-left-color:var(--red);background:var(--red-d)}
 .names{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.nm{min-height:44px;min-width:70px;padding:0 14px;border-radius:10px;border:1px solid #B4C3C3;background:#fff;color:#0A5468;font:700 14px Manrope,system-ui,sans-serif;cursor:pointer}.nm:hover{background:#E6EFF0}.nm.on{background:#0A5468;color:#fff;border-color:#0A5468}.nm:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}
@@ -212,9 +213,16 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     var p = []; if (it.lastInDays != null) p.push('in: ' + ago(it.lastInDays)); if (it.lastOutDays != null) p.push('out: ' + ago(it.lastOutDays));
     return p.length ? p.join(' | ') : (it.matched ? 'none logged' : 'no Aptly card found');
   }
+  // Links to the work order in Rentvine and its card in Aptly (new tab). Ids are checked here too; no Aptly link when no card was found.
+  function woLinks(id, cardId) {
+    var k = [];
+    if (/^\d{1,9}$/.test(String(id || ''))) k.push(h('a', { href: 'https://aloepm.rentvine.com/maintenance/work-orders/' + id, target: '_blank', rel: 'noopener noreferrer', text: 'Rentvine' }));
+    if (/^[A-Za-z0-9]{8,40}$/.test(String(cardId || ''))) k.push(h('a', { href: 'https://app.getaptly.com/ticket/workOrder/' + cardId, target: '_blank', rel: 'noopener noreferrer', text: 'Aptly' }));
+    return k.length ? h('div', { 'class': 'lks' }, k) : null;
+  }
   function trow(it, sec) {
     var lvl = it.level === 'red' ? 'p-red' : it.level === 'amber' ? 'p-amber' : 'p-grey';
-    var req = [h('div', {}, [h('b', { text: '#' + it.number + '  ' }), it.emergency ? h('span', { 'class': 'pill p-emg', text: 'Possible emergency: ' + it.emergency }) : null]), h('div', { 'class': 'why', text: it.summary })];
+    var req = [h('div', {}, [h('b', { text: '#' + it.number + '  ' }), it.emergency ? h('span', { 'class': 'pill p-emg', text: 'Possible emergency: ' + it.emergency }) : null]), woLinks(it.id, it.cardId), h('div', { 'class': 'why', text: it.summary })];
     if (it.followUpOn) req.push(h('div', { 'class': 'why', text: 'Follow-up set for ' + nice(it.followUpOn) + (it.followUpOn <= TODAY.today ? ' (due)' : '') }));
     if (it.matched) req.push(h('div', { 'class': 'nt' + (it.staleNote ? ' stale' : ''), text: !it.notesKnown ? 'Notes could not be loaded right now. Click Comments to read them.' : it.aptNote ? 'Last note: ' + it.aptNote.by + ', ' + ago(it.aptNote.days) + ': ' + it.aptNote.text : 'No note on the Aptly card yet' }));
     if (it.lastNote) req.push(h('div', { 'class': 'nt', text: it.lastNote.text + '  (' + it.lastNote.at + ', ' + it.lastNote.by + ')' }));
@@ -452,7 +460,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
       h('span', {}, [agePill(r.ageDays)])]);
     if (r.propertyId) b.addEventListener('click', function () { openPanel(r.propertyId, r.address, b); }); else b.disabled = true;
     var cb = h('button', { 'class': 'mini cbtn', type: 'button', text: 'Comments' }); cb.addEventListener('click', function () { openComments(r, cb); });
-    return h('div', { 'class': 'wwrap' }, [b, cb]);
+    return h('div', { 'class': 'wwrap' }, [b, h('div', { 'class': 'cbx' }, [cb, woLinks(r.id, r.cardId)])]);
   }
   function renderWO() {
     var box = $('wolist'); box.textContent = '';
@@ -519,7 +527,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     b.appendChild(sec('Open work orders (' + open.length + ')', open.length ? open.map(function (w) {
       var pcb = h('button', { 'class': 'mini', type: 'button', style: 'margin-top:6px', text: 'Comments' }); pcb.addEventListener('click', function () { openComments({ number: w.number, address: v.address, stage: w.status, vendor: w.vendor }, pcb); });
       return h('div', { 'class': 'box' }, [h('div', { 'class': 't', text: '#' + w.number + '  ' + (w.summary || '(no description)') }),
-        h('div', { 'class': 'm', text: [w.status, w.vendor, 'opened ' + w.created, w.scheduled ? 'scheduled ' + w.scheduled : '', w.estimated ? 'est. ' + money(w.estimated) : ''].filter(Boolean).join(' | ') }), pcb]);
+        h('div', { 'class': 'm', text: [w.status, w.vendor, 'opened ' + w.created, w.scheduled ? 'scheduled ' + w.scheduled : '', w.estimated ? 'est. ' + money(w.estimated) : ''].filter(Boolean).join(' | ') }), woLinks(w.id, w.cardId), pcb]);
     }) : [h('div', { 'class': 'note', text: 'None open.' })]));
 
     var ari = v.ari;

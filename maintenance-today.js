@@ -94,7 +94,7 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
     const staleNote = notesKnown && (noteD == null ? (r.ageDays == null || r.ageDays >= 2) : noteD >= 3);
     const f = (fu.byWo || {})[String(r.number)] || null;
     const base = { id: r.id, number: r.number, propertyId: r.propertyId, address: r.address, summary: r.summary, stage, vendor, moveOut: stage === 'Move Out' || r.moveOut,
-      emergency: r.emergency, daysInStage, assignedDays, lastInDays: inD, lastOutDays: outD, scheduled: sched || null,
+      emergency: r.emergency, cardId: a && a.cardId ? a.cardId : '', daysInStage, assignedDays, lastInDays: inD, lastOutDays: outD, scheduled: sched || null,
       followUpOn: f ? f.followUpOn : null, lastNote: f && f.notes[0] ? f.notes[0] : null, noteCount: f ? f.notes.length : 0, matched: !!a,
       notesKnown, commentCount: notesKnown ? a.commentCount : 0, aptNote: a && a.lastNote ? { by: a.lastNote.by, at: a.lastNote.at, days: noteD, text: a.lastNote.text } : null, staleNote };
     const put = (key, level, why) => sections[key].push({ ...base, level, why });

@@ -106,10 +106,14 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
   }
   app.get('/api/maintenance/workorders', async (req, res) => {
     res.set('Cache-Control', 'no-store');
-    try { res.json(await getWORows(req.query.fresh === '1')); }
+    try { const v = await getWORows(req.query.fresh === '1'); const m = await cardIdMap(); res.json({ ...v, rows: v.rows.map((r) => ({ ...r, cardId: cardOf(m, r.number) })) }); }
     catch (e) { console.error('[maintenance] workorders', e.message); res.status(502).json({ error: 'Could not read work orders from Rentvine.' }); }
   });
 
+  // Aptly card id for a work order number (for the page's Aptly links). Uses the board read the hub already does; never fails the page.
+  async function cardIdMap() { try { const a = await getAptly(false); return a.available ? a.map : new Map(); } catch { return new Map(); } }
+  const cardOf = (m, n) => { const c = (m.get(String(n)) || {}).cardId || ''; return /^[A-Za-z0-9]{8,40}$/.test(c) ? c : ''; };
+  async function withCards(v) { const m = await cardIdMap(); return { ...v, history: (v.history || []).map((w) => ({ ...w, cardId: cardOf(m, w.number) })) }; }
   // Aptly Work Orders board (stage, vendor-assigned date, last contact). Read-only GET through the hub's own Aptly reader, cached 5 minutes. Soft-fails.
   let aptCache = { at: 0, map: null }, aptPending = null;
   async function getAptly(fresh) {
@@ -304,7 +308,7 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
     const pid = req.params.pid;
     if (!/^\d{1,9}$/.test(pid)) return res.status(400).json({ error: 'Bad property id.' });
     const hit = propCache.get(pid);
-    if (hit && Date.now() - hit.at < PROP_TTL && req.query.fresh !== '1') return res.json(hit.v);
+    if (hit && Date.now() - hit.at < PROP_TTL && req.query.fresh !== '1') return res.json(await withCards(hit.v));
     try {
       const { parts, via } = await readProperty(rvFetch, pid);
       const detail = parts[0] || {};
@@ -349,7 +353,7 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
       };
       propCache.set(pid, { at: Date.now(), v });
       if (propCache.size > 300) propCache.delete(propCache.keys().next().value);
-      res.json(v);
+      res.json(await withCards(v));
     } catch (e) { console.error('[maintenance] property', e.message); res.status(502).json({ error: 'Could not read this property from Rentvine.' }); }
   });
 }
