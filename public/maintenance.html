@@ -221,13 +221,15 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     var det = h('button', { 'class': 'mini', type: 'button', text: 'Details' }); if (it.propertyId) det.addEventListener('click', function () { openPanel(it.propertyId, it.address, det); }); else det.disabled = true;
     var cmb = h('button', { 'class': 'mini', type: 'button', text: 'Comments' + (it.notesKnown && it.commentCount ? ' (' + it.commentCount + ')' : '') }); if (it.matched) cmb.addEventListener('click', function () { openComments(it, cmb); }); else cmb.disabled = true;
     var fu = h('button', { 'class': 'mini', type: 'button', text: it.followUpOn ? 'Follow-up / notes' : 'Set follow-up' }); fu.addEventListener('click', function () { openDlg(it, fu); });
+    var vcb = null;
+    if (it.matched && it.vendor && (sec.key === 'vendor' || sec.key === 'confirmed')) { vcb = h('button', { 'class': 'mini', type: 'button', text: it.vendorConfirm ? 'Vendor confirmed again' : 'Vendor confirmed' }); vcb.addEventListener('click', function () { openComments(it, vcb, true); }); }
     return h('div', { 'class': 'trow' }, [
       h('div', {}, [h('div', { 'class': 'addr', text: it.address || (it.propertyId ? 'Property ' + it.propertyId : 'Address not shown') }), it.moveOut ? h('span', { 'class': 'pill p-blue', text: 'Move-out' }) : null]),
       h('div', {}, req),
       h('div', {}, [h('span', { 'class': 'pill ' + lvl, text: sec.key === 'dispatch' ? 'Us: assign vendor' : it.vendor ? 'Vendor: ' + it.vendor : it.stage }), h('div', { 'class': 'why', text: it.why })]),
       h('div', {}, [h('b', { text: it.daysInStage == null ? 'n/a' : age(it.daysInStage) }), h('div', { 'class': 'why', text: it.stage })]),
       h('div', { 'class': 'why hd2', text: lastContact(it) }),
-      h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, [det, cmb, fu])]);
+      h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, [det, cmb, vcb, fu])]);
   }
   function renderToday() {
     var d = TODAY, box = $('tsecs'); box.textContent = ''; $('tchips').textContent = ''; $('tbanner').textContent = '';
@@ -333,8 +335,9 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
   }
   // Comments dialog: read the Aptly card's comments (live) and post one, after review. Writes ONE comment on that card, nothing else.
   function whenTxt(iso) { var x = Date.parse(iso); return isFinite(x) ? new Date(x).toLocaleString([], { timeZone: 'America/Phoenix', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; }
-  function openComments(it, opener) {
-    CM = { it: it, opener: opener, step: 'view', name: myName(), text: '', data: null, err: '', pending: null }; DL = null;
+  function vcText(vendor, date, note) { return 'Vendor confirmed: ' + (vendor || 'vendor') + '. Vendor date: ' + (date || 'not given') + '.' + (note ? ' ' + note : ''); }
+  function openComments(it, opener, vc) {
+    CM = { it: it, opener: opener, step: 'view', name: myName(), text: '', data: null, err: '', pending: null, vc: !!vc, vcDate: '', vcNote: '' }; DL = null;
     renderCm(); $('dlg').classList.add('on'); loadCm(false);
   }
   function loadCm(fresh) {
@@ -344,7 +347,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
   }
   function renderCm(keep) {
     var c = $('dcard'), it = CM.it, d = CM.data, can = !!(d && d.canPost);
-    if (keep && $('cmtext')) CM.text = $('cmtext').value;
+    if (keep && $('cmtext') && !CM.vc) CM.text = $('cmtext').value;
     c.textContent = '';
     c.appendChild(h('h2', { id: 'dtitle', text: 'WO #' + it.number + ' comments' }));
     c.appendChild(h('div', { 'class': 'note', text: [it.address, it.stage, it.vendor].filter(Boolean).join(' | ') }));
@@ -361,7 +364,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
         pb.disabled = true; pb.textContent = 'Posting...'; var my = CM;
         fetch('/api/maintenance/comments', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'aloe-hub' }, body: JSON.stringify({ woNumber: it.number, authorName: my.name, text: my.text }) })
           .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('Error ' + r.status)); return j; }); })
-          .then(function (j) { if (CM !== my) return; my.pending = { by: 'Hub', at: new Date().toISOString(), text: j.content || content, auto: false, hub: true }; my.text = ''; my.step = 'view'; renderCm(); loadCm(true); if (TODAY) loadToday(true); })
+          .then(function (j) { if (CM !== my) return; my.pending = { by: 'Hub', at: new Date().toISOString(), text: j.content || content, auto: false, hub: true }; my.text = ''; my.vc = false; my.step = 'view'; renderCm(); loadCm(true); if (TODAY) loadToday(true); })
           .catch(function (e) { if (CM !== my) return; pb.disabled = false; pb.textContent = 'Confirm and post'; c.appendChild(h('div', { 'class': 'err', text: e.message })); });
       });
       bk.addEventListener('click', function () { CM.step = 'view'; renderCm(); });
@@ -369,11 +372,24 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     }
     if (can) {
       c.appendChild(h('label', { text: 'Who is writing this' })); c.appendChild(nameChips(CM.name, function (n) { CM.name = n; var m = $('cmmsg'); if (m) m.textContent = ''; }));
+      if (CM.vc) {
+        c.appendChild(h('div', { 'class': 'okbox', style: 'margin-top:8px' }, [h('b', { text: 'Vendor confirmed: ' }), document.createTextNode('The vendor (' + (it.vendor || 'vendor') + ') answered. Enter the date they gave, or tick "date not given". This is posted on the Aptly card so everyone sees it.')]));
+        c.appendChild(h('label', { 'for': 'vcdate', text: 'Date the vendor gave' })); var vd = h('input', { id: 'vcdate', type: 'date' }); vd.value = CM.vcDate; c.appendChild(vd);
+        var vn = h('input', { id: 'vcnone', type: 'checkbox' }); vn.checked = !CM.vcDate && CM.vcNone === true; c.appendChild(h('label', { 'for': 'vcnone', style: 'display:flex;gap:8px;align-items:center;margin-top:6px' }, [vn, document.createTextNode('Date not given yet')]));
+        c.appendChild(h('label', { 'for': 'cmtext', text: 'Note (optional)' })); var vta = h('textarea', { id: 'cmtext', maxlength: '400', placeholder: 'For example: will come Friday morning.' }); vta.value = CM.vcNote; c.appendChild(vta);
+      } else {
       c.appendChild(h('label', { 'for': 'cmtext', text: 'New comment' })); var ta = h('textarea', { id: 'cmtext', maxlength: '1000', placeholder: 'For example: texted vendor, they will call tenant today.' }); ta.value = CM.text; c.appendChild(ta);
-      var rv = h('button', { 'class': 'mini', type: 'button', text: 'Review comment' });
+      }
+      var rv = h('button', { 'class': 'mini', type: 'button', text: CM.vc ? 'Review' : 'Review comment' });
       rv.addEventListener('click', function () {
         var txt = $('cmtext').value.trim(), m = $('cmmsg');
         if (!CM.name) { m.textContent = 'Pick your name first.'; return; }
+        if (CM.vc) {
+          var dv = $('vcdate').value, none = $('vcnone').checked;
+          if (!dv && !none) { m.textContent = 'Enter the date the vendor gave, or tick "Date not given yet".'; return; }
+          if (dv && none) { m.textContent = 'Use either a date or "Date not given yet", not both.'; return; }
+          CM.vcDate = dv; CM.vcNone = none; CM.vcNote = txt; txt = vcText(it.vendor, dv, txt);
+        }
         if (!txt) { m.textContent = 'Write a comment first.'; return; }
         rememberName(CM.name); CM.text = txt; CM.step = 'review'; renderCm();
       });

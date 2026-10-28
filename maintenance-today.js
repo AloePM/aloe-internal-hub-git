@@ -2,7 +2,7 @@
 // Rules (Randi, Oct 27 2026): vendor must be scheduled within 2 days of assignment; at 3 days with no schedule, follow up with the vendor
 // (the tenant may not have heard). Days are CALENDAR days in Phoenix time. Unit turns belong to Persia or Teri, everything else to Roberto.
 import { daysBetween, todayPhoenix } from './maintenance-data.js';
-import { mapComments, lastHumanNote } from './maintenance-comments.js';
+import { mapComments, lastHumanNote, parseVendorConfirm } from './maintenance-comments.js';
 
 const phxDate = (iso) => { const t = Date.parse(iso); return isFinite(t) ? new Date(t - 7 * 3600000).toISOString().slice(0, 10) : ''; };
 const first = (...v) => { const x = v.find((y) => y != null && y !== ''); return x == null ? '' : x; };
@@ -23,7 +23,7 @@ export function aptlyInfo(c) {
   const laIn = !!(la && /^in/i.test(String(la.direction || '')));
   const laOut = !!(la && /^out/i.test(String(la.direction || '')));
   const info = {
-    cardId: String(first(c.cardId, c._id, '')).trim(), comments, lastNote: note, commentCount: comments.length, notesKnown: hasList,
+    cardId: String(first(c.cardId, c._id, '')).trim(), comments, lastNote: note, vconfirm: hasList ? parseVendorConfirm(comments) : null, commentCount: comments.length, notesKnown: hasList,
     number: String(first(c.workOrderNumber, c['Work Order Number'], '')).trim(),
     stage: String(first(c.stage, c.Stage, '')).trim(),
     vendor: String(vend || '').trim(),
@@ -38,7 +38,7 @@ export function aptlyInfo(c) {
 // Attach a card's comments (read separately) to its info. Returns a new object; the cached one is not changed.
 export function withNotes(info, comments) {
   const list = Array.isArray(comments) ? comments : [];
-  return { ...info, comments: list, lastNote: lastHumanNote(list), commentCount: list.length, notesKnown: true };
+  return { ...info, comments: list, lastNote: lastHumanNote(list), vconfirm: parseVendorConfirm(list), commentCount: list.length, notesKnown: true };
 }
 export function indexAptly(cards) {
   const map = new Map();
@@ -58,7 +58,8 @@ const NO_VENDOR_TIMER = new Set([...PARKED, 'Home Warranty', 'Troubleshooting St
 export const SECTION_DEFS = [
   { key: 'followups', title: 'Your follow-ups due', hint: 'You set these. Today or earlier.' },
   { key: 'dispatch', title: 'Dispatch now', hint: 'Open or Dispatch Work Order, no vendor yet' },
-  { key: 'vendor', title: 'Vendor not scheduled', hint: 'Assigned, no scheduled date. Amber at 2 days, red at 3 days: call or text the vendor, then update the tenant' },
+  { key: 'vendor', title: 'Vendor assigned, waiting on a date', hint: 'Assigned, no scheduled date yet. Amber at 2 days, red at 3 days: call or text the vendor, then update the tenant. When the vendor answers, click Vendor confirmed' },
+  { key: 'confirmed', title: 'Vendor confirmed, put the date on the card', hint: 'The vendor gave a date or said they will come. Red the day after that date passes. Put the date on the Aptly card (Scheduled stage)' },
   { key: 'nodate', title: 'Marked Scheduled, no date on the card', hint: 'The stage says Scheduled but no date is on the card. Put the date on the card, or fix the stage' },
   { key: 'passed', title: 'Scheduled date passed, still open', hint: 'Confirm the work happened' },
   { key: 'tenant', title: 'Waiting on tenant', hint: 'Troubleshooting steps sent 2+ days ago' },
@@ -102,6 +103,21 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
     if (PARKED.has(stage)) { parked++; if (base.followUpOn && base.followUpOn <= today) put('followups', 'red', 'Follow-up set for ' + base.followUpOn); continue; }
     if (base.followUpOn && base.followUpOn <= today) { put('followups', 'red', 'Follow-up set for ' + base.followUpOn); continue; }
     if (!vendor && (stage === 'Open' || stage === 'Dispatch Work Order')) { put('dispatch', (daysInStage || 0) >= 1 ? 'red' : 'amber', 'Needs a vendor assigned'); continue; }
+    // A "Vendor confirmed" comment written after the vendor was assigned (a reassignment makes an older one stale).
+    const vc = notesKnown && a.vconfirm && (!assignedDate || phxDate(a.vconfirm.at) >= assignedDate) ? a.vconfirm : null;
+    base.vendorConfirm = vc ? { by: vc.by, at: vc.at, date: vc.date || null } : null;
+    if (vendor && !scheduled && vc && !NO_VENDOR_TIMER.has(stage)) {
+      const cd = daysBetween(phxDate(vc.at), today);
+      if (vc.date) {
+        const over = daysBetween(vc.date, today);
+        if (over >= 1) { put('confirmed', 'red', 'Vendor said ' + vc.date + ', ' + over + (over === 1 ? ' day' : ' days') + ' ago. Update the card or follow up. Confirmed by ' + vc.by + '.'); continue; }
+        put('confirmed', 'grey', 'Vendor said ' + vc.date + '. Confirmed by ' + vc.by + '. Put the date on the Aptly card.'); continue;
+      }
+      if (cd >= 3) put('confirmed', 'red', 'Vendor confirmed with no date ' + cd + ' days ago (' + vc.by + '). Get a date.');
+      else if (cd >= 2) put('confirmed', 'amber', 'Vendor confirmed with no date ' + cd + ' days ago (' + vc.by + '). Get a date.');
+      else put('confirmed', 'grey', 'Vendor confirmed ' + (cd === 0 ? 'today' : 'yesterday') + ', date not given (' + vc.by + ').');
+      continue;
+    }
     if (vendor && !scheduled && !NO_VENDOR_TIMER.has(stage)) {
       if (assignedDays == null) noAssignedDate++;
       else if (assignedDays >= 3) { put('vendor', 'red', 'Follow up with vendor: ' + assignedDays + ' days since assigned. The tenant may not have heard.'); continue; }

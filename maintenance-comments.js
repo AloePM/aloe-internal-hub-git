@@ -38,6 +38,18 @@ export function lastHumanNote(list) {
   return { at: c.at, by: (hubName || c.by || 'unknown').trim(), text: c.text.replace(/^\[Hub\s*[·.-]\s*[^\]]{1,40}\]\s*/, '').replace(/\s+/g, ' ').trim().slice(0, 160) };
 }
 
+// "Vendor confirmed" comments (written by the hub button, or typed the same way): "Vendor confirmed: <vendor>. Vendor date: 2026-10-30." or "Vendor date: not given."
+// Returns the NEWEST one: { at, by, date ('YYYY-MM-DD' or ''), text }. list = mapComments output (newest first).
+export function parseVendorConfirm(list) {
+  for (const c of list || []) {
+    if (c.auto) continue;
+    const m = /^\[Hub\s*[·.-]\s*([^\]]{1,40})\]\s*Vendor confirmed\b[\s\S]*?Vendor date:\s*(\d{4}-\d{2}-\d{2}|not given)/i.exec(c.text.trimStart());
+    if (m) return { at: c.at, by: m[1].trim(), date: /^\d/.test(m[2]) ? m[2] : '' };
+  }
+  return null;
+}
+export const vendorConfirmText = (vendor, date, note) => 'Vendor confirmed: ' + (vendor || 'vendor') + '. Vendor date: ' + (date || 'not given') + '.' + (note ? ' ' + note : '');
+
 export function validateComment(b) {
   b = b || {};
   const woNumber = String(b.woNumber || '').trim();
