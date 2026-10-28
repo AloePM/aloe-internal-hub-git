@@ -563,7 +563,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 
     if (v.notes) b.appendChild(sec('Maintenance notes (from Rentvine)', [h('div', { 'class': 'notes', text: v.notes })]));
 
-    var tb = h('tbody'); v.history.forEach(function (x) { tb.appendChild(h('tr', {}, [h('td', { text: x.created }), h('td', { text: '#' + x.number }), h('td', { text: x.summary }), h('td', { text: x.status }), h('td', { text: x.vendor }), h('td', { text: money(x.estimated) })])); });
+    var tb = h('tbody'); v.history.forEach(function (x) { tb.appendChild(h('tr', {}, [h('td', { text: x.created }), h('td', {}, [/^\d{1,9}$/.test(String(x.id || '')) ? h('a', { href: 'https://aloepm.rentvine.com/maintenance/work-orders/' + x.id, target: '_blank', rel: 'noopener noreferrer', title: 'Open in Rentvine', style: 'color:#0A5468;font-weight:700;text-decoration:underline', text: '#' + x.number }) : '#' + x.number]), h('td', { text: x.summary }), h('td', { text: x.status }), h('td', { text: x.vendor }), h('td', { text: money(x.estimated) })])); });
     b.appendChild(sec('Work order history, last 36 months (' + v.history.length + ')', v.history.length ? [h('table', { 'class': 'tbl' }, [h('thead', {}, [h('tr', {}, ['Opened', 'WO', 'Summary', 'Status', 'Vendor', 'Est.'].map(function (t) { return h('th', { text: t }); }))]), tb])] : [h('div', { 'class': 'note', text: 'No work orders in the last 36 months.' })]));
     b.appendChild(h('p', { 'class': 'ro', text: 'View only. Source: Rentvine' + (v.ari.available ? ' and Ari activity log.' : '.') }));
   }
