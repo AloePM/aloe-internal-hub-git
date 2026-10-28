@@ -1,6 +1,7 @@
-// Maintenance area for the Internal Hub - Phase 1, READ-ONLY.
-// Installs the /maintenance page and GET routes under /api/maintenance. Nothing here writes to Rentvine, Aptly,
-// Zinspector, Slack or storage. Phase 2 (confirmed write-back with a change history) is a separate step.
+// Maintenance area for the Internal Hub.
+// Installs the /maintenance page and routes under /api/maintenance. Nothing here writes to Rentvine, Zinspector or Slack.
+// The only writes are (1) follow-up notes/dates into the hub's own Supabase table and (2) one comment at a time on an Aptly Work Orders card,
+// each only after the person reviews and confirms it. Write-back to Rentvine fields is a later step.
 //
 // Install (one line in server.js, after installMoveoutProperty):
 //   const { installMaintenance } = await import('./maintenance-routes.js'); installMaintenance(app, rvFetch, fetchAllRVOpenWOs, findBillMatchedWOs, unitsFetch);
@@ -9,6 +10,7 @@ import { groupOpenByProperty, readCategories, applianceRows, warrantyRows, findW
 import { loadAriRows, ariForAddress } from './maintenance-ari.js';
 import { indexAptly, aptlyDiag, buildToday, foldFollowups } from './maintenance-today.js';
 import { validateEntry, makeFollowupStore } from './maintenance-followups.js';
+import { validateComment, followupComment, formatComment, makeAptlyCommenter } from './maintenance-comments.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const LIST_TTL = 2 * 60 * 1000, PROP_TTL = 5 * 60 * 1000, CLOSE_TTL = 15 * 60 * 1000;
@@ -31,7 +33,7 @@ export function sessionOk(req, env = process.env) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, aptlyFetch, store = makeFollowupStore()) {
+export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, aptlyFetch, store = makeFollowupStore(), commenter = makeAptlyCommenter()) {
   if (typeof rvFetch !== 'function' || typeof fetchOpenWOs !== 'function') throw new Error('installMaintenance needs rvFetch and fetchAllRVOpenWOs');
   let listCache = { at: 0, v: null }, listPending = null;
   const propCache = new Map();
@@ -142,8 +144,56 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
       try { fu = await store.list(); } catch (e) { console.error('[maintenance] followups', e.message); }
       const t = buildToday(wo.rows, apt.map, foldFollowups(fu.rows), todayPhoenix());
       res.json({ ...t, openTotal: wo.rows.length, asOf: new Date().toISOString(),
-        aptly: { available: apt.available, ...(apt.available ? aptlyDiag(apt.map) : {}) }, followups: { available: fu.available, reason: fu.reason || '' } });
+        aptly: { available: apt.available, ...(apt.available ? aptlyDiag(apt.map) : {}) }, followups: { available: fu.available, reason: fu.reason || '' }, canComment: !!(commenter.configured && apt.available) });
     } catch (e) { console.error('[maintenance] today', e.message); res.status(502).json({ error: 'Could not build the Today list from Rentvine.' }); }
+  });
+
+  // Same-origin + custom-header check used by every write route, so another website cannot trigger a write.
+  function writeGuard(req, res) {
+    res.set('Cache-Control', 'no-store');
+    if (req.headers['x-requested-with'] !== 'aloe-hub') { res.status(400).json({ error: 'Bad request.' }); return false; }
+    const origin = req.headers.origin;
+    if (origin) { try { if (new URL(origin).host !== req.headers.host) { res.status(403).json({ error: 'Not allowed.' }); return false; } } catch { res.status(403).json({ error: 'Not allowed.' }); return false; } }
+    return true;
+  }
+  const NOT_POSTED = {
+    not_configured: 'Posting to Aptly is not set up. Nothing was posted.', bad_card: 'The Aptly card could not be identified. Nothing was posted.',
+  };
+  const postReason = (r) => NOT_POSTED[r.reason] || 'Aptly did not accept the comment (' + String(r.reason || 'error').replace('aptly_', 'error ') + '). Nothing was posted.';
+
+  // Comments on a work order's Aptly card, newest first. Read-only; "fresh=1" re-reads the board.
+  app.get('/api/maintenance/comments', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const wo = String(req.query.wo || '');
+    if (!/^\d{3,9}$/.test(wo)) return res.status(400).json({ error: 'Bad work order number.' });
+    try {
+      const apt = await getAptly(req.query.fresh === '1');
+      const info = apt.map.get(wo);
+      if (!apt.available) return res.json({ available: false, found: false, canPost: false, comments: [] });
+      if (!info) return res.json({ available: true, found: false, canPost: false, comments: [] });
+      res.json({ available: true, found: true, canPost: !!(commenter.configured && info.cardId), asOf: new Date(aptCache.at).toISOString(),
+        comments: info.comments.map((c) => ({ by: c.by, at: c.at, text: c.text, auto: c.auto, hub: c.hub })) });
+    } catch (e) { console.error('[maintenance] comments', e.message); res.status(502).json({ error: 'Could not read the Aptly card comments.' }); }
+  });
+
+  // Post ONE comment on the work order's Aptly card. Needs sign-in, the custom header, same origin, a picked name, and 30 posts per 10 minutes.
+  const cwrites = [];
+  app.post('/api/maintenance/comments', async (req, res) => {
+    if (!writeGuard(req, res)) return;
+    const now = Date.now(); while (cwrites.length && now - cwrites[0] > 600000) cwrites.shift();
+    if (cwrites.length >= 30) return res.status(429).json({ error: 'Too many comments. Wait a few minutes.' });
+    const v = validateComment(req.body);
+    if (v.error) return res.status(400).json({ error: v.error });
+    try {
+      const apt = await getAptly(true);
+      const info = apt.available ? apt.map.get(v.woNumber) : null;
+      if (!info || !info.cardId) return res.status(404).json({ error: 'No Aptly card was found for this work order. Nothing was posted.' });
+      const r = await commenter.post(info.cardId, v.content);
+      if (!r.ok) { console.error('[maintenance] comment refused wo=' + v.woNumber + ' reason=' + r.reason + ' ' + (r.detail || '')); return res.status(502).json({ error: postReason(r) }); }
+      cwrites.push(now); aptCache.at = 0;
+      console.log('[maintenance] comment posted wo=' + v.woNumber + ' by=' + v.authorName + ' chars=' + v.text.length);
+      res.json({ ok: true, content: v.content });
+    } catch (e) { console.error('[maintenance] comment write', e.message); res.status(502).json({ error: 'Could not post. Nothing was changed.' }); }
   });
 
   // Follow-up notes for one work order (history, newest first).
@@ -158,14 +208,11 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
     } catch (e) { console.error('[maintenance] followups', e.message); res.status(502).json({ error: 'Could not read follow-up notes.' }); }
   });
 
-  // Save a note / set or clear a follow-up date. Writes ONLY to the hub's own table. Needs the sign-in cookie (checked above), a custom
+  // Save a note / set or clear a follow-up date in the hub's own table, and (only if the person ticks the box) also one comment on the Aptly card. Needs the sign-in cookie (checked above), a custom
   // header, and a same-origin request, so another website cannot trigger it. 40 writes per 10 minutes.
   const writes = [];
   app.post('/api/maintenance/followups', async (req, res) => {
-    res.set('Cache-Control', 'no-store');
-    if (req.headers['x-requested-with'] !== 'aloe-hub') return res.status(400).json({ error: 'Bad request.' });
-    const origin = req.headers.origin;
-    if (origin) { try { if (new URL(origin).host !== req.headers.host) return res.status(403).json({ error: 'Not allowed.' }); } catch { return res.status(403).json({ error: 'Not allowed.' }); } }
+    if (!writeGuard(req, res)) return;
     const now = Date.now(); while (writes.length && now - writes[0] > 600000) writes.shift();
     if (writes.length >= 40) return res.status(429).json({ error: 'Too many saves. Wait a few minutes.' });
     const v = validateEntry(req.body, todayPhoenix());
@@ -174,7 +221,24 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
       const r = await store.add(v.entry);
       if (!r.ok) return res.status(503).json({ error: r.reason === 'no_table' ? 'The follow-up table has not been created yet.' : 'Follow-up saving is not set up.', reason: r.reason });
       writes.push(now);
-      res.json({ ok: true });
+      const out = { ok: true };
+      // Optional: also post the same follow-up on the Aptly card (the person ticked the box). The hub save above is already done either way.
+      if (req.body && req.body.alsoComment === true) {
+        const text = followupComment(v.entry);
+        if (!text) out.commentError = 'Nothing to post on the Aptly card.';
+        else {
+          try {
+            const apt = await getAptly(true); const info = apt.available ? apt.map.get(v.entry.wo_number) : null;
+            if (!info || !info.cardId) out.commentError = 'Saved in the hub, but no Aptly card was found, so nothing was posted there.';
+            else {
+              const pr = await commenter.post(info.cardId, formatComment(v.entry.author_name, text));
+              if (pr.ok) { aptCache.at = 0; out.commentPosted = true; console.log('[maintenance] comment posted wo=' + v.entry.wo_number + ' by=' + v.entry.author_name + ' (follow-up)'); }
+              else { console.error('[maintenance] comment refused wo=' + v.entry.wo_number + ' reason=' + pr.reason + ' ' + (pr.detail || '')); out.commentError = 'Saved in the hub, but ' + postReason(pr).replace(' Nothing was posted.', ' It was not posted on the Aptly card.'); }
+            }
+          } catch (e) { console.error('[maintenance] follow-up comment', e.message); out.commentError = 'Saved in the hub, but posting on the Aptly card failed.'; }
+        }
+      }
+      res.json(out);
     } catch (e) { console.error('[maintenance] followup write', e.message); res.status(502).json({ error: 'Could not save. Nothing was changed.' }); }
   });
 

@@ -72,10 +72,15 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 .tsec{margin-bottom:18px}.tsec h2{font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.tsec h2 small{font-weight:500;text-transform:none;letter-spacing:0;font-size:12px}
 .tsec.muted .trow{background:#fafcfc}
 .trow .pill{white-space:normal;max-width:100%;overflow-wrap:anywhere}
-.trow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,2.2fr) minmax(0,1.5fr) 110px 140px 180px;gap:12px;align-items:center;padding:11px 16px;min-height:56px;border-top:1px solid var(--rule)}
+.trow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,2.2fr) minmax(0,1.5fr) 110px 140px 270px;gap:12px;align-items:center;padding:11px 16px;min-height:56px;border-top:1px solid var(--rule)}
 .trow.head{background:#E6EFF0;border-top:0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);min-height:36px}
 .trow .why{font-size:12px;color:var(--muted)}.trow .nt{font-size:12px;color:#243030;background:#F8FAFC;border-left:3px solid var(--teal);padding:2px 8px;margin-top:3px;overflow-wrap:anywhere}
 .mini{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid #B4C3C3;background:#fff;color:#0A5468;font:700 12px Manrope,system-ui,sans-serif;cursor:pointer}.mini:hover:not(:disabled){background:#E6EFF0}.mini:disabled{opacity:.55;cursor:default}.mini:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}
+.trow .nt.stale{border-left-color:var(--red);background:var(--red-d)}
+.names{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.nm{min-height:44px;min-width:70px;padding:0 14px;border-radius:10px;border:1px solid #B4C3C3;background:#fff;color:#0A5468;font:700 14px Manrope,system-ui,sans-serif;cursor:pointer}.nm:hover{background:#E6EFF0}.nm.on{background:#0A5468;color:#fff;border-color:#0A5468}.nm:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}
+.dlg label.ckl{text-transform:none;font-size:13px;color:var(--ink2);font-weight:600;letter-spacing:0;display:flex;gap:8px;align-items:center;margin-top:12px}.dlg label.ckl input{width:20px;height:20px}
+.cmts{margin-top:12px;border-top:1px solid var(--rule);padding-top:8px}.cmt{border:1px solid var(--rule);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:#fff}.cmt.auto{background:#F1F5F5;color:var(--muted)}.cmt .ch{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px}.cmt .ct{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+.wwrap{display:flex;align-items:center;border-top:1px solid var(--rule);background:#fff}.wwrap.hd{border-top:0}.wwrap .wrow{border-top:0;flex:1;min-width:0}.wwrap .cbtn{margin:0 10px;flex:none;width:98px}.wwrap.hd .cbtn{margin:0;width:118px;align-self:stretch;background:#E6EFF0}
 .banner{background:#fff7d6;border:1px solid #e6cf6a;border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:10px}
 .dlg{position:fixed;inset:0;z-index:10002;display:none;align-items:center;justify-content:center;background:rgba(13,26,26,.4);padding:16px}.dlg.on{display:flex}
 .dlg .card2{background:#fff;border-radius:14px;width:min(560px,100%);max-height:92vh;overflow:auto;padding:18px 20px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
@@ -99,7 +104,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
   <div class="seg" id="seg" role="group" aria-label="View"><button type="button" class="on" data-mode="today" aria-pressed="true">Today</button><button type="button" data-mode="home" aria-pressed="false">By home</button><button type="button" data-mode="wo" aria-pressed="false">By work order</button></div>
   <div id="todayView">
     <div id="tbanner"></div><div class="chips" id="tchips"></div><div id="tsecs"><div class="empty">Loading today's list...</div></div>
-    <p class="ro">Days are calendar days in Phoenix time. A vendor should be scheduled within 2 days of being assigned; follow up with the vendor at 3 days. Follow-up dates and notes are saved in the hub only, not in Rentvine or Aptly. Until individual logins exist they show "shared login".</p>
+    <p class="ro">Days are calendar days in Phoenix time. A vendor should be scheduled within 2 days of being assigned; follow up with the vendor at 3 days. Follow-up dates and notes are saved in the hub. Comments, and follow-ups you tick the box for, are also posted on the Aptly card. Nothing is changed in Rentvine. Until individual logins exist, people pick their name.</p>
   </div>
   <div id="homeView" hidden>
   <div class="bar">
@@ -123,7 +128,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     <div class="list" id="wolist"><div class="empty">Loading work orders...</div></div>
     <p class="ro">Possible emergency is a keyword guess from the request text (leaks, no A/C, no heat, no power, gas smell, sewage and similar). It is not a priority set by anyone. Unit turns belong to Persia or Teri.</p>
   </div>
-  <p class="ro">This page does not change anything in Rentvine, Aptly or Slack. (Follow-up notes are saved in the hub only.) Move-out work orders are also on the Move-outs page.</p>
+  <p class="ro">This page never changes Rentvine or Slack. The only thing it writes to Aptly is a comment you review and confirm. Move-out work orders are also on the Move-outs page.</p>
 </div>
 
 <div class="dlg" id="dlg" role="dialog" aria-modal="true" aria-labelledby="dtitle"><div class="card2" id="dcard"></div></div>
@@ -211,8 +216,10 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     var lvl = it.level === 'red' ? 'p-red' : it.level === 'amber' ? 'p-amber' : 'p-grey';
     var req = [h('div', {}, [h('b', { text: '#' + it.number + '  ' }), it.emergency ? h('span', { 'class': 'pill p-emg', text: 'Possible emergency: ' + it.emergency }) : null]), h('div', { 'class': 'why', text: it.summary })];
     if (it.followUpOn) req.push(h('div', { 'class': 'why', text: 'Follow-up set for ' + nice(it.followUpOn) + (it.followUpOn <= TODAY.today ? ' (due)' : '') }));
+    if (it.matched) req.push(h('div', { 'class': 'nt' + (it.staleNote ? ' stale' : ''), text: it.aptNote ? 'Last note: ' + it.aptNote.by + ', ' + ago(it.aptNote.days) + ': ' + it.aptNote.text : 'No note on the Aptly card yet' }));
     if (it.lastNote) req.push(h('div', { 'class': 'nt', text: it.lastNote.text + '  (' + it.lastNote.at + ', ' + it.lastNote.by + ')' }));
     var det = h('button', { 'class': 'mini', type: 'button', text: 'Details' }); if (it.propertyId) det.addEventListener('click', function () { openPanel(it.propertyId, it.address, det); }); else det.disabled = true;
+    var cmb = h('button', { 'class': 'mini', type: 'button', text: 'Comments' + (it.commentCount ? ' (' + it.commentCount + ')' : '') }); if (it.matched) cmb.addEventListener('click', function () { openComments(it, cmb); }); else cmb.disabled = true;
     var fu = h('button', { 'class': 'mini', type: 'button', text: it.followUpOn ? 'Follow-up / notes' : 'Set follow-up' }); fu.addEventListener('click', function () { openDlg(it, fu); });
     return h('div', { 'class': 'trow' }, [
       h('div', {}, [h('div', { 'class': 'addr', text: it.address || (it.propertyId ? 'Property ' + it.propertyId : 'Address not shown') }), it.moveOut ? h('span', { 'class': 'pill p-blue', text: 'Move-out' }) : null]),
@@ -220,7 +227,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
       h('div', {}, [h('span', { 'class': 'pill ' + lvl, text: sec.key === 'dispatch' ? 'Us: assign vendor' : it.vendor ? 'Vendor: ' + it.vendor : it.stage }), h('div', { 'class': 'why', text: it.why })]),
       h('div', {}, [h('b', { text: it.daysInStage == null ? 'n/a' : age(it.daysInStage) }), h('div', { 'class': 'why', text: it.stage })]),
       h('div', { 'class': 'why hd2', text: lastContact(it) }),
-      h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, [det, fu])]);
+      h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, [det, cmb, fu])]);
   }
   function renderToday() {
     var d = TODAY, box = $('tsecs'); box.textContent = ''; $('tchips').textContent = ''; $('tbanner').textContent = '';
@@ -253,31 +260,52 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 
   // follow-up dialog: write a note and/or set a date, review, then confirm. Saves only to the hub's own table.
   var DL = null;
-  function myName() { try { return localStorage.getItem('aloeMaintName') || ''; } catch (e) { return ''; } }
-  function closeDlg() { $('dlg').classList.remove('on'); if (DL && DL.opener) { try { DL.opener.focus(); } catch (e) {} } DL = null; }
+  // Until everyone has their own login, people pick their name (same ten as the expense log). The hub only accepts names from this list.
+  var NAMES = ['Randi', 'Alexes', 'Teri', 'Persia', 'Roberto', 'Juan', 'Rita', 'Norman', 'Hannah', 'Dhyana'];
+  function myName() { try { var n = localStorage.getItem('aloeMaintName') || ''; return NAMES.indexOf(n) > -1 ? n : ''; } catch (e) { return ''; } }
+  function rememberName(n) { try { localStorage.setItem('aloeMaintName', n); } catch (e) {} }
+  function nameChips(cur, onPick) {
+    var box = h('div', { 'class': 'names', role: 'radiogroup', 'aria-label': 'Who is writing this' });
+    NAMES.forEach(function (n) {
+      var b = h('button', { 'class': 'nm' + (n === cur ? ' on' : ''), type: 'button', role: 'radio', 'aria-checked': n === cur ? 'true' : 'false', text: n });
+      b.addEventListener('click', function () { Array.prototype.forEach.call(box.children, function (x) { var on = x === b; x.className = 'nm' + (on ? ' on' : ''); x.setAttribute('aria-checked', on ? 'true' : 'false'); }); onPick(n); });
+      box.appendChild(b);
+    });
+    return box;
+  }
+  function fuText(action, date, note) {
+    var head = action === 'set_followup' ? 'Follow-up set for ' + date.slice(5, 7) + '/' + date.slice(8, 10) + '/' + date.slice(0, 4) + '.' : action === 'clear_followup' ? 'Follow-up date cleared.' : '';
+    return [head, note || ''].filter(Boolean).join(' ');
+  }
+  function closeDlg() { $('dlg').classList.remove('on'); var o = (DL && DL.opener) || (CM && CM.opener); if (o) { try { o.focus(); } catch (e) {} } DL = null; CM = null; }
+  var CM = null;
   function post(body) {
     return fetch('/api/maintenance/followups', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'aloe-hub' }, body: JSON.stringify(body) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('Error ' + r.status)); return j; }); });
   }
   function openDlg(it, opener) {
-    DL = { it: it, opener: opener, step: 'form', date: it.followUpOn || '', note: '', action: '' };
+    DL = { it: it, opener: opener, step: 'form', date: it.followUpOn || '', note: '', action: '', name: myName(), also: true };
     renderDlg(); $('dlg').classList.add('on');
     api('/api/maintenance/followups?wo=' + encodeURIComponent(it.number)).then(function (r) { if (!DL || DL.it !== it) return; DL.hist = r; renderDlg(true); }).catch(function () {});
   }
   function renderDlg(keep) {
     var c = $('dcard'), it = DL.it, can = TODAY && TODAY.followups.available;
-    var ta = keep && $('dnote') ? $('dnote').value : DL.note, dt = keep && $('ddate') ? $('ddate').value : DL.date, nm = keep && $('dname') ? $('dname').value : myName();
+    var ta = keep && $('dnote') ? $('dnote').value : DL.note, dt = keep && $('ddate') ? $('ddate').value : DL.date, nm = DL.name || myName();
     DL.note = ta; DL.date = dt; c.textContent = '';
     c.appendChild(h('h2', { id: 'dtitle', text: 'WO #' + it.number + ' follow-up' }));
     c.appendChild(h('div', { 'class': 'note', text: (it.address || '') + ' | ' + it.stage + (it.vendor ? ' | ' + it.vendor : '') }));
     if (!can) c.appendChild(h('div', { 'class': 'banner', style: 'margin-top:10px', text: 'Saving is not set up yet, so this form is read-only for now.' }));
+    var alsoOk = !!(TODAY && TODAY.canComment && it.matched);
     if (DL.step === 'review') {
       var what = DL.action === 'set_followup' ? 'Set the follow-up for ' + nice(DL.date) + (DL.note ? ' and save this note.' : '.') : DL.action === 'clear_followup' ? 'Clear the follow-up date' + (DL.note ? ' and save this note.' : '.') : 'Save this note.';
-      c.appendChild(h('div', { 'class': 'okbox' }, [h('b', { text: 'Please confirm: ' }), what, DL.note ? h('div', { style: 'margin-top:6px', text: '"' + DL.note + '"' }) : null, h('div', { 'class': 'note', style: 'margin-top:6px', text: 'Saved in the hub only. It does not change Rentvine or Aptly. Recorded as: shared login' + (DL.name ? ', named ' + DL.name : '') + '.' })]));
+      c.appendChild(h('div', { 'class': 'okbox' }, [h('b', { text: 'Please confirm: ' }), what, DL.note ? h('div', { style: 'margin-top:6px', text: '"' + DL.note + '"' }) : null, h('div', { 'class': 'note', style: 'margin-top:6px', text: 'Saved in the hub' + (DL.also && alsoOk ? ', and posted on the Aptly card as: "[Hub \u00b7 ' + DL.name + '] ' + fuText(DL.action, DL.date, DL.note) + '"' : '. Nothing is posted on the Aptly card') + '. It does not change Rentvine. Recorded as: ' + DL.name + ' (shared login).' })]));
       c.appendChild(h('div', { 'class': 'acts' }, [
         (function () { var b = h('button', { 'class': 'mini', type: 'button', id: 'dsave', text: 'Confirm and save' }); b.addEventListener('click', function () {
           b.disabled = true; b.textContent = 'Saving...';
-          post({ woNumber: it.number, propertyId: it.propertyId, action: DL.action, note: DL.note, followUpOn: DL.action === 'set_followup' ? DL.date : '', authorName: DL.name }).then(function () { closeDlg(); loadToday(true); })
+          post({ woNumber: it.number, propertyId: it.propertyId, action: DL.action, note: DL.note, followUpOn: DL.action === 'set_followup' ? DL.date : '', authorName: DL.name, alsoComment: !!(DL.also && alsoOk) }).then(function (j) {
+            loadToday(true);
+            if (j && j.commentError) { c.appendChild(h('div', { 'class': 'banner', style: 'margin-top:10px', text: j.commentError })); var cl = h('button', { 'class': 'mini', type: 'button', text: 'Close' }); cl.addEventListener('click', closeDlg); b.replaceWith(cl); cl.focus(); }
+            else closeDlg(); })
             .catch(function (e) { b.disabled = false; b.textContent = 'Confirm and save'; c.appendChild(h('div', { 'class': 'err', text: e.message })); }); }); return b; })(),
         (function () { var b = h('button', { 'class': 'mini', type: 'button', text: 'Back' }); b.addEventListener('click', function () { DL.step = 'form'; renderDlg(); }); return b; })()]));
       c.querySelector('#dsave').focus(); return;
@@ -285,12 +313,14 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     c.appendChild(h('label', { 'for': 'dnote', text: 'What happened / what is next (optional)' })); var t = h('textarea', { id: 'dnote', maxlength: '1000', placeholder: 'For example: texted vendor, they said Thursday. Waiting on tenant.' }); t.value = ta; c.appendChild(t);
     c.appendChild(h('label', { 'for': 'ddate', text: 'Follow up on' })); var di = h('input', { type: 'date', id: 'ddate', min: TODAY.today }); di.value = dt; c.appendChild(di);
     var qd = h('div', { 'class': 'qd' }); [['Tomorrow', 1], ['In 3 days', 3], ['In a week', 7]].forEach(function (q) { var b = h('button', { 'class': 'mini', type: 'button', text: q[0] }); b.addEventListener('click', function () { di.value = addDays(TODAY.today, q[1]); }); qd.appendChild(b); }); c.appendChild(qd);
-    c.appendChild(h('label', { 'for': 'dname', text: 'Your name (so the history shows who)' })); var ni = h('input', { type: 'text', id: 'dname', maxlength: '60', autocomplete: 'off' }); ni.value = nm; c.appendChild(ni);
+    c.appendChild(h('label', { text: 'Who is writing this' })); c.appendChild(nameChips(nm, function (n) { DL.name = n; var m = $('dmsg'); if (m) m.textContent = ''; }));
+    if (alsoOk) { var ck = h('input', { type: 'checkbox', id: 'dalso' }); ck.checked = DL.also !== false; ck.addEventListener('change', function () { DL.also = ck.checked; }); c.appendChild(h('label', { 'class': 'ckl', 'for': 'dalso' }, [ck, 'Also post this on the Aptly card as a comment'])); }
     function go(action) { return function () {
-      var note = $('dnote').value.trim(), date = $('ddate').value, name = $('dname').value.trim(), msg = $('dmsg');
+      var note = $('dnote').value.trim(), date = $('ddate').value, name = DL.name || '', msg = $('dmsg');
+      if (!name) { msg.textContent = 'Pick your name first.'; return; }
       if (action === 'set_followup' && !date) { msg.textContent = 'Pick a follow-up date first.'; return; }
       if (action === 'note' && !note) { msg.textContent = 'Write a note first.'; return; }
-      try { localStorage.setItem('aloeMaintName', name); } catch (e) {}
+      rememberName(name);
       DL.note = note; DL.date = date; DL.name = name; DL.action = action; DL.step = 'review'; renderDlg(); }; }
     var a1 = h('button', { 'class': 'mini', type: 'button', text: 'Review follow-up' }), a2 = h('button', { 'class': 'mini', type: 'button', text: 'Save note only' }), a3 = h('button', { 'class': 'mini', type: 'button', text: 'Clear follow-up' }), a4 = h('button', { 'class': 'mini', type: 'button', text: 'Close' });
     a1.addEventListener('click', go('set_followup')); a2.addEventListener('click', go('note')); a3.addEventListener('click', go('clear_followup')); a4.addEventListener('click', closeDlg);
@@ -300,6 +330,70 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     if (!DL.hist) hist.appendChild(h('div', { text: 'Loading...' })); else if (!DL.hist.notes.length) hist.appendChild(h('div', { text: 'No notes yet.' }));
     else DL.hist.notes.forEach(function (n) { hist.appendChild(h('div', { text: n.at + ' | ' + n.by + ' | ' + (n.action === 'set_followup' ? 'follow-up ' + nice(n.followUpOn) + ': ' : n.action === 'clear_followup' ? 'cleared follow-up: ' : '') + n.text })); });
     c.appendChild(hist);
+  }
+  // Comments dialog: read the Aptly card's comments (live) and post one, after review. Writes ONE comment on that card, nothing else.
+  function whenTxt(iso) { var x = Date.parse(iso); return isFinite(x) ? new Date(x).toLocaleString([], { timeZone: 'America/Phoenix', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; }
+  function openComments(it, opener) {
+    CM = { it: it, opener: opener, step: 'view', name: myName(), text: '', data: null, err: '', pending: null }; DL = null;
+    renderCm(); $('dlg').classList.add('on'); loadCm(false);
+  }
+  function loadCm(fresh) {
+    var my = CM; if (!my) return;
+    api('/api/maintenance/comments?wo=' + encodeURIComponent(my.it.number) + (fresh ? '&fresh=1' : '')).then(function (r) { if (CM !== my) return; my.data = r; my.err = ''; renderCm(true); })
+      .catch(function (e) { if (CM !== my) return; my.err = e.message; renderCm(true); });
+  }
+  function renderCm(keep) {
+    var c = $('dcard'), it = CM.it, d = CM.data, can = !!(d && d.canPost);
+    if (keep && $('cmtext')) CM.text = $('cmtext').value;
+    c.textContent = '';
+    c.appendChild(h('h2', { id: 'dtitle', text: 'WO #' + it.number + ' comments' }));
+    c.appendChild(h('div', { 'class': 'note', text: [it.address, it.stage, it.vendor].filter(Boolean).join(' | ') }));
+    if (CM.err) c.appendChild(h('div', { 'class': 'err', style: 'margin-top:8px', text: CM.err }));
+    if (d && !d.available) c.appendChild(h('div', { 'class': 'banner', style: 'margin-top:10px', text: 'Aptly cannot be reached right now, so comments cannot be read or posted.' }));
+    else if (d && !d.found) c.appendChild(h('div', { 'class': 'banner', style: 'margin-top:10px', text: 'No Aptly card was found for this work order.' }));
+    else if (d && !d.canPost) c.appendChild(h('div', { 'class': 'banner', style: 'margin-top:10px', text: 'Posting is not set up, so comments are read-only.' }));
+    if (CM.step === 'review') {
+      var content = '[Hub · ' + CM.name + '] ' + CM.text;
+      c.appendChild(h('div', { 'class': 'okbox' }, [h('b', { text: 'Please confirm. This will be posted on the Aptly card as:' }), h('div', { style: 'margin-top:6px;white-space:pre-wrap', text: content }),
+        h('div', { 'class': 'note', style: 'margin-top:6px', text: 'Everyone who opens the card in Aptly will see it. It can only be removed inside Aptly.' })]));
+      var pb = h('button', { 'class': 'mini', type: 'button', text: 'Confirm and post' }), bk = h('button', { 'class': 'mini', type: 'button', text: 'Back' });
+      pb.addEventListener('click', function () {
+        pb.disabled = true; pb.textContent = 'Posting...'; var my = CM;
+        fetch('/api/maintenance/comments', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'aloe-hub' }, body: JSON.stringify({ woNumber: it.number, authorName: my.name, text: my.text }) })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('Error ' + r.status)); return j; }); })
+          .then(function (j) { if (CM !== my) return; my.pending = { by: 'Hub', at: new Date().toISOString(), text: j.content || content, auto: false, hub: true }; my.text = ''; my.step = 'view'; renderCm(); loadCm(true); if (TODAY) loadToday(true); })
+          .catch(function (e) { if (CM !== my) return; pb.disabled = false; pb.textContent = 'Confirm and post'; c.appendChild(h('div', { 'class': 'err', text: e.message })); });
+      });
+      bk.addEventListener('click', function () { CM.step = 'view'; renderCm(); });
+      c.appendChild(h('div', { 'class': 'acts' }, [pb, bk])); pb.focus(); return;
+    }
+    if (can) {
+      c.appendChild(h('label', { text: 'Who is writing this' })); c.appendChild(nameChips(CM.name, function (n) { CM.name = n; var m = $('cmmsg'); if (m) m.textContent = ''; }));
+      c.appendChild(h('label', { 'for': 'cmtext', text: 'New comment' })); var ta = h('textarea', { id: 'cmtext', maxlength: '1000', placeholder: 'For example: texted vendor, they will call tenant today.' }); ta.value = CM.text; c.appendChild(ta);
+      var rv = h('button', { 'class': 'mini', type: 'button', text: 'Review comment' });
+      rv.addEventListener('click', function () {
+        var txt = $('cmtext').value.trim(), m = $('cmmsg');
+        if (!CM.name) { m.textContent = 'Pick your name first.'; return; }
+        if (!txt) { m.textContent = 'Write a comment first.'; return; }
+        rememberName(CM.name); CM.text = txt; CM.step = 'review'; renderCm();
+      });
+      var rf = h('button', { 'class': 'mini', type: 'button', text: 'Refresh comments' }); rf.addEventListener('click', function () { loadCm(true); });
+      var cl = h('button', { 'class': 'mini', type: 'button', text: 'Close' }); cl.addEventListener('click', closeDlg);
+      c.appendChild(h('div', { 'class': 'acts' }, [rv, rf, cl])); c.appendChild(h('div', { 'class': 'err', id: 'cmmsg', style: 'padding:6px 0;text-align:left;background:none' }));
+    } else {
+      var cl2 = h('button', { 'class': 'mini', type: 'button', text: 'Close' }); cl2.addEventListener('click', closeDlg);
+      var rf2 = h('button', { 'class': 'mini', type: 'button', text: 'Refresh comments' }); rf2.addEventListener('click', function () { loadCm(true); });
+      c.appendChild(h('div', { 'class': 'acts' }, [rf2, cl2]));
+    }
+    var box = h('div', { 'class': 'cmts' }, [h('b', { text: d ? 'Comments on the Aptly card' + (d.found ? ' (' + (d.comments.length) + ')' : '') : 'Comments on the Aptly card' })]);
+    var list = d && d.comments ? d.comments.slice() : [];
+    if (CM.pending && !list.some(function (x) { return x.text === CM.pending.text; })) list.unshift(CM.pending);
+    if (!d && !CM.err) box.appendChild(h('div', { 'class': 'note', style: 'margin-top:6px', text: 'Loading...' }));
+    else if (d && d.found && !list.length) box.appendChild(h('div', { 'class': 'note', style: 'margin-top:6px', text: 'No comments on this card yet.' }));
+    list.forEach(function (x) {
+      box.appendChild(h('div', { 'class': 'cmt' + (x.auto ? ' auto' : '') }, [h('div', { 'class': 'ch', text: (x.auto ? 'Ari (automated)' : x.hub ? 'Posted from the hub' : (x.by || 'Aptly')) + (x.at ? ' | ' + whenTxt(x.at) : '') }), h('div', { 'class': 'ct', text: x.text })]));
+    });
+    c.appendChild(box);
   }
   $('dlg').addEventListener('click', function (e) { if (e.target === $('dlg')) closeDlg(); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $('dlg').classList.contains('on')) closeDlg(); });
@@ -341,7 +435,8 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
       h('span', { 'class': 'wv', text: r.vendor || 'No vendor yet' }),
       h('span', {}, [agePill(r.ageDays)])]);
     if (r.propertyId) b.addEventListener('click', function () { openPanel(r.propertyId, r.address, b); }); else b.disabled = true;
-    return b;
+    var cb = h('button', { 'class': 'mini cbtn', type: 'button', text: 'Comments' }); cb.addEventListener('click', function () { openComments(r, cb); });
+    return h('div', { 'class': 'wwrap' }, [b, cb]);
   }
   function renderWO() {
     var box = $('wolist'); box.textContent = '';
@@ -359,7 +454,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     });
     rows.sort(SORTS[f.sort] || SORTS.old);
     $('wcount').textContent = rows.length + ' of ' + WO.length + ' open work orders';
-    box.appendChild(h('div', { 'class': 'wrow head', role: 'row' }, [h('span', { text: 'Address' }), h('span', { text: 'Request' }), h('span', { 'class': 'wst', text: 'Stage' }), h('span', { 'class': 'wv', text: 'Vendor' }), h('span', { text: 'Age' })]));
+    box.appendChild(h('div', { 'class': 'wwrap hd' }, [h('div', { 'class': 'wrow head', role: 'row' }, [h('span', { text: 'Address' }), h('span', { text: 'Request' }), h('span', { 'class': 'wst', text: 'Stage' }), h('span', { 'class': 'wv', text: 'Vendor' }), h('span', { text: 'Age' })]), h('span', { 'class': 'cbtn' })]));
     if (!rows.length) { box.appendChild(h('div', { 'class': 'empty', text: WO.length ? 'No work orders match these filters.' : 'No open work orders right now.' })); return; }
     if (f.grp === 'none') { rows.forEach(function (r) { box.appendChild(woRow(r)); }); return; }
     var groups = {}; rows.forEach(function (r) { var k = groupKey(f.grp, r); (groups[k] = groups[k] || []).push(r); });
@@ -406,8 +501,9 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 
     var open = v.history.filter(function (w) { return !w.closed && !/^(Completed|Cancelled|Rejected|Completed Already Billed)$/.test(w.status); });
     b.appendChild(sec('Open work orders (' + open.length + ')', open.length ? open.map(function (w) {
+      var pcb = h('button', { 'class': 'mini', type: 'button', style: 'margin-top:6px', text: 'Comments' }); pcb.addEventListener('click', function () { openComments({ number: w.number, address: v.address, stage: w.status, vendor: w.vendor }, pcb); });
       return h('div', { 'class': 'box' }, [h('div', { 'class': 't', text: '#' + w.number + '  ' + (w.summary || '(no description)') }),
-        h('div', { 'class': 'm', text: [w.status, w.vendor, 'opened ' + w.created, w.scheduled ? 'scheduled ' + w.scheduled : '', w.estimated ? 'est. ' + money(w.estimated) : ''].filter(Boolean).join(' | ') })]);
+        h('div', { 'class': 'm', text: [w.status, w.vendor, 'opened ' + w.created, w.scheduled ? 'scheduled ' + w.scheduled : '', w.estimated ? 'est. ' + money(w.estimated) : ''].filter(Boolean).join(' | ') }), pcb]);
     }) : [h('div', { 'class': 'note', text: 'None open.' })]));
 
     var ari = v.ari;

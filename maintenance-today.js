@@ -2,6 +2,7 @@
 // Rules (Randi, Oct 27 2026): vendor must be scheduled within 2 days of assignment; at 3 days with no schedule, follow up with the vendor
 // (the tenant may not have heard). Days are CALENDAR days in Phoenix time. Unit turns belong to Persia or Teri, everything else to Roberto.
 import { daysBetween, todayPhoenix } from './maintenance-data.js';
+import { mapComments, lastHumanNote } from './maintenance-comments.js';
 
 const phxDate = (iso) => { const t = Date.parse(iso); return isFinite(t) ? new Date(t - 7 * 3600000).toISOString().slice(0, 10) : ''; };
 const first = (...v) => { const x = v.find((y) => y != null && y !== ''); return x == null ? '' : x; };
@@ -12,7 +13,10 @@ const nested = (o, path) => path.split('.').reduce((a, k) => (a && typeof a === 
 export function aptlyInfo(c) {
   if (!c || typeof c !== 'object') return null;
   const vend = Array.isArray(c.vendor) && c.vendor[0] ? c.vendor[0].name : c.vendorName || '';
+  const comments = mapComments(c.comments);
+  const note = lastHumanNote(comments);
   const info = {
+    cardId: String(first(c.cardId, c._id, '')).trim(), comments, lastNote: note, commentCount: comments.length,
     number: String(first(c.workOrderNumber, c['Work Order Number'], '')).trim(),
     stage: String(first(c.stage, c.Stage, '')).trim(),
     vendor: String(vend || '').trim(),
@@ -32,7 +36,8 @@ export function indexAptly(cards) {
 export function aptlyDiag(map) {
   const v = [...map.values()];
   return { cards: v.length, withStage: v.filter((x) => x.stage).length, withVendorAssigned: v.filter((x) => x.vendorAssignedAt).length,
-    withStageChanged: v.filter((x) => x.stageChangedAt).length, withLastInbound: v.filter((x) => x.lastInboundAt).length, withLastOutbound: v.filter((x) => x.lastOutboundAt).length };
+    withStageChanged: v.filter((x) => x.stageChangedAt).length, withLastInbound: v.filter((x) => x.lastInboundAt).length, withLastOutbound: v.filter((x) => x.lastOutboundAt).length,
+    withCardId: v.filter((x) => x.cardId).length, withComments: v.filter((x) => x.commentCount).length, withHumanNote: v.filter((x) => x.lastNote).length };
 }
 
 const PARKED = new Set(['On Hold', 'Waiting for parts', 'Owner Maintained']);
@@ -41,10 +46,11 @@ export const SECTION_DEFS = [
   { key: 'followups', title: 'Your follow-ups due', hint: 'You set these. Today or earlier.' },
   { key: 'dispatch', title: 'Dispatch now', hint: 'Open or Dispatch Work Order, no vendor yet' },
   { key: 'vendor', title: 'Vendor not scheduled', hint: 'Assigned, no scheduled date. Amber at 2 days, red at 3 days: call or text the vendor, then update the tenant' },
+  { key: 'nodate', title: 'Marked Scheduled, no date on the card', hint: 'The stage says Scheduled but no date is on the card. Put the date on the card, or fix the stage' },
   { key: 'passed', title: 'Scheduled date passed, still open', hint: 'Confirm the work happened' },
   { key: 'tenant', title: 'Waiting on tenant', hint: 'Troubleshooting steps sent 2+ days ago' },
   { key: 'internal', title: 'Internal work order requests', hint: 'Handled in house' },
-  { key: 'quiet', title: 'No contact in 5+ days', hint: 'Nobody has texted or emailed on the card in 5 days' },
+  { key: 'quiet', title: 'No contact or note in 5+ days', hint: 'Nobody has texted, emailed or written a note on the card in 5 days' },
   { key: 'turns', title: 'Unit turns', hint: 'Persia or Teri, not on Roberto\'s list', muted: true },
 ];
 
@@ -64,11 +70,17 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
     const scheduled = stage === 'Scheduled' || !!sched;
     const inD = a && a.lastInboundAt ? daysBetween(phxDate(a.lastInboundAt), today) : null;
     const outD = a && a.lastOutboundAt ? daysBetween(phxDate(a.lastOutboundAt), today) : null;
-    const lastTouchDays = [inD, outD].filter((x) => x != null).length ? Math.min(...[inD, outD].filter((x) => x != null)) : null;
+    const noteD = a && a.lastNote && a.lastNote.at ? daysBetween(phxDate(a.lastNote.at), today) : null;
+    // A person's note counts as a touch (Aptly's own Last Touch ignores comments).
+    const touches = [inD, outD, noteD].filter((x) => x != null);
+    const lastTouchDays = touches.length ? Math.min(...touches) : null;
+    const noteWhy = !a ? '' : noteD == null ? ' No note on the card yet.' : ' Last note ' + (noteD === 0 ? 'today' : noteD + (noteD === 1 ? ' day' : ' days') + ' ago') + '.';
+    const staleNote = !!a && (noteD == null || noteD >= 3);
     const f = (fu.byWo || {})[String(r.number)] || null;
     const base = { id: r.id, number: r.number, propertyId: r.propertyId, address: r.address, summary: r.summary, stage, vendor, moveOut: stage === 'Move Out' || r.moveOut,
       emergency: r.emergency, daysInStage, assignedDays, lastInDays: inD, lastOutDays: outD, scheduled: sched || null,
-      followUpOn: f ? f.followUpOn : null, lastNote: f && f.notes[0] ? f.notes[0] : null, noteCount: f ? f.notes.length : 0, matched: !!a };
+      followUpOn: f ? f.followUpOn : null, lastNote: f && f.notes[0] ? f.notes[0] : null, noteCount: f ? f.notes.length : 0, matched: !!a,
+      commentCount: a ? a.commentCount : 0, aptNote: a && a.lastNote ? { by: a.lastNote.by, at: a.lastNote.at, days: noteD, text: a.lastNote.text } : null, staleNote };
     const put = (key, level, why) => sections[key].push({ ...base, level, why });
 
     if (stage === 'Unit Turn') { put('turns', 'grey', 'Persia / Teri'); continue; }
@@ -80,10 +92,11 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
       else if (assignedDays >= 3) { put('vendor', 'red', 'Follow up with vendor: ' + assignedDays + ' days since assigned. The tenant may not have heard.'); continue; }
       else if (assignedDays >= 2) { put('vendor', 'amber', 'Not scheduled: ' + assignedDays + ' days since assigned'); continue; }
     }
-    if (sched && sched < today && stage !== 'Completed') { put('passed', 'red', 'Scheduled ' + sched + ' (' + daysBetween(sched, today) + ' days ago)'); continue; }
+    if (stage === 'Scheduled' && !sched) { put('nodate', staleNote ? 'red' : 'amber', 'No scheduled date on the card.' + noteWhy); continue; }
+    if (sched && sched < today && stage !== 'Completed') { put('passed', staleNote ? 'red' : 'amber', 'Scheduled ' + sched + ' (' + daysBetween(sched, today) + ' days ago).' + noteWhy); continue; }
     if (stage === 'Troubleshooting Steps Sent' && (daysInStage || 0) >= 2) { put('tenant', 'amber', 'Troubleshooting sent ' + daysInStage + ' days ago'); continue; }
     if (stage === 'Internal Work Order Request') { put('internal', (daysInStage || 0) >= 3 ? 'amber' : 'grey', 'Internal request, ' + (daysInStage == null ? '?' : daysInStage) + ' days in stage'); continue; }
-    if (lastTouchDays != null && lastTouchDays >= 5) put('quiet', 'amber', 'Last contact ' + lastTouchDays + ' days ago');
+    if (lastTouchDays != null && lastTouchDays >= 5) put('quiet', 'amber', 'No contact or note in ' + lastTouchDays + ' days');
   }
   const sev = { red: 0, amber: 1, grey: 2 };
   for (const k of Object.keys(sections)) sections[k].sort((x, y) => sev[x.level] - sev[y.level] || (y.assignedDays ?? y.daysInStage ?? 0) - (x.assignedDays ?? x.daysInStage ?? 0));

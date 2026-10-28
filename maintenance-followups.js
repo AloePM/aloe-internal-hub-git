@@ -1,7 +1,9 @@
 // Maintenance follow-up notes and next-contact dates, kept by the hub in its own Supabase table (maintenance_followups).
 // Append-only: rows are added, never edited or deleted, so there is always a history of what was set and when. Nothing here touches
-// Rentvine, Aptly or Slack. Until individual logins exist, the author is "shared login" plus an optional self-reported name.
+// Rentvine, Aptly or Slack. Until individual logins exist, the author is "shared login" plus a name picked from a fixed list.
 const TABLE = 'maintenance_followups';
+// Until everyone has their own login, the person picks their name from this fixed list (same people as the expense log). Replace with real logins later.
+export const NAMES = ['Randi', 'Alexes', 'Teri', 'Persia', 'Roberto', 'Juan', 'Rita', 'Norman', 'Hannah', 'Dhyana'];
 
 export function validateEntry(b, today) {
   b = b || {};
@@ -22,8 +24,9 @@ export function validateEntry(b, today) {
     followUpOn = d;
   }
   if (action === 'note' && !note) return { error: 'Write a note first.' };
-  const authorName = String(b.authorName || '').replace(/[^\p{L}\p{N} .'-]/gu, '').trim().slice(0, 60);
-  return { entry: { wo_number: woNumber, property_id: propertyId || null, action, note: note || null, follow_up_on: followUpOn, author: 'shared login', author_name: authorName || null } };
+  const authorName = String(b.authorName || '');
+  if (!NAMES.includes(authorName)) return { error: 'Pick your name first.' };
+  return { entry: { wo_number: woNumber, property_id: propertyId || null, action, note: note || null, follow_up_on: followUpOn, author: 'shared login', author_name: authorName } };
 }
 
 export function makeFollowupStore(env = process.env, fetchImpl = fetch) {
