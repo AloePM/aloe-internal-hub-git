@@ -81,6 +81,8 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .rb-box input{display:block;width:100%;box-sizing:border-box;margin-top:4px;padding:8px 10px;border:1px solid #B4C3C3;border-radius:8px;font:inherit;font-size:14px}
 .rb-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
 .rb-msg{margin-top:10px;padding:8px 10px;border-radius:8px;background:#fde8e8;color:#a11d16;font-size:13px}
+.rb-box.wide{max-width:700px}
+.od-text{display:block;width:100%;box-sizing:border-box;min-height:340px;margin-top:8px;padding:10px 12px;border:1px solid #B4C3C3;border-radius:8px;font:inherit;font-size:14px;line-height:1.5}
 .cp-b{font-size:12px;padding:2px 10px;border:1px solid #0A5468;border-radius:6px;background:#fff;color:#0A5468;cursor:pointer;font-family:inherit}.cp-b:disabled{opacity:.5;cursor:default}.cp-wrap{margin:2px 0}
 .sv-link{font-size:12px;background:none;border:0;padding:0;color:#0A5468;text-decoration:underline;cursor:pointer;font-family:inherit}
 .sv-box{border:1px solid var(--rule);border-radius:10px;padding:10px 12px;margin:10px 0;background:#f8fbfb;font-size:13px}
@@ -812,7 +814,7 @@ async function tnLoad() {
 }
 function cpBtn(v, label) { return '<button type="button" class="cp-btn" data-copy="' + esc(v) + '" title="Copy ' + esc(label) + '">Copy</button>'; }
 document.addEventListener('click', function (ev) {
-  var b = ev.target && ev.target.closest ? ev.target.closest('.cp-btn') : null; if (!b) return;
+  var b = ev.target && ev.target.closest ? ev.target.closest('.cp-btn[data-copy]') : null; if (!b) return;
   var v = b.getAttribute('data-copy') || '';
   function done() { var o = b.textContent; b.textContent = 'Copied'; setTimeout(function () { b.textContent = o; }, 1200); }
   try { navigator.clipboard.writeText(v).then(done, function () { fallback(); }); } catch (e) { fallback(); }
@@ -882,7 +884,7 @@ function ibLine(c) {
 }
 function infoBlock(c) {
   if (!c) return '';
-  return '<div class="ib"><div class="ib-c">' + tenantCell(c) + '</div><div class="ib-m">' + balCell(c) + depCell(c) + wkLine(c) + compTag(c) + aptlyLink(c) + '</div></div>';
+  return '<div class="ib"><div class="ib-c">' + tenantCell(c) + '</div><div class="ib-m">' + balCell(c) + depCell(c) + wkLine(c) + compTag(c) + aptlyLink(c) + odBtn(c) + '</div></div>';
 }
 var BL = { state: 'idle', data: null };
 async function blLoad() {
@@ -1100,6 +1102,7 @@ function rbCalc(ak, moveOut) {
   return { id: id, mo: mo, ready: ready, est: est, show: show, mi: mi, gap: gap, st: st, tone: tone, rec: rec };
 }
 function rbCell(addr, ak, moveOut) {
+  var en = enFor(ak); if (en) return enCell(en);
   var c = rbCalc(ak, moveOut);
   if (!c) return '<span class="pl-small">No move-out date</span>';
   var h = '<b>' + esc(plDate(c.ready)) + '</b>' + (c.st ? ' <span class="sv-pill ' + c.tone + '">' + c.st + '</span>' : '')
@@ -1169,6 +1172,78 @@ async function rbLoad() {
   if (plState === 'done') plRender();
   if (window.reconRedraw) window.reconRedraw();
 }
+// ---- Owner ending management tag, and the owner email draft. Read-only: nothing is written to Aptly or Rentvine, and nothing is sent ----
+var EN = { map: {}, loaded: false, ok: false };
+function enFor(ak) { return ak && EN.map[ak] ? EN.map[ak] : null; }
+function enCell(en) {
+  return '<span class="sv-pill bad">Owner ending management</span><div class="pl-small">' + (en.endDate ? 'Ends ' + esc(plDate(en.endDate)) + ' · ' : '') + 'No unit turn, so no Ready by</div>';
+}
+async function enLoad() {
+  try {
+    var r = await fetch('/api/moveouts/ending', { credentials: 'same-origin' });
+    var j = await r.json().catch(function () { return null; });
+    if (r.ok && j && !j.error && Array.isArray(j.homes)) {
+      EN.map = {}; EN.ok = true;
+      j.homes.forEach(function (h) { var o = EN.map[h.addrKey]; if (!o || (h.endDate && (!o.endDate || h.endDate < o.endDate))) EN.map[h.addrKey] = h; });
+    }
+  } catch (e) {}
+  EN.loaded = true;
+  if (plState === 'done') plRender();
+  if (window.reconRedraw) window.reconRedraw();
+}
+var OD_PAINT = 'The existing paint does not appear to be very washable, particularly in areas such as the bathrooms. If we try to aggressively scrub some of these areas during cleaning, the paint may begin to come off. We recommend considering a good-quality, washable paint this time. Although it may cost a little more upfront, it should hold up much better between tenants, allow us to clean the walls more effectively at future turns, and potentially save you money over the long term.';
+function odBuild(n, photos) {
+  var tenant = n.tenant || [], recs = [], maint = [];
+  (n.owner || []).forEach(function (x) { (/^\s*(we\s+)?recommend/i.test(x) ? recs : maint).push(x); });
+  if (!tenant.length && !recs.length && !maint.length) return '';
+  var L = ['Hi,', '', 'We completed the move-out inspection and wanted to give you an update on the condition of the home and the items we identified that will need attention before the next tenant.', ''];
+  if (tenant.length) { L.push('Items we are reviewing as potential tenant responsibility. We will compare these against the move-in condition and the lease before determining the appropriate tenant charges:'); tenant.forEach(function (x) { L.push('- ' + x); }); L.push(''); }
+  if (maint.length) { L.push('Maintenance items that need attention (these are not tenant charges):'); maint.forEach(function (x) { L.push('- ' + x); }); L.push(''); }
+  if (recs.length) { L.push('Our recommendations:'); recs.forEach(function (x) { L.push('- ' + x); }); L.push(''); }
+  var paint = recs.concat(maint).some(function (x) { return /paint/i.test(x); });
+  if (paint) L.push(OD_PAINT, '', 'Please let me know if you would like us to get a painting quote, and we can start working on that along with the other turn items.', '');
+  else if (recs.length || maint.length) L.push('Please let me know if you would like us to get quotes for any of these items, and we can start working on them along with the other turn items.', '');
+  L.push('Move out photos: ' + (photos || '[paste the Zinspector link]'), '', 'Thank you,');
+  return L.join('\n');
+}
+function odBtn(c) {
+  if (!c || !c.aptlyId || enFor(c.addrKey)) return '';
+  return '<div class="sv-row"><button type="button" class="cp-btn od-open" data-aid="' + esc(c.aptlyId) + '" data-addr="' + esc(c.address || '') + '">Draft owner email</button></div>';
+}
+function odClose() { var b = document.getElementById('od-back'); if (b) b.remove(); document.removeEventListener('keydown', odKey_); var o = RB.opener; if (o && document.contains(o)) o.focus(); }
+function odKey_(e) { if (e.key === 'Escape') odClose(); }
+async function odOpen(btn) {
+  var aid = btn.getAttribute('data-aid'), addr = btn.getAttribute('data-addr') || '';
+  RB.opener = btn;
+  var back = document.createElement('div'); back.id = 'od-back'; back.className = 'rb-back';
+  back.innerHTML = '<div class="rb-box wide" role="dialog" aria-modal="true" aria-labelledby="od-h"><h3 id="od-h">Owner email draft: ' + esc(addr) + '</h3>'
+    + '<p class="pl-small">Written from the Move-Out Notes table on the Aptly card. Nothing is sent. Read it, change it, copy it into an email on the Aptly card, and send it yourself. The tenant list is “potential tenant responsibility”. Move anything that is really a maintenance item, and delete any line that does not apply, before you send.</p>'
+    + '<div id="od-body" class="pl-small">Reading the card…</div>'
+    + '<div class="rb-btns"><button type="button" class="cp-btn" id="od-copy" disabled>Copy text</button><a class="cp-btn" style="text-decoration:none" target="_blank" rel="noopener" href="https://app.getaptly.com/ticket/YA3QWmPebvMwLwbB3/' + encodeURIComponent(aid) + '">Open the card in Aptly</a><button type="button" class="cp-btn" id="od-close">Close</button></div></div>';
+  document.body.appendChild(back); document.addEventListener('keydown', odKey_);
+  back.addEventListener('click', function (e) { if (e.target === back) odClose(); });
+  document.getElementById('od-close').onclick = odClose;
+  var body = document.getElementById('od-body');
+  try {
+    var r = await fetch('/api/moveouts/owner-notes/' + encodeURIComponent(aid), { credentials: 'same-origin' });
+    var j = await r.json().catch(function () { return null; });
+    if (!document.getElementById('od-body')) return;
+    if (!r.ok || !j || j.error) { body.textContent = (j && j.error) || ('The server answered ' + r.status); return; }
+    var text = odBuild(j, j.photos);
+    if (!text) { body.textContent = 'The Move-Out Notes table on this card is empty, so there is nothing to write from yet. Fill it in on the Aptly card first.'; return; }
+    body.innerHTML = '<textarea id="od-text" class="od-text" aria-label="Owner email draft"></textarea>';
+    var ta = document.getElementById('od-text'); ta.value = text;
+    var cp = document.getElementById('od-copy'); cp.disabled = false;
+    cp.onclick = function () {
+      var v = ta.value;
+      function done() { cp.textContent = 'Copied'; setTimeout(function () { cp.textContent = 'Copy text'; }, 1200); }
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(done, function () { ta.select(); try { document.execCommand('copy'); done(); } catch (e) {} });
+      else { ta.select(); try { document.execCommand('copy'); done(); } catch (e) {} }
+    };
+    ta.focus();
+  } catch (e) { var b2 = document.getElementById('od-body'); if (b2) b2.textContent = 'Could not reach the hub (' + e.message + ').'; }
+}
+document.addEventListener('click', function (e) { var b = e.target.closest && e.target.closest('.od-open'); if (b) odOpen(b); });
 // ---- Repair items (saved in hub storage; never written to Aptly or Rentvine) ----
 var RP = { sums: {}, cur: null, opener: null };
 var RP_PAYER = [['tbd', 'Not decided'], ['tenant', 'Tenant'], ['owner', 'Owner'], ['aloe', 'Aloe']];
@@ -1425,6 +1500,7 @@ if (['recon', 'audit', 'pipeline', 'turns', 'upcoming', 'main'].indexOf(location
 if (activeTab === 'main' || activeTab === 'pipeline') setOldView(true);
 loadData(false);
 rbLoad();
+enLoad();
 </script>
 <script src="/hub-shell.js" defer></script>
 </body>
