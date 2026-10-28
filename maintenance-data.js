@@ -269,3 +269,52 @@ export function assignCards(openItems, ctx, today = todayPhoenix()) {
     return { id: o.id, number: o.number, summary: o.summary, status: o.status, statusId: o.statusId, created: o.created, vendor: o.vendor, items };
   });
 }
+
+// ---------- per-work-order rows for the "By work order" view ----------
+// Possible emergency: keyword guess on the description (tenant-chosen priority is not used).
+const EMERGENCY = [
+  ['Active leak', /\b(active|ongoing|running|spraying|gushing|burst|bursting|flooding|flooded|flood)\b[^.]{0,40}\b(leak|water|pipe)|\bleak(s|ing|ed)?\b/i],
+  ['Water damage', /water damage|flood|burst pipe|pipe burst|ceiling.{0,15}(collaps|dripping)/i],
+  ['No A/C', /no (a\/?c|ac\b|air ?conditioning|cooling)|(a\/?c|ac|air ?conditioner|air conditioning)[^.]{0,25}(not (working|cooling|blowing)|isn'?t (working|cooling)|(is )?(out|down|broken))|not cooling|won'?t cool/i],
+  ['No heat', /no heat\b|(heat|heater|furnace|heating)[^.]{0,25}(not working|isn'?t working|out|broken|won'?t)/i],
+  ['No power', /no (power|electricity)|power (is )?out|sparking|sparks|burning smell/i],
+  ['Gas smell', /gas (smell|leak)|smell(s)? (of )?gas/i],
+  ['Sewage', /sewage|sewer (back|smell)|backing up|backed up/i],
+  ['No hot water', /no hot water/i],
+  ['Fire / smoke', /\bfire\b|smoke damage/i],
+  ['Lockout / security', /locked out|lockout|break.?in|broken (door|window)|can'?t lock/i],
+];
+export function emergencyFlag(text) {
+  const t = squash(text);
+  if (!t) return '';
+  const yard = /irrigat|sprinkler|\byard\b|hose bib|lawn/i.test(t) && !/\b(house|inside|ceiling|wall|kitchen|bath|sink|toilet|water heater)\b/i.test(t);
+  for (const [label, re] of EMERGENCY) { if (label === 'Active leak' && yard) continue; if (re.test(t)) return label; }
+  return '';
+}
+
+// Work order "stage" names (same names Aptly's Work Orders board uses for these Rentvine statuses) and the order sections are shown in.
+export const STAGE_ORDER = ['Open', 'Estimating', 'Troubleshooting Steps Sent', 'Internal Work Order Request', 'Home Warranty', 'Requested', 'Scheduled', 'Waiting for parts', 'On Hold', 'Owner Maintained', 'HVAC Tune Ups', 'Move Out', 'Unit Turn', 'Renewal Walk Through'];
+// records = rows from Rentvine /maintenance/work-orders ({workOrder, contact, unit, property}). Open rule matches the hub Home page.
+export function buildWorkOrderRows(records, today = todayPhoenix()) {
+  const out = [];
+  for (const rec of Array.isArray(records) ? records : []) {
+    const wo = (rec && rec.workOrder) || rec || {};
+    if (!wo.workOrderID) continue;
+    const primary = parseInt(wo.primaryWorkOrderStatusID || 0);
+    if (primary === 3 || primary === 5 || wo.closedDate || wo.dateClosed) continue;
+    const pid = String(wo.propertyID || (rec.property && rec.property.propertyID) || '');
+    const sid = Number(wo.workOrderStatusID || 0);
+    const summary = squash(wo.agentSummary) || stripHtml(wo.description);
+    const created = day(wo.dateTimeCreated);
+    const c = (rec && rec.contact) || {};
+    out.push({
+      id: String(wo.workOrderID), number: String(wo.workOrderNumber || ''), propertyId: /^\d{1,9}$/.test(pid) ? pid : '',
+      address: squash((rec.unit && (rec.unit.address || rec.unit.name)) || (rec.property && rec.property.address) || wo.unitAddress || ''),
+      created, ageDays: created ? daysBetween(created, today) : null, statusId: sid, stage: STATUS[sid] || (sid ? 'Status ' + sid : 'Unknown'),
+      vendor: squash(c.name), summary: summary.length > 200 ? summary.slice(0, 200) + '...' : summary,
+      issue: itemOf(summary) || 'Other', emergency: emergencyFlag(summary), moveOut: sid === 23,
+      team: sid === 25 ? 'Persia / Teri' : 'Roberto', scheduled: day(wo.scheduledStartDate) || null,
+    });
+  }
+  return out;
+}

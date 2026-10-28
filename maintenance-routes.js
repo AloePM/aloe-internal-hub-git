@@ -5,7 +5,7 @@
 // Install (one line in server.js, after installMoveoutProperty):
 //   const { installMaintenance } = await import('./maintenance-routes.js'); installMaintenance(app, rvFetch, fetchAllRVOpenWOs, findBillMatchedWOs);
 import { addrKey, extractServices, readProperty } from './moveouts-property.js';
-import { groupOpenByProperty, readCategories, applianceRows, warrantyRows, findWarrantyExpires, findNotes, buildHints, whoPays, todayPhoenix, ownerVendors, homeWarrantyInfo, mapHistory, assignCards } from './maintenance-data.js';
+import { groupOpenByProperty, readCategories, applianceRows, warrantyRows, findWarrantyExpires, findNotes, buildHints, whoPays, todayPhoenix, ownerVendors, homeWarrantyInfo, mapHistory, assignCards, buildWorkOrderRows, STAGE_ORDER } from './maintenance-data.js';
 import { loadAriRows, ariForAddress } from './maintenance-ari.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
@@ -77,6 +77,31 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched) 
       }
       res.json(listCache.v);
     } catch (e) { console.error('[maintenance] list', e.message); res.status(502).json({ error: 'Could not read open work orders from Rentvine.' }); }
+  });
+
+  // One row per open work order (vendor, stage, issue type, emergency keyword flag) for the "By work order" view. Read-only, cached 2 minutes.
+  let woCache = { at: 0, v: null }, woPending = null;
+  app.get('/api/maintenance/workorders', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+      if (!(woCache.v && Date.now() - woCache.at < LIST_TTL) || req.query.fresh === '1') {
+        if (!woPending) woPending = (async () => {
+          let all = [];
+          for (let page = 1; page <= 20; page++) {
+            const b = await rvFetch('/maintenance/work-orders', { pageSize: 100, page });
+            if (b && b.error) throw new Error(b.error);
+            const items = Array.isArray(b) ? b : (b && b.data) || [];
+            all = all.concat(items);
+            if (items.length < 100) break;
+          }
+          const rows = buildWorkOrderRows(all, todayPhoenix());
+          if (rows.some((r) => !r.address)) for (const r of rows) if (!r.address && r.propertyId) r.address = await addressFor(r.propertyId);
+          woCache = { at: Date.now(), v: { rows, stages: STAGE_ORDER, asOf: new Date().toISOString() } };
+        })().finally(() => { woPending = null; });
+        await woPending;
+      }
+      res.json(woCache.v);
+    } catch (e) { console.error('[maintenance] workorders', e.message); res.status(502).json({ error: 'Could not read work orders from Rentvine.' }); }
   });
 
   // Open work orders that already have an invoice (same matching the nightly Slack post uses). Read-only, cached 15 minutes.

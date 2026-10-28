@@ -54,8 +54,19 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 .tbl td{padding:8px 10px;border-top:1px solid var(--rule);vertical-align:top}
 .ro{font-size:12px;color:var(--muted);margin-top:6px}
 .sk{background:linear-gradient(90deg,#eef3f3,#f8fbfb,#eef3f3);border-radius:8px;height:46px;margin-bottom:8px}
-@media (max-width:900px){.crow{grid-template-columns:1fr 1fr}.crow>*{min-width:0;overflow-wrap:anywhere}.top,.main{padding-left:16px;padding-right:16px}.top{padding-left:64px}.row{grid-template-columns:1fr 70px 90px}.row .snip{display:none}.kpis{grid-template-columns:1fr}.kv{grid-template-columns:110px 1fr}.tbl{display:block;overflow-x:auto}}
+@media (max-width:900px){.crow{grid-template-columns:1fr 1fr}.wrow{grid-template-columns:1fr 90px}.wrow .wst,.wrow .wv{display:none}.fl{grid-template-columns:1fr 1fr}.crow>*{min-width:0;overflow-wrap:anywhere}.top,.main{padding-left:16px;padding-right:16px}.top{padding-left:64px}.row{grid-template-columns:1fr 70px 90px}.row .snip{display:none}.kpis{grid-template-columns:1fr}.kv{grid-template-columns:110px 1fr}.tbl{display:block;overflow-x:auto}}
 @media (prefers-reduced-motion:reduce){.panel{transition:none}}
+
+.seg{display:inline-flex;border:1px solid #B4C3C3;border-radius:10px;overflow:hidden;margin-bottom:12px;background:#fff}
+.seg button{min-height:44px;padding:0 18px;border:0;background:#fff;font:700 14px Manrope,system-ui,sans-serif;color:#0A5468;cursor:pointer}.seg button.on{background:#0A5468;color:#fff}.seg button:focus-visible{outline:2px solid #2A8FA6;outline-offset:-2px}
+.fl{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 10px;margin-bottom:10px}.fl label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.fl select,.fl input[type=search]{width:100%;min-height:40px;margin-top:3px;padding:0 10px;border:1px solid #B4C3C3;border-radius:8px;background:#fff;font:500 14px Manrope,system-ui,sans-serif;color:#1B2B2E}
+.chk{display:flex!important;align-items:center;gap:8px;min-height:40px;text-transform:none!important;letter-spacing:0!important;font-size:13px!important;color:var(--ink2)!important}.chk input{width:18px;height:18px}
+.wrow{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,2.6fr) 160px minmax(0,1.2fr) 90px;gap:12px;align-items:center;padding:11px 16px;min-height:52px;border-top:1px solid var(--rule);cursor:pointer;width:100%;text-align:left;background:#fff;border-left:0;border-right:0;border-bottom:0;font:inherit;color:inherit}
+.wrow:hover{background:#F1F7F8}.wrow:focus-visible{outline:2px solid #2A8FA6;outline-offset:-2px}.wrow.head{cursor:default;background:#E6EFF0;border-top:0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);min-height:40px}.wrow.head:hover{background:#E6EFF0}
+.wrow .req{min-width:0}.wrow .req .s{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}.wrow .req .n{font-size:12px;font-weight:700;color:var(--ink2)}
+.gh{padding:9px 16px;background:#F1F7F8;border-top:1px solid var(--rule);font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#0A5468;display:flex;gap:8px;align-items:center}
+.p-emg{background:var(--red-d);color:var(--red)}
 </style>
 </head>
 <body>
@@ -69,11 +80,29 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 <div class="main">
   <div class="kpis" id="kpis"></div>
   <div id="closing"></div>
+  <div class="seg" id="seg" role="group" aria-label="View"><button type="button" class="on" data-mode="home" aria-pressed="true">By home</button><button type="button" data-mode="wo" aria-pressed="false">By work order</button></div>
+  <div id="homeView">
   <div class="bar">
     <input class="search" id="q" type="search" placeholder="Search address" aria-label="Search address" autocomplete="off">
     <span class="note" id="count"></span>
   </div>
   <div class="list" id="list"><div class="empty">Loading open work orders...</div></div>
+  </div>
+  <div id="woView" hidden>
+    <div class="fl">
+      <label>Stage<select id="fStage"><option value="">All stages</option></select></label>
+      <label>Vendor<select id="fVendor"><option value="">All vendors</option></select></label>
+      <label>Issue type<select id="fIssue"><option value="">All issue types</option></select></label>
+      <label>Age<select id="fAge"><option value="">Any age</option><option value="3">3+ days</option><option value="7">7+ days</option><option value="14">14+ days</option></select></label>
+      <label>Sort by<select id="fSort"><option value="old">Oldest first</option><option value="new">Newest first</option><option value="vendor">Vendor</option><option value="issue">Issue type</option><option value="stage">Stage</option><option value="addr">Address</option><option value="emg">Possible emergency first</option></select></label>
+      <label>Group into sections<select id="fGroup"><option value="stage">Stage</option><option value="vendor">Vendor</option><option value="issue">Issue type</option><option value="emg">Emergency</option><option value="none">No sections</option></select></label>
+      <label>Search address or request<input type="search" id="wq" placeholder="Address or words" autocomplete="off"></label>
+      <div><label class="chk"><input type="checkbox" id="fEmg"> Possible emergency only</label><label class="chk"><input type="checkbox" id="fMove"> Move-outs only</label></div>
+    </div>
+    <p class="note" id="wcount" style="margin-bottom:8px"></p>
+    <div class="list" id="wolist"><div class="empty">Loading work orders...</div></div>
+    <p class="ro">Possible emergency is a keyword guess from the request text (leaks, no A/C, no heat, no power, gas smell, sewage and similar). It is not a priority set by anyone. Unit turns belong to Persia or Teri.</p>
+  </div>
   <p class="ro">View only. This page does not change anything in Rentvine, Aptly or Slack. Move-out work orders are also on the Move-outs page.</p>
 </div>
 
@@ -148,6 +177,83 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
       box.appendChild(det);
     }).catch(function () {});
   }
+  // ---------- By work order view ----------
+  var MODE = 'home', WO = null, STAGES = [];
+  function opt(sel, vals, keep) { var cur = sel.value; while (sel.options.length > 1) sel.remove(1); vals.forEach(function (v) { sel.appendChild(h('option', { value: v[0], text: v[1] })); }); if (keep) sel.value = cur; }
+  function fillFilters() {
+    var st = {}, vd = {}, is = {}; var noVendor = false;
+    WO.forEach(function (r) { st[r.stage] = 1; if (r.vendor) vd[r.vendor] = 1; else noVendor = true; is[r.issue] = 1; });
+    opt($('fStage'), STAGES.filter(function (x) { return st[x]; }).concat(Object.keys(st).filter(function (x) { return STAGES.indexOf(x) < 0; })).map(function (x) { return [x, x]; }), true);
+    opt($('fVendor'), (noVendor ? [['__none', 'No vendor yet']] : []).concat(Object.keys(vd).sort().map(function (x) { return [x, x]; })), true);
+    opt($('fIssue'), Object.keys(is).sort(function (a, b) { return a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b); }).map(function (x) { return [x, x]; }), true);
+  }
+  function stageRank(x) { var i = STAGES.indexOf(x); return i < 0 ? 99 : i; }
+  var SORTS = {
+    old: function (a, b) { return (b.ageDays == null ? -1 : b.ageDays) - (a.ageDays == null ? -1 : a.ageDays); },
+    'new': function (a, b) { return (a.ageDays == null ? 9999 : a.ageDays) - (b.ageDays == null ? 9999 : b.ageDays); },
+    vendor: function (a, b) { return (a.vendor ? 0 : 1) - (b.vendor ? 0 : 1) || a.vendor.localeCompare(b.vendor); },
+    issue: function (a, b) { return a.issue.localeCompare(b.issue); },
+    stage: function (a, b) { return stageRank(a.stage) - stageRank(b.stage); },
+    addr: function (a, b) { return a.address.localeCompare(b.address); },
+    emg: function (a, b) { return (a.emergency ? 0 : 1) - (b.emergency ? 0 : 1); }
+  };
+  function groupKey(g, r) { return g === 'stage' ? r.stage : g === 'vendor' ? (r.vendor || 'No vendor yet') : g === 'issue' ? r.issue : g === 'emg' ? (r.emergency ? 'Possible emergency' : 'Everything else') : ''; }
+  function groupCmp(g) {
+    return function (a, b) {
+      if (g === 'stage') return stageRank(a) - stageRank(b);
+      if (g === 'emg') return (a === 'Possible emergency' ? 0 : 1) - (b === 'Possible emergency' ? 0 : 1);
+      if (g === 'vendor') return (a === 'No vendor yet' ? 0 : 1) - (b === 'No vendor yet' ? 0 : 1) || a.localeCompare(b);
+      return (a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b));
+    };
+  }
+  function woRow(r) {
+    var b = h('button', { 'class': 'wrow', type: 'button' }, [
+      h('span', { 'class': 'addr' }, [r.address || (r.propertyId ? 'Property ' + r.propertyId : 'Address not shown'), r.moveOut ? h('span', { 'class': 'pill p-blue', style: 'margin-left:8px', text: 'Move-out' }) : null]),
+      h('span', { 'class': 'req' }, [h('span', { 'class': 'n' }, ['#' + r.number + ' ', r.emergency ? h('span', { 'class': 'pill p-emg', text: 'Possible emergency: ' + r.emergency }) : null, r.team !== 'Roberto' ? h('span', { 'class': 'pill p-grey', style: 'margin-left:6px', text: r.team }) : null]), h('span', { 'class': 's', text: r.summary })]),
+      h('span', { 'class': 'wst' }, [h('span', { 'class': 'pill p-grey', text: r.stage })]),
+      h('span', { 'class': 'wv', text: r.vendor || 'No vendor yet' }),
+      h('span', {}, [agePill(r.ageDays)])]);
+    if (r.propertyId) b.addEventListener('click', function () { openPanel(r.propertyId, r.address, b); }); else b.disabled = true;
+    return b;
+  }
+  function renderWO() {
+    var box = $('wolist'); box.textContent = '';
+    if (!WO) return;
+    var f = { st: $('fStage').value, vd: $('fVendor').value, is: $('fIssue').value, age: Number($('fAge').value || 0), emg: $('fEmg').checked, mv: $('fMove').checked, q: $('wq').value.trim().toLowerCase(), sort: $('fSort').value, grp: $('fGroup').value };
+    var rows = WO.filter(function (r) {
+      if (f.st && r.stage !== f.st) return false;
+      if (f.vd === '__none' ? !!r.vendor : (f.vd && r.vendor !== f.vd)) return false;
+      if (f.is && r.issue !== f.is) return false;
+      if (f.age && !(r.ageDays != null && r.ageDays >= f.age)) return false;
+      if (f.emg && !r.emergency) return false;
+      if (f.mv && !r.moveOut) return false;
+      if (f.q && (r.address + ' ' + r.summary + ' ' + r.number + ' ' + r.vendor).toLowerCase().indexOf(f.q) < 0) return false;
+      return true;
+    });
+    rows.sort(SORTS[f.sort] || SORTS.old);
+    $('wcount').textContent = rows.length + ' of ' + WO.length + ' open work orders';
+    box.appendChild(h('div', { 'class': 'wrow head', role: 'row' }, [h('span', { text: 'Address' }), h('span', { text: 'Request' }), h('span', { 'class': 'wst', text: 'Stage' }), h('span', { 'class': 'wv', text: 'Vendor' }), h('span', { text: 'Age' })]));
+    if (!rows.length) { box.appendChild(h('div', { 'class': 'empty', text: WO.length ? 'No work orders match these filters.' : 'No open work orders right now.' })); return; }
+    if (f.grp === 'none') { rows.forEach(function (r) { box.appendChild(woRow(r)); }); return; }
+    var groups = {}; rows.forEach(function (r) { var k = groupKey(f.grp, r); (groups[k] = groups[k] || []).push(r); });
+    Object.keys(groups).sort(groupCmp(f.grp)).forEach(function (k) {
+      box.appendChild(h('div', { 'class': 'gh' }, [k, h('span', { 'class': 'pill p-grey', text: String(groups[k].length) })]));
+      groups[k].forEach(function (r) { box.appendChild(woRow(r)); });
+    });
+  }
+  function loadWO(fresh) {
+    api('/api/maintenance/workorders' + (fresh ? '?fresh=1' : '')).then(function (d) { WO = d.rows; STAGES = d.stages || []; fillFilters(); renderWO(); })
+      .catch(function (e) { $('wolist').textContent = ''; $('wolist').appendChild(h('div', { 'class': 'err', text: e.message })); });
+  }
+  function setMode(m) {
+    MODE = m; $('homeView').hidden = m !== 'home'; $('woView').hidden = m !== 'wo';
+    Array.prototype.forEach.call($('seg').children, function (b) { var on = b.getAttribute('data-mode') === m; b.className = on ? 'on' : ''; b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    if (m === 'wo' && !WO) loadWO(false);
+  }
+  Array.prototype.forEach.call($('seg').children, function (b) { b.addEventListener('click', function () { setMode(b.getAttribute('data-mode')); }); });
+  ['fStage', 'fVendor', 'fIssue', 'fAge', 'fSort', 'fGroup', 'fEmg', 'fMove'].forEach(function (id) { $(id).addEventListener('change', renderWO); });
+  $('wq').addEventListener('input', renderWO);
+
   function load(fresh) {
     $('refresh').disabled = true;
     api('/api/maintenance/properties' + (fresh ? '?fresh=1' : '')).then(function (d) { ALL = d.properties; renderKpis(d); renderList(); loadClosing(fresh); })
@@ -224,7 +330,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
   function closePanel() { token++; $('veil').classList.remove('on'); $('panel').classList.remove('on'); if (opener) { try { opener.focus(); } catch (e) {} } }
 
   $('q').addEventListener('input', renderList);
-  $('refresh').addEventListener('click', function () { load(true); });
+  $('refresh').addEventListener('click', function () { load(true); if (MODE === 'wo') loadWO(true); else WO = null; });
   $('pclose').addEventListener('click', closePanel);
   $('veil').addEventListener('click', closePanel);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $('panel').classList.contains('on')) closePanel(); });
