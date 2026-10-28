@@ -74,7 +74,15 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .dt-big{font-size:20px;font-weight:800;margin-bottom:4px}.dt-small{font-size:12px;color:#4b5b5b;margin-top:3px}
 .dt-links{margin-top:8px;display:flex;gap:12px}.dt-tbl td,.dt-tbl th{vertical-align:top}
 .dt-hrow{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #eef2f2;font-size:13px}.dt-hrow:first-of-type{border-top:0}
-.dt-line{display:flex;justify-content:space-between;padding:5px 0;font-size:13px}.dt-det{margin-top:10px}.dt-det .card{border:0;padding:0;box-shadow:none;background:none}.dt-det .card>div:first-child{display:none}.dt-det .card>div[style*="grid-template-columns"]{grid-template-columns:1fr !important}.dt-warn{margin-top:8px;background:#fdf0dc;color:#8a5200;border-radius:8px;padding:8px 10px;font-size:12px}.dt-det summary{cursor:pointer;font-size:12px;color:#0A5468;font-weight:700}
+.dt-line{display:flex;justify-content:space-between;padding:5px 0;font-size:13px}.dt-det{margin-top:10px}.dt-det .card{border:0;padding:0;box-shadow:none;background:none}.dt-det .card>div:first-child{display:none}.dt-det .card>div[style*="grid-template-columns"]{grid-template-columns:1fr !important}.td-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:12px 28px 0}
+.td-strip:empty{display:none}
+.td-tile{background:#fff;border:1px solid #e1e8e8;border-top:4px solid #2A8FA6;border-radius:12px;padding:10px 12px}
+.td-tile.bad{border-top-color:#a11d16}.td-tile.warn{border-top-color:#d4820a}.td-tile.ok{border-top-color:#0fa86c}
+.td-l{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#4b5b5b}.td-n{font-size:26px;font-weight:800;margin:2px 0 4px}
+.td-r{margin-top:4px;font-size:13px}.td-btns{margin:0 0 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+@media(max-width:900px){.td-strip{grid-template-columns:repeat(2,1fr);padding:12px 16px 0}}
+@media(max-width:520px){.td-strip{grid-template-columns:1fr}}
+.dt-warn{margin-top:8px;background:#fdf0dc;color:#8a5200;border-radius:8px;padding:8px 10px;font-size:12px}.dt-det summary{cursor:pointer;font-size:12px;color:#0A5468;font-weight:700}
 .dt-name{background:none;border:0;padding:0;font:inherit;font-weight:700;color:#0A5468;text-decoration:underline;cursor:pointer;text-align:left}
 @media(max-width:800px){.dt-grid3,.dt-cols{grid-template-columns:1fr}}
 .pl-small{font-size:12px;color:var(--muted)}
@@ -166,6 +174,8 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
     <button class="btn btn-line" id="force-btn" type="button">Live Refresh</button>
   </div>
 </header>
+
+<div id="today-strip" class="td-strip" aria-label="Today"></div>
 
 <div class="nav" role="tablist" aria-label="Move-out sections">
   <button class="tab active" role="tab" id="tab-recon" data-tab="recon" aria-selected="true" type="button">To close out</button>
@@ -1063,7 +1073,7 @@ function plRender() {
     + kpi('Open 14+ days', stuck.length, 'Longest first below', stuck.length ? '#e03e3e' : '#0fa86c')
     + kpi('Longest open', turns.length ? Math.max.apply(null, turns.map(function (c) { return c.daysInStage || 0; })) + ' d' : '—', 'Days in current stage', '#d4820a')
     + kpi('Nobody assigned', turns.filter(function (c) { return !c.assigned; }).length, 'In turn stages', '#3CC3E1')
-    + '</div><p class="pl-note">Cards in “Complete Repairs and Bills” and “Disposition sent- Repairs still in progress” (repairs, cleaning, landscaping or remodel still going), longest first. A card in Complete Repairs and Bills also stays in To close out until it reaches Disposition sent. Turn steps come from the Rentvine work orders created since the move-out walk. Showing status will be added next.</p>';
+    + '</div><p class="pl-note">Cards in “Complete Repairs and Bills” and “Disposition sent- Repairs still in progress” (repairs, cleaning, landscaping or remodel still going), longest first. A card in Complete Repairs and Bills also stays in To close out until it reaches Disposition sent. Turn steps come from the Rentvine work orders created since the move-out walk. Showing status will be added next.</p>' + avBtns();
   turns = turns.slice().sort(function (a, b) { return (b.daysInStage || 0) - (a.daysInStage || 0); });
   if (!turns.length) th += '<div class="pl-wrap"><div class="pl-empty">No units in turn right now.</div></div>';
   else {
@@ -1098,6 +1108,7 @@ function plRender() {
     uh += '</tbody></table></div>';
   }
   U.innerHTML = uh + '</div>';
+  tdRender();
 }
 // ---- Ready by, Show from and Move-in. Ready by is saved in hub storage; Move-in is read from Rentvine; nothing is written to Aptly or Rentvine ----
 var RB = { ready: {}, moveins: {}, ok: false, loaded: false, settings: { showFromDays: 3, readyDays: 14 }, opener: null, rev: 0 };
@@ -1526,6 +1537,92 @@ document.addEventListener('click', function (e) {
   if (go) { var t = document.getElementById(go.getAttribute('data-dt-go')); if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   var b = e.target.closest && e.target.closest('.dt-addr');
   if (b) dtOpen(b);
+});
+
+// ---- Today strip, availability list and Share with leasing (read-only; nothing is sent) ----
+function tdActive() {
+  var out = [];
+  ((PL && PL.cards) || []).forEach(function (c) {
+    var mo = rbIso(c.moveOutDate); if (!mo || !c.addrKey) return;
+    if (/^complete$/i.test((c.stage || '').trim()) || enFor(c.addrKey)) return;
+    var cl = rbCalc(c.addrKey, mo); if (!cl) return;
+    out.push({ c: c, cl: cl });
+  });
+  return out;
+}
+function tdTile(cls, label, n, rows, foot) {
+  var h = '<div class="td-tile ' + cls + '"><div class="td-l">' + esc(label) + '</div><div class="td-n">' + n + '</div>';
+  rows.slice(0, 3).forEach(function (r) { h += '<div class="td-r">' + r.link + '<div class="dt-small">' + esc(r.text) + '</div></div>'; });
+  if (rows.length > 3) h += '<div class="dt-small">+ ' + (rows.length - 3) + ' more</div>';
+  if (foot) h += '<div class="dt-small">' + esc(foot) + '</div>';
+  return h + '</div>';
+}
+function tdRender() {
+  var el = document.getElementById('today-strip'); if (!el) return;
+  if (!PL || plState !== 'done' || !RB.loaded) { el.innerHTML = ''; return; }
+  var t = wkToday(), wk = rbAdd(t, 7), act = tdActive();
+  function link(x) { return dtLink(x.c.address, x.c.addrKey, rbIso(x.c.moveOutDate), x.c.address, 'dt-name') || esc(x.c.address); }
+  var late = act.filter(function (x) { return x.cl.st === 'Late'; }), tight = act.filter(function (x) { return x.cl.st === 'Tight'; });
+  var lt = late.concat(tight).map(function (x) { return { link: link(x), text: x.cl.st + ' · Ready ' + plDate(x.cl.ready) + ' · move-in ' + plDate(x.cl.mi) }; });
+  var soon = act.filter(function (x) { return !x.cl.mi && x.cl.show >= t && x.cl.show <= wk; }).sort(function (a, b) { return a.cl.show.localeCompare(b.cl.show); })
+    .map(function (x) { return { link: link(x), text: 'Show from ' + plDate(x.cl.show) }; });
+  var nowN = act.filter(function (x) { return !x.cl.mi && x.cl.show < t; }).length;
+  var byAk = {}; act.forEach(function (x) { byAk[x.c.addrKey] = x; });
+  var mis = [];
+  Object.keys(RB.moveins || {}).forEach(function (ak) {
+    (RB.moveins[ak] || []).forEach(function (m) {
+      if (m.moveIn < t || m.moveIn > wk) return;
+      var x = byAk[ak];
+      mis.push({ d: m.moveIn, link: x ? link(x) : esc(ak), text: 'Move-in ' + plDate(m.moveIn) + (x ? ' · Ready ' + plDate(x.cl.ready) : '') });
+    });
+  });
+  mis.sort(function (a, b) { return a.d.localeCompare(b.d); });
+  var ns = act.filter(function (x) { return x.cl.mo <= t && !(x.cl.rec && x.cl.rec.readyBy); }).map(function (x) { return { link: link(x), text: 'Estimate ' + plDate(x.cl.ready) }; });
+  el.innerHTML = tdTile(late.length ? 'bad' : lt.length ? 'warn' : 'ok', 'Late or tight', lt.length, lt, lt.length ? '' : 'Nothing is late or tight')
+    + tdTile('info', 'Show from this week', soon.length, soon, nowN ? nowN + ' available now' : '')
+    + tdTile('info', 'Move-ins in 7 days', mis.length, mis, RB.ok ? '' : 'Move-in dates are unavailable right now')
+    + tdTile(ns.length ? 'warn' : 'ok', 'Ready by not set', ns.length, ns, ns.length ? 'Using the estimate only' : '');
+}
+function avItems() {
+  var lim = rbAdd(wkToday(), 21);
+  return tdActive().filter(function (x) { return !x.cl.mi && x.cl.show <= lim; }).sort(function (a, b) { return a.cl.show.localeCompare(b.cl.show) || a.c.address.localeCompare(b.c.address); });
+}
+function avText() {
+  var items = avItems(); if (!items.length) return '';
+  var t = wkToday(), s = 'Availability as of ' + plDate(t) + ':\n';
+  items.forEach(function (x) {
+    s += '• ' + x.c.address + ': ' + (x.cl.show <= t ? 'showing now' : 'show from ' + plDate(x.cl.show)) + ', ' + (x.cl.rec && x.cl.rec.readyBy ? (x.cl.ready <= t ? 'ready now' : 'ready by ' + plDate(x.cl.ready)) : (x.cl.ready <= t ? 'ready date being confirmed' : 'ready about ' + plDate(x.cl.ready))) + '\n';
+  });
+  return s + '\nDates marked "about" are estimates until we have seen the home.';
+}
+function avBtns() {
+  return '<div class="td-btns"><button type="button" class="dt-btn" id="av-copy">Copy availability list</button> <button type="button" class="dt-btn" id="av-share">Share with leasing</button> <span class="dt-small">Homes with no move-in yet. Nothing is sent.</span></div>';
+}
+function avCopy(v, done, fallback) { try { navigator.clipboard.writeText(v).then(done, fallback); } catch (er) { fallback(); } }
+function avClip(b, v) {
+  var o = b.textContent;
+  function done() { b.textContent = 'Copied'; setTimeout(function () { b.textContent = o; }, 1400); }
+  function fallback() { var x = document.createElement('textarea'); x.value = v; x.style.position = 'fixed'; x.style.opacity = '0'; document.body.appendChild(x); x.select(); try { document.execCommand('copy'); done(); } catch (er) {} x.remove(); }
+  avCopy(v, done, fallback);
+}
+function slClose() { var b = document.getElementById('sl-back'); if (b) b.remove(); document.removeEventListener('keydown', slKey_); }
+function slKey_(e) { if (e.key === 'Escape') slClose(); }
+function slOpen() {
+  var list = avText(), msg = list ? 'Hi team,\n\nHere is the current availability from the Move-outs page.\n\n' + list.replace(/\n\nDates marked[\s\S]*$/, '') + '\n\nThe dates marked "about" are estimates. They change when we see the home, so please check back before promising a date.\n\nThank you,' : '';
+  var back = document.createElement('div'); back.id = 'sl-back'; back.className = 'rb-back';
+  back.innerHTML = '<div class="rb-box wide" role="dialog" aria-modal="true" aria-labelledby="sl-h"><h3 id="sl-h">Share with leasing</h3><p class="pl-small">Nothing is sent. Read it, change it, copy it, then paste it into Slack or an email yourself.</p>'
+    + (msg ? '<textarea id="sl-text" class="od-text" rows="12" spellcheck="true">' + esc(msg) + '</textarea>' : '<div class="pl-note" id="sl-empty">No homes without a move-in are coming up in the next 3 weeks, so there is nothing to share.</div>')
+    + '<div class="rb-btns"><button type="button" class="cp-btn" id="sl-copy"' + (msg ? '' : ' disabled') + '>Copy text</button><button type="button" class="cp-btn" id="sl-close">Close</button></div></div>';
+  document.body.appendChild(back); document.addEventListener('keydown', slKey_);
+  back.addEventListener('click', function (e) { if (e.target === back) slClose(); });
+  document.getElementById('sl-close').onclick = slClose;
+  document.getElementById('sl-copy').onclick = function () { var t = document.getElementById('sl-text'); if (t) avClip(this, t.value); };
+  (document.getElementById('sl-text') || document.getElementById('sl-close')).focus();
+}
+document.addEventListener('click', function (e) {
+  var c = e.target.closest && e.target.closest('#av-copy');
+  if (c) { var v = avText(); if (!v) { var o = c.textContent; c.textContent = 'Nothing to list'; setTimeout(function () { c.textContent = o; }, 1400); } else avClip(c, v); return; }
+  if (e.target.closest && e.target.closest('#av-share')) slOpen();
 });
 
 // ---- Repair items (saved in hub storage; never written to Aptly or Rentvine) ----
