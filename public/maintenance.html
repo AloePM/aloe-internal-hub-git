@@ -54,7 +54,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 .tbl td{padding:8px 10px;border-top:1px solid var(--rule);vertical-align:top}
 .ro{font-size:12px;color:var(--muted);margin-top:6px}
 .sk{background:linear-gradient(90deg,#eef3f3,#f8fbfb,#eef3f3);border-radius:8px;height:46px;margin-bottom:8px}
-@media (max-width:900px){.crow{grid-template-columns:1fr 1fr}.wrow{grid-template-columns:1fr 90px}.wrow .wst,.wrow .wv{display:none}.fl{grid-template-columns:1fr 1fr}.crow>*{min-width:0;overflow-wrap:anywhere}.top,.main{padding-left:16px;padding-right:16px}.top{padding-left:64px}.row{grid-template-columns:1fr 70px 90px}.row .snip{display:none}.kpis{grid-template-columns:1fr}.kv{grid-template-columns:110px 1fr}.tbl{display:block;overflow-x:auto}}
+@media (max-width:900px){.crow{grid-template-columns:1fr 1fr}.trow{grid-template-columns:1fr 1fr}.trow>*{min-width:0}.trow .hd2{display:none}.wrow{grid-template-columns:1fr 90px}.wrow .wst,.wrow .wv{display:none}.fl{grid-template-columns:1fr 1fr}.crow>*{min-width:0;overflow-wrap:anywhere}.top,.main{padding-left:16px;padding-right:16px}.top{padding-left:64px}.row{grid-template-columns:1fr 70px 90px}.row .snip{display:none}.kpis{grid-template-columns:1fr}.kv{grid-template-columns:110px 1fr}.tbl{display:block;overflow-x:auto}}
 @media (prefers-reduced-motion:reduce){.panel{transition:none}}
 
 .seg{display:inline-flex;border:1px solid #B4C3C3;border-radius:10px;overflow:hidden;margin-bottom:12px;background:#fff}
@@ -67,21 +67,41 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 .wrow .req{min-width:0}.wrow .req .s{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}.wrow .req .n{font-size:12px;font-weight:700;color:var(--ink2)}
 .gh{padding:9px 16px;background:#F1F7F8;border-top:1px solid var(--rule);font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#0A5468;display:flex;gap:8px;align-items:center}
 .p-emg{background:var(--red-d);color:var(--red)}
+
+.chips{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px}.chip{background:#fff;border:1px solid var(--rule);border-radius:12px;padding:8px 12px}.chip b{display:block;font-size:22px;font-weight:800;line-height:1.1}.chip span{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}.chip.r{border-color:#f1b4b4;background:#fffafa}.chip.r b{color:var(--red)}
+.tsec{margin-bottom:18px}.tsec h2{font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.tsec h2 small{font-weight:500;text-transform:none;letter-spacing:0;font-size:12px}
+.tsec.muted .trow{background:#fafcfc}
+.trow .pill{white-space:normal;max-width:100%;overflow-wrap:anywhere}
+.trow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,2.2fr) minmax(0,1.5fr) 110px 140px 180px;gap:12px;align-items:center;padding:11px 16px;min-height:56px;border-top:1px solid var(--rule)}
+.trow.head{background:#E6EFF0;border-top:0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);min-height:36px}
+.trow .why{font-size:12px;color:var(--muted)}.trow .nt{font-size:12px;color:#243030;background:#F8FAFC;border-left:3px solid var(--teal);padding:2px 8px;margin-top:3px;overflow-wrap:anywhere}
+.mini{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid #B4C3C3;background:#fff;color:#0A5468;font:700 12px Manrope,system-ui,sans-serif;cursor:pointer}.mini:hover:not(:disabled){background:#E6EFF0}.mini:disabled{opacity:.55;cursor:default}.mini:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}
+.banner{background:#fff7d6;border:1px solid #e6cf6a;border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:10px}
+.dlg{position:fixed;inset:0;z-index:10002;display:none;align-items:center;justify-content:center;background:rgba(13,26,26,.4);padding:16px}.dlg.on{display:flex}
+.dlg .card2{background:#fff;border-radius:14px;width:min(560px,100%);max-height:92vh;overflow:auto;padding:18px 20px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.dlg h2{font-size:18px;font-weight:800}.dlg label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:12px}
+.dlg textarea,.dlg input[type=date],.dlg input[type=text]{width:100%;margin-top:3px;padding:8px 10px;border:1px solid #B4C3C3;border-radius:8px;font:500 14px Manrope,system-ui,sans-serif;min-height:44px}.dlg textarea{min-height:84px;resize:vertical}
+.qd{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}.dlg .acts{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}.dlg .okbox{background:var(--amber-d);border-radius:8px;padding:10px 12px;margin-top:12px;font-size:13px}
+.hist{margin-top:10px;border-top:1px solid var(--rule);padding-top:6px}.hist div{font-size:12px;color:var(--ink2);padding:4px 0;border-bottom:1px solid var(--rule);overflow-wrap:anywhere}
 </style>
 </head>
 <body>
 <div class="top">
   <div>
     <h1>Maintenance</h1>
-    <div class="sub">Homes with open work orders. Click an address for its full picture.</div>
+    <div class="sub">Roberto's daily list, plus every home and work order. Click an address for its full picture.</div>
   </div>
   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="live" id="asof"></span><button class="btn" id="refresh" type="button">Refresh</button></div>
 </div>
 <div class="main">
   <div class="kpis" id="kpis"></div>
   <div id="closing"></div>
-  <div class="seg" id="seg" role="group" aria-label="View"><button type="button" class="on" data-mode="home" aria-pressed="true">By home</button><button type="button" data-mode="wo" aria-pressed="false">By work order</button></div>
-  <div id="homeView">
+  <div class="seg" id="seg" role="group" aria-label="View"><button type="button" class="on" data-mode="today" aria-pressed="true">Today</button><button type="button" data-mode="home" aria-pressed="false">By home</button><button type="button" data-mode="wo" aria-pressed="false">By work order</button></div>
+  <div id="todayView">
+    <div id="tbanner"></div><div class="chips" id="tchips"></div><div id="tsecs"><div class="empty">Loading today's list...</div></div>
+    <p class="ro">Days are calendar days in Phoenix time. A vendor should be scheduled within 2 days of being assigned; follow up with the vendor at 3 days. Follow-up dates and notes are saved in the hub only, not in Rentvine or Aptly. Until individual logins exist they show "shared login".</p>
+  </div>
+  <div id="homeView" hidden>
   <div class="bar">
     <input class="search" id="q" type="search" placeholder="Search address" aria-label="Search address" autocomplete="off">
     <span class="note" id="count"></span>
@@ -103,9 +123,10 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     <div class="list" id="wolist"><div class="empty">Loading work orders...</div></div>
     <p class="ro">Possible emergency is a keyword guess from the request text (leaks, no A/C, no heat, no power, gas smell, sewage and similar). It is not a priority set by anyone. Unit turns belong to Persia or Teri.</p>
   </div>
-  <p class="ro">View only. This page does not change anything in Rentvine, Aptly or Slack. Move-out work orders are also on the Move-outs page.</p>
+  <p class="ro">This page does not change anything in Rentvine, Aptly or Slack. (Follow-up notes are saved in the hub only.) Move-out work orders are also on the Move-outs page.</p>
 </div>
 
+<div class="dlg" id="dlg" role="dialog" aria-modal="true" aria-labelledby="dtitle"><div class="card2" id="dcard"></div></div>
 <div class="veil" id="veil"></div>
 <aside class="panel" id="panel" role="dialog" aria-modal="true" aria-labelledby="ptitle" tabindex="-1">
   <div class="ph"><div><h2 id="ptitle">Property</h2><div class="note" id="psub"></div></div><button class="x" id="pclose" type="button" aria-label="Close">&times;</button></div>
@@ -177,8 +198,114 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
       box.appendChild(det);
     }).catch(function () {});
   }
+  // ---------- Today view ----------
+  var TODAY = null;
+  function addDays(d, n) { var t = new Date(d + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); }
+  function nice(d) { var t = new Date(d + 'T12:00:00Z'); return t.toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' }); }
+  function ago(n) { return n == null ? 'unknown' : n === 0 ? 'today' : n === 1 ? 'yesterday' : n + ' days ago'; }
+  function lastContact(it) {
+    var p = []; if (it.lastInDays != null) p.push('in: ' + ago(it.lastInDays)); if (it.lastOutDays != null) p.push('out: ' + ago(it.lastOutDays));
+    return p.length ? p.join(' | ') : (it.matched ? 'none logged' : 'no Aptly card found');
+  }
+  function trow(it, sec) {
+    var lvl = it.level === 'red' ? 'p-red' : it.level === 'amber' ? 'p-amber' : 'p-grey';
+    var req = [h('div', {}, [h('b', { text: '#' + it.number + '  ' }), it.emergency ? h('span', { 'class': 'pill p-emg', text: 'Possible emergency: ' + it.emergency }) : null]), h('div', { 'class': 'why', text: it.summary })];
+    if (it.followUpOn) req.push(h('div', { 'class': 'why', text: 'Follow-up set for ' + nice(it.followUpOn) + (it.followUpOn <= TODAY.today ? ' (due)' : '') }));
+    if (it.lastNote) req.push(h('div', { 'class': 'nt', text: it.lastNote.text + '  (' + it.lastNote.at + ', ' + it.lastNote.by + ')' }));
+    var det = h('button', { 'class': 'mini', type: 'button', text: 'Details' }); if (it.propertyId) det.addEventListener('click', function () { openPanel(it.propertyId, it.address, det); }); else det.disabled = true;
+    var fu = h('button', { 'class': 'mini', type: 'button', text: it.followUpOn ? 'Follow-up / notes' : 'Set follow-up' }); fu.addEventListener('click', function () { openDlg(it, fu); });
+    return h('div', { 'class': 'trow' }, [
+      h('div', {}, [h('div', { 'class': 'addr', text: it.address || (it.propertyId ? 'Property ' + it.propertyId : 'Address not shown') }), it.moveOut ? h('span', { 'class': 'pill p-blue', text: 'Move-out' }) : null]),
+      h('div', {}, req),
+      h('div', {}, [h('span', { 'class': 'pill ' + lvl, text: sec.key === 'dispatch' ? 'Us: assign vendor' : it.vendor ? 'Vendor: ' + it.vendor : it.stage }), h('div', { 'class': 'why', text: it.why })]),
+      h('div', {}, [h('b', { text: it.daysInStage == null ? 'n/a' : age(it.daysInStage) }), h('div', { 'class': 'why', text: it.stage })]),
+      h('div', { 'class': 'why hd2', text: lastContact(it) }),
+      h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, [det, fu])]);
+  }
+  function renderToday() {
+    var d = TODAY, box = $('tsecs'); box.textContent = ''; $('tchips').textContent = ''; $('tbanner').textContent = '';
+    if (!d) return;
+    if (!d.aptly.available) $('tbanner').appendChild(h('div', { 'class': 'banner', text: 'Aptly could not be read just now, so vendor timers and last-contact are off. Stages come from Rentvine instead.' }));
+    else if (d.aptly.cards && !d.aptly.withVendorAssigned) $('tbanner').appendChild(h('div', { 'class': 'banner', text: 'Aptly was read but no vendor-assigned dates were found, so the 2 and 3 day vendor timers cannot run yet.' }));
+    else if (d.noAssignedDate) $('tbanner').appendChild(h('div', { 'class': 'banner', text: d.noAssignedDate + ' work order(s) with a vendor have no assigned date in Aptly, so their timers are not running.' }));
+    if (!d.followups.available) $('tbanner').appendChild(h('div', { 'class': 'banner', text: 'Saving follow-ups is not set up yet (' + (d.followups.reason === 'no_table' ? 'the follow-up table is not created' : d.followups.reason === 'not_configured' ? 'storage is not configured' : 'storage error') + '). You can still read this list.' }));
+    d.sections.forEach(function (s) {
+      var n = s.items.length; if (s.muted) return;
+      var red = s.items.filter(function (x) { return x.level === 'red'; }).length;
+      $('tchips').appendChild(h('div', { 'class': 'chip' + (red ? ' r' : '') }, [h('b', { text: String(n) }), h('span', { text: s.title })]));
+    });
+    $('tchips').appendChild(h('div', { 'class': 'chip' }, [h('b', { text: String(d.parked) }), h('span', { text: 'Parked (on hold, parts, owner)' })]));
+    var any = false;
+    d.sections.forEach(function (s) {
+      if (!s.items.length) return; any = true;
+      var sec = h('div', { 'class': 'tsec' + (s.muted ? ' muted' : '') }, [h('h2', {}, [s.title, h('span', { 'class': 'pill ' + (s.muted ? 'p-grey' : 'p-red'), text: String(s.items.length) }), h('small', { text: s.hint })])]);
+      var list = h('div', { 'class': 'list' }, [h('div', { 'class': 'trow head' }, [h('span', { text: 'Address' }), h('span', { text: 'Request' }), h('span', { text: 'Waiting on' }), h('span', { text: 'In stage' }), h('span', { 'class': 'hd2', text: 'Last contact' }), h('span', { text: 'Next step' })])]);
+      s.items.forEach(function (it) { list.appendChild(trow(it, s)); });
+      sec.appendChild(list); box.appendChild(sec);
+    });
+    if (!any) box.appendChild(h('div', { 'class': 'empty', text: 'Nothing needs a touch right now.' }));
+    $('asof').textContent = 'Updated ' + new Date(d.asOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  function loadToday(fresh) {
+    api('/api/maintenance/today' + (fresh ? '?fresh=1' : '')).then(function (d) { TODAY = d; renderToday(); })
+      .catch(function (e) { $('tsecs').textContent = ''; $('tsecs').appendChild(h('div', { 'class': 'err', text: e.message })); });
+  }
+
+  // follow-up dialog: write a note and/or set a date, review, then confirm. Saves only to the hub's own table.
+  var DL = null;
+  function myName() { try { return localStorage.getItem('aloeMaintName') || ''; } catch (e) { return ''; } }
+  function closeDlg() { $('dlg').classList.remove('on'); if (DL && DL.opener) { try { DL.opener.focus(); } catch (e) {} } DL = null; }
+  function post(body) {
+    return fetch('/api/maintenance/followups', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'aloe-hub' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('Error ' + r.status)); return j; }); });
+  }
+  function openDlg(it, opener) {
+    DL = { it: it, opener: opener, step: 'form', date: it.followUpOn || '', note: '', action: '' };
+    renderDlg(); $('dlg').classList.add('on');
+    api('/api/maintenance/followups?wo=' + encodeURIComponent(it.number)).then(function (r) { if (!DL || DL.it !== it) return; DL.hist = r; renderDlg(true); }).catch(function () {});
+  }
+  function renderDlg(keep) {
+    var c = $('dcard'), it = DL.it, can = TODAY && TODAY.followups.available;
+    var ta = keep && $('dnote') ? $('dnote').value : DL.note, dt = keep && $('ddate') ? $('ddate').value : DL.date, nm = keep && $('dname') ? $('dname').value : myName();
+    DL.note = ta; DL.date = dt; c.textContent = '';
+    c.appendChild(h('h2', { id: 'dtitle', text: 'WO #' + it.number + ' follow-up' }));
+    c.appendChild(h('div', { 'class': 'note', text: (it.address || '') + ' | ' + it.stage + (it.vendor ? ' | ' + it.vendor : '') }));
+    if (!can) c.appendChild(h('div', { 'class': 'banner', style: 'margin-top:10px', text: 'Saving is not set up yet, so this form is read-only for now.' }));
+    if (DL.step === 'review') {
+      var what = DL.action === 'set_followup' ? 'Set the follow-up for ' + nice(DL.date) + (DL.note ? ' and save this note.' : '.') : DL.action === 'clear_followup' ? 'Clear the follow-up date' + (DL.note ? ' and save this note.' : '.') : 'Save this note.';
+      c.appendChild(h('div', { 'class': 'okbox' }, [h('b', { text: 'Please confirm: ' }), what, DL.note ? h('div', { style: 'margin-top:6px', text: '"' + DL.note + '"' }) : null, h('div', { 'class': 'note', style: 'margin-top:6px', text: 'Saved in the hub only. It does not change Rentvine or Aptly. Recorded as: shared login' + (DL.name ? ', named ' + DL.name : '') + '.' })]));
+      c.appendChild(h('div', { 'class': 'acts' }, [
+        (function () { var b = h('button', { 'class': 'mini', type: 'button', id: 'dsave', text: 'Confirm and save' }); b.addEventListener('click', function () {
+          b.disabled = true; b.textContent = 'Saving...';
+          post({ woNumber: it.number, propertyId: it.propertyId, action: DL.action, note: DL.note, followUpOn: DL.action === 'set_followup' ? DL.date : '', authorName: DL.name }).then(function () { closeDlg(); loadToday(true); })
+            .catch(function (e) { b.disabled = false; b.textContent = 'Confirm and save'; c.appendChild(h('div', { 'class': 'err', text: e.message })); }); }); return b; })(),
+        (function () { var b = h('button', { 'class': 'mini', type: 'button', text: 'Back' }); b.addEventListener('click', function () { DL.step = 'form'; renderDlg(); }); return b; })()]));
+      c.querySelector('#dsave').focus(); return;
+    }
+    c.appendChild(h('label', { 'for': 'dnote', text: 'What happened / what is next (optional)' })); var t = h('textarea', { id: 'dnote', maxlength: '1000', placeholder: 'For example: texted vendor, they said Thursday. Waiting on tenant.' }); t.value = ta; c.appendChild(t);
+    c.appendChild(h('label', { 'for': 'ddate', text: 'Follow up on' })); var di = h('input', { type: 'date', id: 'ddate', min: TODAY.today }); di.value = dt; c.appendChild(di);
+    var qd = h('div', { 'class': 'qd' }); [['Tomorrow', 1], ['In 3 days', 3], ['In a week', 7]].forEach(function (q) { var b = h('button', { 'class': 'mini', type: 'button', text: q[0] }); b.addEventListener('click', function () { di.value = addDays(TODAY.today, q[1]); }); qd.appendChild(b); }); c.appendChild(qd);
+    c.appendChild(h('label', { 'for': 'dname', text: 'Your name (so the history shows who)' })); var ni = h('input', { type: 'text', id: 'dname', maxlength: '60', autocomplete: 'off' }); ni.value = nm; c.appendChild(ni);
+    function go(action) { return function () {
+      var note = $('dnote').value.trim(), date = $('ddate').value, name = $('dname').value.trim(), msg = $('dmsg');
+      if (action === 'set_followup' && !date) { msg.textContent = 'Pick a follow-up date first.'; return; }
+      if (action === 'note' && !note) { msg.textContent = 'Write a note first.'; return; }
+      try { localStorage.setItem('aloeMaintName', name); } catch (e) {}
+      DL.note = note; DL.date = date; DL.name = name; DL.action = action; DL.step = 'review'; renderDlg(); }; }
+    var a1 = h('button', { 'class': 'mini', type: 'button', text: 'Review follow-up' }), a2 = h('button', { 'class': 'mini', type: 'button', text: 'Save note only' }), a3 = h('button', { 'class': 'mini', type: 'button', text: 'Clear follow-up' }), a4 = h('button', { 'class': 'mini', type: 'button', text: 'Close' });
+    a1.addEventListener('click', go('set_followup')); a2.addEventListener('click', go('note')); a3.addEventListener('click', go('clear_followup')); a4.addEventListener('click', closeDlg);
+    if (!can) { a1.disabled = a2.disabled = a3.disabled = true; } if (!it.followUpOn) a3.disabled = true;
+    c.appendChild(h('div', { 'class': 'acts' }, [a1, a2, a3, a4])); c.appendChild(h('div', { 'class': 'err', id: 'dmsg', style: 'padding:6px 0;text-align:left;background:none' }));
+    var hist = h('div', { 'class': 'hist' }, [h('b', { text: 'History' })]);
+    if (!DL.hist) hist.appendChild(h('div', { text: 'Loading...' })); else if (!DL.hist.notes.length) hist.appendChild(h('div', { text: 'No notes yet.' }));
+    else DL.hist.notes.forEach(function (n) { hist.appendChild(h('div', { text: n.at + ' | ' + n.by + ' | ' + (n.action === 'set_followup' ? 'follow-up ' + nice(n.followUpOn) + ': ' : n.action === 'clear_followup' ? 'cleared follow-up: ' : '') + n.text })); });
+    c.appendChild(hist);
+  }
+  $('dlg').addEventListener('click', function (e) { if (e.target === $('dlg')) closeDlg(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $('dlg').classList.contains('on')) closeDlg(); });
+
   // ---------- By work order view ----------
-  var MODE = 'home', WO = null, STAGES = [];
+  var MODE = 'today', WO = null, STAGES = [];
   function opt(sel, vals, keep) { var cur = sel.value; while (sel.options.length > 1) sel.remove(1); vals.forEach(function (v) { sel.appendChild(h('option', { value: v[0], text: v[1] })); }); if (keep) sel.value = cur; }
   function fillFilters() {
     var st = {}, vd = {}, is = {}; var noVendor = false;
@@ -246,9 +373,10 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
       .catch(function (e) { $('wolist').textContent = ''; $('wolist').appendChild(h('div', { 'class': 'err', text: e.message })); });
   }
   function setMode(m) {
-    MODE = m; $('homeView').hidden = m !== 'home'; $('woView').hidden = m !== 'wo';
+    MODE = m; $('todayView').hidden = m !== 'today'; $('homeView').hidden = m !== 'home'; $('woView').hidden = m !== 'wo';
     Array.prototype.forEach.call($('seg').children, function (b) { var on = b.getAttribute('data-mode') === m; b.className = on ? 'on' : ''; b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
     if (m === 'wo' && !WO) loadWO(false);
+    if (m === 'today' && !TODAY) loadToday(false);
   }
   Array.prototype.forEach.call($('seg').children, function (b) { b.addEventListener('click', function () { setMode(b.getAttribute('data-mode')); }); });
   ['fStage', 'fVendor', 'fIssue', 'fAge', 'fSort', 'fGroup', 'fEmg', 'fMove'].forEach(function (id) { $(id).addEventListener('change', renderWO); });
@@ -330,11 +458,12 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
   function closePanel() { token++; $('veil').classList.remove('on'); $('panel').classList.remove('on'); if (opener) { try { opener.focus(); } catch (e) {} } }
 
   $('q').addEventListener('input', renderList);
-  $('refresh').addEventListener('click', function () { load(true); if (MODE === 'wo') loadWO(true); else WO = null; });
+  $('refresh').addEventListener('click', function () { load(true); if (MODE === 'today') loadToday(true); else TODAY = null; if (MODE === 'wo') loadWO(true); else WO = null; });
   $('pclose').addEventListener('click', closePanel);
   $('veil').addEventListener('click', closePanel);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $('panel').classList.contains('on')) closePanel(); });
   load(false);
+  loadToday(false);
 })();
 </script>
 <script src="/hub-shell.js" defer></script>

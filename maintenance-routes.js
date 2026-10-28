@@ -3,10 +3,12 @@
 // Zinspector, Slack or storage. Phase 2 (confirmed write-back with a change history) is a separate step.
 //
 // Install (one line in server.js, after installMoveoutProperty):
-//   const { installMaintenance } = await import('./maintenance-routes.js'); installMaintenance(app, rvFetch, fetchAllRVOpenWOs, findBillMatchedWOs);
+//   const { installMaintenance } = await import('./maintenance-routes.js'); installMaintenance(app, rvFetch, fetchAllRVOpenWOs, findBillMatchedWOs, unitsFetch);
 import { addrKey, extractServices, readProperty } from './moveouts-property.js';
 import { groupOpenByProperty, readCategories, applianceRows, warrantyRows, findWarrantyExpires, findNotes, buildHints, whoPays, todayPhoenix, ownerVendors, homeWarrantyInfo, mapHistory, assignCards, buildWorkOrderRows, STAGE_ORDER } from './maintenance-data.js';
 import { loadAriRows, ariForAddress } from './maintenance-ari.js';
+import { indexAptly, aptlyDiag, buildToday, foldFollowups } from './maintenance-today.js';
+import { validateEntry, makeFollowupStore } from './maintenance-followups.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const LIST_TTL = 2 * 60 * 1000, PROP_TTL = 5 * 60 * 1000, CLOSE_TTL = 15 * 60 * 1000;
@@ -29,7 +31,7 @@ export function sessionOk(req, env = process.env) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched) {
+export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, aptlyFetch, store = makeFollowupStore()) {
   if (typeof rvFetch !== 'function' || typeof fetchOpenWOs !== 'function') throw new Error('installMaintenance needs rvFetch and fetchAllRVOpenWOs');
   let listCache = { at: 0, v: null }, listPending = null;
   const propCache = new Map();
@@ -79,29 +81,101 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched) 
     } catch (e) { console.error('[maintenance] list', e.message); res.status(502).json({ error: 'Could not read open work orders from Rentvine.' }); }
   });
 
-  // One row per open work order (vendor, stage, issue type, emergency keyword flag) for the "By work order" view. Read-only, cached 2 minutes.
+  // One row per open work order (vendor, stage, issue type, emergency keyword flag). Read-only, cached 2 minutes, shared by the work order view and Today.
   let woCache = { at: 0, v: null }, woPending = null;
+  async function getWORows(fresh) {
+    if (!(woCache.v && Date.now() - woCache.at < LIST_TTL) || fresh) {
+      if (!woPending) woPending = (async () => {
+        let all = [];
+        for (let page = 1; page <= 20; page++) {
+          const b = await rvFetch('/maintenance/work-orders', { pageSize: 100, page });
+          if (b && b.error) throw new Error(b.error);
+          const items = Array.isArray(b) ? b : (b && b.data) || [];
+          all = all.concat(items);
+          if (items.length < 100) break;
+        }
+        const rows = buildWorkOrderRows(all, todayPhoenix());
+        if (rows.some((r) => !r.address)) for (const r of rows) if (!r.address && r.propertyId) r.address = await addressFor(r.propertyId);
+        woCache = { at: Date.now(), v: { rows, stages: STAGE_ORDER, asOf: new Date().toISOString() } };
+      })().finally(() => { woPending = null; });
+      await woPending;
+    }
+    return woCache.v;
+  }
   app.get('/api/maintenance/workorders', async (req, res) => {
     res.set('Cache-Control', 'no-store');
+    try { res.json(await getWORows(req.query.fresh === '1')); }
+    catch (e) { console.error('[maintenance] workorders', e.message); res.status(502).json({ error: 'Could not read work orders from Rentvine.' }); }
+  });
+
+  // Aptly Work Orders board (stage, vendor-assigned date, last contact). Read-only GET through the hub's own Aptly reader, cached 5 minutes. Soft-fails.
+  let aptCache = { at: 0, map: null }, aptPending = null;
+  async function getAptly(fresh) {
+    if (typeof aptlyFetch !== 'function') return { available: false, map: new Map() };
+    if (!(aptCache.map && Date.now() - aptCache.at < PROP_TTL) || fresh) {
+      if (!aptPending) aptPending = (async () => {
+        let all = [];
+        for (let page = 0; page <= 60; page++) {
+          const d = await aptlyFetch('/api/board/workOrder', { page, pageSize: 100, includeArchived: false });
+          if (d && d.error) throw new Error(d.error);
+          const batch = Array.isArray(d) ? d : (d && d.data) || [];
+          if (!batch.length) break;
+          all = all.concat(batch);
+          if (batch.length < 100) break;
+        }
+        aptCache = { at: Date.now(), map: indexAptly(all) };
+      })().finally(() => { aptPending = null; });
+      await aptPending;
+    }
+    return { available: true, map: aptCache.map };
+  }
+
+  // Roberto's daily list: sections of work orders that need a touch today, with why.
+  app.get('/api/maintenance/today', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
     try {
-      if (!(woCache.v && Date.now() - woCache.at < LIST_TTL) || req.query.fresh === '1') {
-        if (!woPending) woPending = (async () => {
-          let all = [];
-          for (let page = 1; page <= 20; page++) {
-            const b = await rvFetch('/maintenance/work-orders', { pageSize: 100, page });
-            if (b && b.error) throw new Error(b.error);
-            const items = Array.isArray(b) ? b : (b && b.data) || [];
-            all = all.concat(items);
-            if (items.length < 100) break;
-          }
-          const rows = buildWorkOrderRows(all, todayPhoenix());
-          if (rows.some((r) => !r.address)) for (const r of rows) if (!r.address && r.propertyId) r.address = await addressFor(r.propertyId);
-          woCache = { at: Date.now(), v: { rows, stages: STAGE_ORDER, asOf: new Date().toISOString() } };
-        })().finally(() => { woPending = null; });
-        await woPending;
-      }
-      res.json(woCache.v);
-    } catch (e) { console.error('[maintenance] workorders', e.message); res.status(502).json({ error: 'Could not read work orders from Rentvine.' }); }
+      const fresh = req.query.fresh === '1';
+      const wo = await getWORows(fresh);
+      let apt = { available: false, map: new Map() };
+      try { apt = await getAptly(fresh); } catch (e) { console.error('[maintenance] aptly', e.message); }
+      let fu = { available: false, reason: 'error', rows: [] };
+      try { fu = await store.list(); } catch (e) { console.error('[maintenance] followups', e.message); }
+      const t = buildToday(wo.rows, apt.map, foldFollowups(fu.rows), todayPhoenix());
+      res.json({ ...t, openTotal: wo.rows.length, asOf: new Date().toISOString(),
+        aptly: { available: apt.available, ...(apt.available ? aptlyDiag(apt.map) : {}) }, followups: { available: fu.available, reason: fu.reason || '' } });
+    } catch (e) { console.error('[maintenance] today', e.message); res.status(502).json({ error: 'Could not build the Today list from Rentvine.' }); }
+  });
+
+  // Follow-up notes for one work order (history, newest first).
+  app.get('/api/maintenance/followups', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const wo = String(req.query.wo || '');
+    if (!/^\d{3,9}$/.test(wo)) return res.status(400).json({ error: 'Bad work order number.' });
+    try {
+      const fu = await store.list();
+      const s = foldFollowups(fu.rows).byWo[wo] || { followUpOn: null, notes: [] };
+      res.json({ available: fu.available, reason: fu.reason || '', followUpOn: s.followUpOn, notes: s.notes });
+    } catch (e) { console.error('[maintenance] followups', e.message); res.status(502).json({ error: 'Could not read follow-up notes.' }); }
+  });
+
+  // Save a note / set or clear a follow-up date. Writes ONLY to the hub's own table. Needs the sign-in cookie (checked above), a custom
+  // header, and a same-origin request, so another website cannot trigger it. 40 writes per 10 minutes.
+  const writes = [];
+  app.post('/api/maintenance/followups', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (req.headers['x-requested-with'] !== 'aloe-hub') return res.status(400).json({ error: 'Bad request.' });
+    const origin = req.headers.origin;
+    if (origin) { try { if (new URL(origin).host !== req.headers.host) return res.status(403).json({ error: 'Not allowed.' }); } catch { return res.status(403).json({ error: 'Not allowed.' }); } }
+    const now = Date.now(); while (writes.length && now - writes[0] > 600000) writes.shift();
+    if (writes.length >= 40) return res.status(429).json({ error: 'Too many saves. Wait a few minutes.' });
+    const v = validateEntry(req.body, todayPhoenix());
+    if (v.error) return res.status(400).json({ error: v.error });
+    try {
+      const r = await store.add(v.entry);
+      if (!r.ok) return res.status(503).json({ error: r.reason === 'no_table' ? 'The follow-up table has not been created yet.' : 'Follow-up saving is not set up.', reason: r.reason });
+      writes.push(now);
+      res.json({ ok: true });
+    } catch (e) { console.error('[maintenance] followup write', e.message); res.status(502).json({ error: 'Could not save. Nothing was changed.' }); }
   });
 
   // Open work orders that already have an invoice (same matching the nightly Slack post uses). Read-only, cached 15 minutes.
