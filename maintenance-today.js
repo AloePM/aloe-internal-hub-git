@@ -13,20 +13,32 @@ const nested = (o, path) => path.split('.').reduce((a, k) => (a && typeof a === 
 export function aptlyInfo(c) {
   if (!c || typeof c !== 'object') return null;
   const vend = Array.isArray(c.vendor) && c.vendor[0] ? c.vendor[0].name : c.vendorName || '';
-  const comments = mapComments(c.comments);
-  const note = lastHumanNote(comments);
+  // The live board LIST has no comments (they are read per card, see withNotes). If a list ever carries them, use them.
+  const hasList = Array.isArray(c.comments);
+  const comments = hasList ? mapComments(c.comments) : [];
+  const note = hasList ? lastHumanNote(comments) : null;
+  // Live list: lastActivity = { direction: 'in' | 'out', publishedAt, type, content }. One date, with its direction.
+  const la = c.lastActivity && typeof c.lastActivity === 'object' ? c.lastActivity : null;
+  const laAt = la && la.publishedAt ? String(la.publishedAt) : '';
+  const laIn = !!(la && /^in/i.test(String(la.direction || '')));
+  const laOut = !!(la && /^out/i.test(String(la.direction || '')));
   const info = {
-    cardId: String(first(c.cardId, c._id, '')).trim(), comments, lastNote: note, commentCount: comments.length,
+    cardId: String(first(c.cardId, c._id, '')).trim(), comments, lastNote: note, commentCount: comments.length, notesKnown: hasList,
     number: String(first(c.workOrderNumber, c['Work Order Number'], '')).trim(),
     stage: String(first(c.stage, c.Stage, '')).trim(),
     vendor: String(vend || '').trim(),
     vendorAssignedAt: String(first(c.YAGZ5AXtxHjhAQNPX, c.vendorAssigned, c['Vendor Assigned'], '')),
     stageChangedAt: String(first(c.stageUpdatedAt, c['Stage Changed'], nested(c, 'metrics.stageUpdatedAt'), '')),
-    lastInboundAt: String(first(nested(c, 'metrics.activity.lastInboundAt'), c['metrics.activity.lastInboundAt'], c['Last Inbound At'], '')),
-    lastOutboundAt: String(first(nested(c, 'metrics.activity.lastOutboundAt'), c['metrics.activity.lastOutboundAt'], c['Last Outbound At'], '')),
+    lastInboundAt: String(first(laIn ? laAt : '', nested(c, 'metrics.activity.lastInboundAt'), c['metrics.activity.lastInboundAt'], c['Last Inbound At'], '')),
+    lastOutboundAt: String(first(laOut ? laAt : '', nested(c, 'metrics.activity.lastOutboundAt'), c['metrics.activity.lastOutboundAt'], c['Last Outbound At'], '')),
     scheduledStart: String(first(c.scheduledStartDate, c['Scheduled Start Date'], '')).slice(0, 10),
   };
   return info.number ? info : null;
+}
+// Attach a card's comments (read separately) to its info. Returns a new object; the cached one is not changed.
+export function withNotes(info, comments) {
+  const list = Array.isArray(comments) ? comments : [];
+  return { ...info, comments: list, lastNote: lastHumanNote(list), commentCount: list.length, notesKnown: true };
 }
 export function indexAptly(cards) {
   const map = new Map();
@@ -37,7 +49,8 @@ export function aptlyDiag(map) {
   const v = [...map.values()];
   return { cards: v.length, withStage: v.filter((x) => x.stage).length, withVendorAssigned: v.filter((x) => x.vendorAssignedAt).length,
     withStageChanged: v.filter((x) => x.stageChangedAt).length, withLastInbound: v.filter((x) => x.lastInboundAt).length, withLastOutbound: v.filter((x) => x.lastOutboundAt).length,
-    withCardId: v.filter((x) => x.cardId).length, withComments: v.filter((x) => x.commentCount).length, withHumanNote: v.filter((x) => x.lastNote).length };
+    withCardId: v.filter((x) => x.cardId).length, withComments: v.filter((x) => x.commentCount).length, withHumanNote: v.filter((x) => x.lastNote).length, withNotesLoaded: v.filter((x) => x.notesKnown).length,
+    withLastActivity: v.filter((x) => x.lastInboundAt || x.lastOutboundAt).length };
 }
 
 const PARKED = new Set(['On Hold', 'Waiting for parts', 'Owner Maintained']);
@@ -70,17 +83,18 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
     const scheduled = stage === 'Scheduled' || !!sched;
     const inD = a && a.lastInboundAt ? daysBetween(phxDate(a.lastInboundAt), today) : null;
     const outD = a && a.lastOutboundAt ? daysBetween(phxDate(a.lastOutboundAt), today) : null;
-    const noteD = a && a.lastNote && a.lastNote.at ? daysBetween(phxDate(a.lastNote.at), today) : null;
+    const notesKnown = !!(a && a.notesKnown);
+    const noteD = notesKnown && a.lastNote && a.lastNote.at ? daysBetween(phxDate(a.lastNote.at), today) : null;
     // A person's note counts as a touch (Aptly's own Last Touch ignores comments).
     const touches = [inD, outD, noteD].filter((x) => x != null);
     const lastTouchDays = touches.length ? Math.min(...touches) : null;
-    const noteWhy = !a ? '' : noteD == null ? ' No note on the card yet.' : ' Last note ' + (noteD === 0 ? 'today' : noteD + (noteD === 1 ? ' day' : ' days') + ' ago') + '.';
-    const staleNote = !!a && (noteD == null || noteD >= 3);
+    const noteWhy = !notesKnown ? '' : noteD == null ? ' No note on the card yet.' : ' Last note ' + (noteD === 0 ? 'today' : noteD + (noteD === 1 ? ' day' : ' days') + ' ago') + '.';
+    const staleNote = notesKnown && (noteD == null || noteD >= 3);
     const f = (fu.byWo || {})[String(r.number)] || null;
     const base = { id: r.id, number: r.number, propertyId: r.propertyId, address: r.address, summary: r.summary, stage, vendor, moveOut: stage === 'Move Out' || r.moveOut,
       emergency: r.emergency, daysInStage, assignedDays, lastInDays: inD, lastOutDays: outD, scheduled: sched || null,
       followUpOn: f ? f.followUpOn : null, lastNote: f && f.notes[0] ? f.notes[0] : null, noteCount: f ? f.notes.length : 0, matched: !!a,
-      commentCount: a ? a.commentCount : 0, aptNote: a && a.lastNote ? { by: a.lastNote.by, at: a.lastNote.at, days: noteD, text: a.lastNote.text } : null, staleNote };
+      notesKnown, commentCount: notesKnown ? a.commentCount : 0, aptNote: a && a.lastNote ? { by: a.lastNote.by, at: a.lastNote.at, days: noteD, text: a.lastNote.text } : null, staleNote };
     const put = (key, level, why) => sections[key].push({ ...base, level, why });
 
     if (stage === 'Unit Turn') { put('turns', 'grey', 'Persia / Teri'); continue; }

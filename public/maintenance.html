@@ -216,10 +216,10 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     var lvl = it.level === 'red' ? 'p-red' : it.level === 'amber' ? 'p-amber' : 'p-grey';
     var req = [h('div', {}, [h('b', { text: '#' + it.number + '  ' }), it.emergency ? h('span', { 'class': 'pill p-emg', text: 'Possible emergency: ' + it.emergency }) : null]), h('div', { 'class': 'why', text: it.summary })];
     if (it.followUpOn) req.push(h('div', { 'class': 'why', text: 'Follow-up set for ' + nice(it.followUpOn) + (it.followUpOn <= TODAY.today ? ' (due)' : '') }));
-    if (it.matched) req.push(h('div', { 'class': 'nt' + (it.staleNote ? ' stale' : ''), text: it.aptNote ? 'Last note: ' + it.aptNote.by + ', ' + ago(it.aptNote.days) + ': ' + it.aptNote.text : 'No note on the Aptly card yet' }));
+    if (it.matched) req.push(h('div', { 'class': 'nt' + (it.staleNote ? ' stale' : ''), text: !it.notesKnown ? 'Notes could not be loaded right now. Click Comments to read them.' : it.aptNote ? 'Last note: ' + it.aptNote.by + ', ' + ago(it.aptNote.days) + ': ' + it.aptNote.text : 'No note on the Aptly card yet' }));
     if (it.lastNote) req.push(h('div', { 'class': 'nt', text: it.lastNote.text + '  (' + it.lastNote.at + ', ' + it.lastNote.by + ')' }));
     var det = h('button', { 'class': 'mini', type: 'button', text: 'Details' }); if (it.propertyId) det.addEventListener('click', function () { openPanel(it.propertyId, it.address, det); }); else det.disabled = true;
-    var cmb = h('button', { 'class': 'mini', type: 'button', text: 'Comments' + (it.commentCount ? ' (' + it.commentCount + ')' : '') }); if (it.matched) cmb.addEventListener('click', function () { openComments(it, cmb); }); else cmb.disabled = true;
+    var cmb = h('button', { 'class': 'mini', type: 'button', text: 'Comments' + (it.notesKnown && it.commentCount ? ' (' + it.commentCount + ')' : '') }); if (it.matched) cmb.addEventListener('click', function () { openComments(it, cmb); }); else cmb.disabled = true;
     var fu = h('button', { 'class': 'mini', type: 'button', text: it.followUpOn ? 'Follow-up / notes' : 'Set follow-up' }); fu.addEventListener('click', function () { openDlg(it, fu); });
     return h('div', { 'class': 'trow' }, [
       h('div', {}, [h('div', { 'class': 'addr', text: it.address || (it.propertyId ? 'Property ' + it.propertyId : 'Address not shown') }), it.moveOut ? h('span', { 'class': 'pill p-blue', text: 'Move-out' }) : null]),

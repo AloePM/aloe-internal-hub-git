@@ -8,9 +8,9 @@
 import { addrKey, extractServices, readProperty } from './moveouts-property.js';
 import { groupOpenByProperty, readCategories, applianceRows, warrantyRows, findWarrantyExpires, findNotes, buildHints, whoPays, todayPhoenix, ownerVendors, homeWarrantyInfo, mapHistory, assignCards, buildWorkOrderRows, STAGE_ORDER } from './maintenance-data.js';
 import { loadAriRows, ariForAddress } from './maintenance-ari.js';
-import { indexAptly, aptlyDiag, buildToday, foldFollowups } from './maintenance-today.js';
+import { indexAptly, aptlyDiag, buildToday, foldFollowups, withNotes } from './maintenance-today.js';
 import { validateEntry, makeFollowupStore } from './maintenance-followups.js';
-import { validateComment, followupComment, formatComment, makeAptlyCommenter } from './maintenance-comments.js';
+import { validateComment, followupComment, formatComment, makeAptlyCommenter, mapComments } from './maintenance-comments.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const LIST_TTL = 2 * 60 * 1000, PROP_TTL = 5 * 60 * 1000, CLOSE_TTL = 15 * 60 * 1000;
@@ -132,6 +132,29 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
     return { available: true, map: aptCache.map };
   }
 
+  // A card's comments. The board list does not carry them; Aptly has a per-card address: GET /api/board/workOrder/<cardId>/comments -> { data: [...] }.
+  // Cached 5 minutes per card (dropped when this hub posts a comment). A failed read throws, so "could not read" is never shown as "no comments".
+  const cmCache = new Map();
+  async function getComments(cardId, fresh) {
+    const hit = cmCache.get(cardId);
+    if (hit && !fresh && Date.now() - hit.at < PROP_TTL) return hit.list;
+    if (!/^[A-Za-z0-9]{8,40}$/.test(String(cardId || ''))) throw new Error('bad card id');
+    const d = await aptlyFetch('/api/board/workOrder/' + cardId + '/comments');
+    if (!d || d.error) throw new Error((d && d.error) || 'no answer');
+    const list = mapComments(Array.isArray(d) ? d : d.data);
+    cmCache.set(cardId, { at: Date.now(), list });
+    return list;
+  }
+  // Read the comments for many cards, 6 at a time, within a time budget. Cards not read in time are left "unknown" (never shown as "no note").
+  async function loadNotes(cardIds, budgetMs = 8000) {
+    const out = new Map(), todo = [];
+    for (const id of cardIds) { const hit = cmCache.get(id); if (hit && Date.now() - hit.at < PROP_TTL) out.set(id, hit.list); else todo.push(id); }
+    const end = Date.now() + budgetMs; let i = 0;
+    const worker = async () => { while (i < todo.length && Date.now() < end) { const id = todo[i++]; try { out.set(id, await getComments(id, true)); } catch (e) { console.error('[maintenance] comments read', e.message); } } };
+    await Promise.race([Promise.all(Array.from({ length: 6 }, worker)), new Promise((r) => setTimeout(r, budgetMs + 1000))]);
+    return out;
+  }
+
   // Roberto's daily list: sections of work orders that need a touch today, with why.
   app.get('/api/maintenance/today', async (req, res) => {
     res.set('Cache-Control', 'no-store');
@@ -140,11 +163,20 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
       const wo = await getWORows(fresh);
       let apt = { available: false, map: new Map() };
       try { apt = await getAptly(fresh); } catch (e) { console.error('[maintenance] aptly', e.message); }
+      let notes = { requested: 0, loaded: 0 };
+      if (apt.available) {
+        // Add each open work order's comments (read per card). The cached board map is not changed.
+        const ids = []; for (const r of wo.rows) { const a = apt.map.get(String(r.number)); if (a && a.cardId && !a.notesKnown) ids.push(a.cardId); }
+        const got = await loadNotes([...new Set(ids)]);
+        const map = new Map(apt.map);
+        for (const [k, a] of apt.map) if (a.cardId && got.has(a.cardId)) map.set(k, withNotes(a, got.get(a.cardId)));
+        apt = { ...apt, map }; notes = { requested: new Set(ids).size, loaded: got.size };
+      }
       let fu = { available: false, reason: 'error', rows: [] };
       try { fu = await store.list(); } catch (e) { console.error('[maintenance] followups', e.message); }
       const t = buildToday(wo.rows, apt.map, foldFollowups(fu.rows), todayPhoenix());
       res.json({ ...t, openTotal: wo.rows.length, asOf: new Date().toISOString(),
-        aptly: { available: apt.available, ...(apt.available ? aptlyDiag(apt.map) : {}) }, followups: { available: fu.available, reason: fu.reason || '' }, canComment: !!(commenter.configured && apt.available) });
+        aptly: { available: apt.available, ...(apt.available ? aptlyDiag(apt.map) : {}), notes }, followups: { available: fu.available, reason: fu.reason || '' }, canComment: !!(commenter.configured && apt.available) });
     } catch (e) { console.error('[maintenance] today', e.message); res.status(502).json({ error: 'Could not build the Today list from Rentvine.' }); }
   });
 
@@ -171,8 +203,9 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
       const info = apt.map.get(wo);
       if (!apt.available) return res.json({ available: false, found: false, canPost: false, comments: [] });
       if (!info) return res.json({ available: true, found: false, canPost: false, comments: [] });
-      res.json({ available: true, found: true, canPost: !!(commenter.configured && info.cardId), asOf: new Date(aptCache.at).toISOString(),
-        comments: info.comments.map((c) => ({ by: c.by, at: c.at, text: c.text, auto: c.auto, hub: c.hub })) });
+      const list = await getComments(info.cardId, req.query.fresh === '1');
+      res.json({ available: true, found: true, canPost: !!(commenter.configured && info.cardId), asOf: new Date().toISOString(),
+        comments: list.map((c) => ({ by: c.by, at: c.at, text: c.text, auto: c.auto, hub: c.hub })) });
     } catch (e) { console.error('[maintenance] comments', e.message); res.status(502).json({ error: 'Could not read the Aptly card comments.' }); }
   });
 
@@ -190,7 +223,7 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
       if (!info || !info.cardId) return res.status(404).json({ error: 'No Aptly card was found for this work order. Nothing was posted.' });
       const r = await commenter.post(info.cardId, v.content);
       if (!r.ok) { console.error('[maintenance] comment refused wo=' + v.woNumber + ' reason=' + r.reason + ' ' + (r.detail || '')); return res.status(502).json({ error: postReason(r) }); }
-      cwrites.push(now); aptCache.at = 0;
+      cwrites.push(now); aptCache.at = 0; cmCache.delete(info.cardId);
       console.log('[maintenance] comment posted wo=' + v.woNumber + ' by=' + v.authorName + ' chars=' + v.text.length);
       res.json({ ok: true, content: v.content });
     } catch (e) { console.error('[maintenance] comment write', e.message); res.status(502).json({ error: 'Could not post. Nothing was changed.' }); }
@@ -232,7 +265,7 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
             if (!info || !info.cardId) out.commentError = 'Saved in the hub, but no Aptly card was found, so nothing was posted there.';
             else {
               const pr = await commenter.post(info.cardId, formatComment(v.entry.author_name, text));
-              if (pr.ok) { aptCache.at = 0; out.commentPosted = true; console.log('[maintenance] comment posted wo=' + v.entry.wo_number + ' by=' + v.entry.author_name + ' (follow-up)'); }
+              if (pr.ok) { aptCache.at = 0; cmCache.delete(info.cardId); out.commentPosted = true; console.log('[maintenance] comment posted wo=' + v.entry.wo_number + ' by=' + v.entry.author_name + ' (follow-up)'); }
               else { console.error('[maintenance] comment refused wo=' + v.entry.wo_number + ' reason=' + pr.reason + ' ' + (pr.detail || '')); out.commentError = 'Saved in the hub, but ' + postReason(pr).replace(' Nothing was posted.', ' It was not posted on the Aptly card.'); }
             }
           } catch (e) { console.error('[maintenance] follow-up comment', e.message); out.commentError = 'Saved in the hub, but posting on the Aptly card failed.'; }
