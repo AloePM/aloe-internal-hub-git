@@ -89,7 +89,8 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
     const touches = [inD, outD, noteD].filter((x) => x != null);
     const lastTouchDays = touches.length ? Math.min(...touches) : null;
     const noteWhy = !notesKnown ? '' : noteD == null ? ' No note on the card yet.' : ' Last note ' + (noteD === 0 ? 'today' : noteD + (noteD === 1 ? ' day' : ' days') + ' ago') + '.';
-    const staleNote = notesKnown && (noteD == null || noteD >= 3);
+    // Red only when it is overdue: no note for 3+ days, or no note at all on a work order that is 2+ days old (a brand-new one is not late yet).
+    const staleNote = notesKnown && (noteD == null ? (r.ageDays == null || r.ageDays >= 2) : noteD >= 3);
     const f = (fu.byWo || {})[String(r.number)] || null;
     const base = { id: r.id, number: r.number, propertyId: r.propertyId, address: r.address, summary: r.summary, stage, vendor, moveOut: stage === 'Move Out' || r.moveOut,
       emergency: r.emergency, daysInStage, assignedDays, lastInDays: inD, lastOutDays: outD, scheduled: sched || null,

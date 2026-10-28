@@ -391,7 +391,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     if (!d && !CM.err) box.appendChild(h('div', { 'class': 'note', style: 'margin-top:6px', text: 'Loading...' }));
     else if (d && d.found && !list.length) box.appendChild(h('div', { 'class': 'note', style: 'margin-top:6px', text: 'No comments on this card yet.' }));
     list.forEach(function (x) {
-      box.appendChild(h('div', { 'class': 'cmt' + (x.auto ? ' auto' : '') }, [h('div', { 'class': 'ch', text: (x.auto ? 'Ari (automated)' : x.hub ? 'Posted from the hub' : (x.by || 'Aptly')) + (x.at ? ' | ' + whenTxt(x.at) : '') }), h('div', { 'class': 'ct', text: x.text })]));
+      box.appendChild(h('div', { 'class': 'cmt' + (x.auto ? ' auto' : '') }, [h('div', { 'class': 'ch', text: (x.auto ? (x.by === 'Aptly' ? 'Aptly (automatic notice)' : 'Ari (automated)') : x.hub ? 'Posted from the hub' : (x.by || 'Aptly')) + (x.at ? ' | ' + whenTxt(x.at) : '') }), h('div', { 'class': 'ct', text: x.text })]));
     });
     c.appendChild(box);
   }

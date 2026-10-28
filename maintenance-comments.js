@@ -8,16 +8,23 @@ import { NAMES } from './maintenance-followups.js';
 const MAX = 1000;
 export const AUTO_PREFIX = '[Automated]';
 
-// Aptly comment array -> newest first, trimmed. auto = Ari's automated comments (not a person's follow-up).
+// Aptly stores some comments as small pieces of HTML (@mentions, line breaks). Turn them into plain text; the page shows text only.
+export function cleanText(s) {
+  return String(s == null ? '' : s).replace(/\r/g, '').replace(/<\s*br\s*\/?>/gi, '\n').replace(/<\/(p|div|li)>/gi, '\n').replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&')
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+// Aptly comment array -> newest first, trimmed. auto = anything not written by a person: Ari's [Automated] lines, Aptly's own notices
+// (author "Aptly", e.g. "Tenant marked the issue as unresolved") and comments with no author name. Comments posted from the hub carry "[Hub ...".
 export function mapComments(raw, limit = 60) {
   const list = [];
   for (const c of Array.isArray(raw) ? raw : []) {
     if (!c || typeof c !== 'object') continue;
-    const text = String(c.content == null ? '' : c.content).replace(/\r/g, '').slice(0, 2000);
-    if (!text.trim()) continue;
-    const t = Date.parse(c.createdAt);
-    list.push({ id: String(c.id || c._id || ''), by: String(c.userName || '').trim(), at: Number.isFinite(t) ? new Date(t).toISOString() : '', text,
-      auto: text.trimStart().startsWith(AUTO_PREFIX), hub: text.trimStart().startsWith('[Hub ') });
+    const text = cleanText(c.content).slice(0, 2000);
+    if (!text) continue;
+    const t = Date.parse(c.createdAt), by = String(c.userName || '').trim(), hub = text.startsWith('[Hub ');
+    list.push({ id: String(c.id || c._id || ''), by, at: Number.isFinite(t) ? new Date(t).toISOString() : '', text,
+      auto: text.startsWith(AUTO_PREFIX) || by === 'Aptly' || (!by && !hub), hub });
   }
   list.sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
   return list.slice(0, limit);
