@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Aloe Hub - Maintenance</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--teal:#3CC3E1;--teal-dim:rgba(60,195,225,.1);--ink:#0d1a1a;--ink2:#243030;--muted:#4A6466;--ghost:#6b8585;--rule:rgba(180,200,200,.4);--bg:#F8FAFC;--card:#fff;
+--green:#0fa86c;--green-d:#dcf5ec;--red:#c62f2f;--red-d:#fde8e8;--amber:#9a5b00;--amber-d:#fef3dc;--blue:#1d4ed8;--blue-d:#dbeafe;--r:12px;--r2:8px}
+body{background:var(--bg);color:#1B2B2E;font-family:Manrope,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;min-height:100vh;font-size:14px;line-height:1.5}
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;padding:28px 28px 0;max-width:1400px;margin:0 auto}
+h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
+.sub{margin-top:6px;color:var(--muted)}
+.live{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace}
+.btn{min-height:44px;padding:0 18px;border-radius:10px;font:700 14px Manrope,system-ui,sans-serif;cursor:pointer;border:1px solid #B4C3C3;background:#fff;color:#0A5468}
+.btn:hover:not(:disabled){background:#E6EFF0}.btn:disabled{opacity:.6;cursor:default}
+.btn:focus-visible,.row:focus-visible,input:focus-visible,.x:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}
+.main{padding:20px 28px 60px;max-width:1400px;margin:0 auto}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);padding:14px 18px}
+.kpi b{display:block;font-size:28px;font-weight:800;letter-spacing:-.03em;line-height:1.1}
+.kpi span{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.search{flex:1;min-width:220px;min-height:44px;padding:0 14px;border:1px solid #B4C3C3;border-radius:10px;font:500 14px Manrope,system-ui,sans-serif;background:#fff}
+.note{font-size:12px;color:var(--muted)}
+.list{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);overflow:hidden}
+.row{display:grid;grid-template-columns:minmax(0,2fr) 90px 110px minmax(0,3fr);gap:12px;align-items:center;padding:12px 16px;min-height:52px;border-top:1px solid var(--rule);cursor:pointer;width:100%;text-align:left;background:#fff;border-left:0;border-right:0;border-bottom:0;font:inherit;color:inherit}
+.row:hover{background:#F1F7F8}.row.head{cursor:default;background:#E6EFF0;border-top:0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);min-height:40px}
+.row.head:hover{background:#E6EFF0}
+.addr{font-weight:700;color:#0A5468}.snip{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700;white-space:nowrap}
+.p-red{background:var(--red-d);color:var(--red)}.p-amber{background:var(--amber-d);color:var(--amber)}.p-green{background:var(--green-d);color:#0b6b45}.p-blue{background:var(--blue-d);color:var(--blue)}.p-grey{background:#E6EFF0;color:var(--muted)}
+.empty,.err{padding:30px;text-align:center;color:var(--muted)}.err{color:#b91c1c;background:var(--red-d)}
+.veil{position:fixed;inset:0;background:rgba(13,26,26,.35);z-index:10000;display:none}.veil.on{display:block}
+.panel{position:fixed;top:0;right:0;bottom:0;width:min(760px,100%);background:#fff;z-index:10001;box-shadow:-8px 0 30px rgba(0,0,0,.18);overflow-y:auto;transform:translateX(100%);transition:transform .18s}
+.panel.on{transform:none}
+.ph{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--rule);padding:16px 20px;display:flex;gap:12px;align-items:flex-start;justify-content:space-between;z-index:2}
+.ph h2{font-size:20px;font-weight:800;line-height:1.25}.x{min-width:44px;min-height:44px;border:1px solid #B4C3C3;background:#fff;border-radius:10px;font:700 18px Manrope,sans-serif;cursor:pointer;color:#0A5468}
+.pb{padding:6px 20px 40px}
+.sec{margin-top:20px}.sec h3{font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.sec h3::after{content:'';flex:1;height:1px;background:var(--rule)}
+.box{border:1px solid var(--rule);border-radius:var(--r2);padding:10px 12px;margin-bottom:8px;background:#fff}
+.box .t{font-weight:700}.box .m{font-size:12px;color:var(--muted)}
+.hint{padding:9px 12px;border-radius:var(--r2);margin-bottom:6px;font-size:13px}.hint.watch{background:var(--amber-d);color:#6b3f00}.hint.info{background:#E6EFF0;color:var(--ink2)}
+.kv{display:grid;grid-template-columns:130px 1fr;gap:2px 10px;font-size:13px;margin-top:4px}.kv dt{color:var(--muted)}.kv dd{overflow-wrap:anywhere}
+.notes{white-space:pre-wrap;font-size:13px;background:#F8FAFC;border:1px solid var(--rule);border-radius:var(--r2);padding:10px 12px;overflow-wrap:anywhere}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}.tbl th{background:#E6EFF0;color:var(--muted);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:8px 10px}
+.tbl td{padding:8px 10px;border-top:1px solid var(--rule);vertical-align:top}
+.ro{font-size:12px;color:var(--muted);margin-top:6px}
+.sk{background:linear-gradient(90deg,#eef3f3,#f8fbfb,#eef3f3);border-radius:8px;height:46px;margin-bottom:8px}
+@media (max-width:900px){.top,.main{padding-left:16px;padding-right:16px}.top{padding-left:64px}.row{grid-template-columns:1fr 70px 90px}.row .snip{display:none}.kpis{grid-template-columns:1fr}.kv{grid-template-columns:110px 1fr}.tbl{display:block;overflow-x:auto}}
+@media (prefers-reduced-motion:reduce){.panel{transition:none}}
+</style>
+</head>
+<body>
+<div class="top">
+  <div>
+    <h1>Maintenance</h1>
+    <div class="sub">Homes with open work orders. Click an address for its full picture.</div>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="live" id="asof"></span><button class="btn" id="refresh" type="button">Refresh</button></div>
+</div>
+<div class="main">
+  <div class="kpis" id="kpis"></div>
+  <div class="bar">
+    <input class="search" id="q" type="search" placeholder="Search address" aria-label="Search address" autocomplete="off">
+    <span class="note" id="count"></span>
+  </div>
+  <div class="list" id="list"><div class="empty">Loading open work orders...</div></div>
+  <p class="ro">View only. This page does not change anything in Rentvine, Aptly or Slack.</p>
+</div>
+
+<div class="veil" id="veil"></div>
+<aside class="panel" id="panel" role="dialog" aria-modal="true" aria-labelledby="ptitle" tabindex="-1">
+  <div class="ph"><div><h2 id="ptitle">Property</h2><div class="note" id="psub"></div></div><button class="x" id="pclose" type="button" aria-label="Close">&times;</button></div>
+  <div class="pb" id="pbody"></div>
+</aside>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  function h(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) { if (k === 'text') n.textContent = attrs[k]; else n.setAttribute(k, attrs[k]); });
+    (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return n;
+  }
+  var ALL = [], opener = null, token = 0;
+
+  function api(path) {
+    return fetch(path, { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) {
+      if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); throw new Error('Signed out'); }
+      return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('Error ' + r.status)); return j; });
+    });
+  }
+  function age(d) { if (d == null) return ''; return d + (d === 1 ? ' day' : ' days'); }
+  function agePill(d) { if (d == null) return h('span', { 'class': 'pill p-grey', text: 'n/a' }); return h('span', { 'class': 'pill ' + (d >= 14 ? 'p-red' : d >= 7 ? 'p-amber' : 'p-green'), text: age(d) }); }
+  function money(n) { return n == null ? '' : '$' + Number(n).toLocaleString(); }
+
+  function renderKpis(data) {
+    var oldest = 0; data.properties.forEach(function (p) { if (p.oldestDays != null && p.oldestDays > oldest) oldest = p.oldestDays; });
+    var k = $('kpis'); k.textContent = '';
+    [[data.properties.length, 'Homes with open work orders'], [data.openTotal, 'Open work orders'], [oldest ? age(oldest) : 'n/a', 'Oldest open']].forEach(function (x) {
+      k.appendChild(h('div', { 'class': 'kpi' }, [h('b', { text: String(x[0]) }), h('span', { text: x[1] })]));
+    });
+    $('asof').textContent = 'Updated ' + new Date(data.asOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  function renderList() {
+    var q = $('q').value.trim().toLowerCase();
+    var rows = ALL.filter(function (p) { return !q || p.address.toLowerCase().indexOf(q) > -1; });
+    $('count').textContent = rows.length + ' of ' + ALL.length + ' homes';
+    var l = $('list'); l.textContent = '';
+    l.appendChild(h('div', { 'class': 'row head', role: 'row' }, [h('span', { text: 'Address' }), h('span', { text: 'Open' }), h('span', { text: 'Oldest' }), h('span', { text: 'Latest request' })]));
+    if (!rows.length) { l.appendChild(h('div', { 'class': 'empty', text: ALL.length ? 'No homes match that search.' : 'No open work orders right now.' })); return; }
+    rows.forEach(function (p) {
+      var latest = p.items.slice().sort(function (a, b) { return b.created.localeCompare(a.created); })[0];
+      var b = h('button', { 'class': 'row', type: 'button', 'data-pid': p.propertyId }, [
+        h('span', { 'class': 'addr', text: p.address || ('Property ' + p.propertyId) }),
+        h('span', { text: String(p.openCount) }), h('span', {}, [agePill(p.oldestDays)]),
+        h('span', { 'class': 'snip', text: latest ? latest.summary : '' })]);
+      b.addEventListener('click', function () { openPanel(p.propertyId, p.address, b); });
+      l.appendChild(b);
+    });
+  }
+  function load(fresh) {
+    $('refresh').disabled = true;
+    api('/api/maintenance/properties' + (fresh ? '?fresh=1' : '')).then(function (d) { ALL = d.properties; renderKpis(d); renderList(); })
+      .catch(function (e) { $('list').textContent = ''; $('list').appendChild(h('div', { 'class': 'err', text: e.message })); })
+      .then(function () { $('refresh').disabled = false; });
+  }
+
+  // ---------- panel ----------
+  function sec(title, kids) { return h('div', { 'class': 'sec' }, [h('h3', { text: title })].concat(kids)); }
+  function dl(pairs) { var d = h('dl', { 'class': 'kv' }); pairs.forEach(function (p) { if (p[1]) { d.appendChild(h('dt', { text: p[0] })); d.appendChild(h('dd', { text: p[1] })); } }); return d; }
+
+  function renderPanel(v) {
+    var b = $('pbody'); b.textContent = '';
+    $('ptitle').textContent = v.address || ('Property ' + v.propertyId);
+    $('psub').textContent = (v.status ? v.status + ' | ' : '') + v.openCount + ' open work order' + (v.openCount === 1 ? '' : 's') + ' | updated ' + new Date(v.asOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+    if (v.hints.length) b.appendChild(sec('What to look at', v.hints.map(function (x) { return h('div', { 'class': 'hint ' + x.level, text: x.text }); })));
+
+    var open = v.history.filter(function (w) { return !w.closed && !/^(Completed|Cancelled|Rejected|Completed Already Billed)$/.test(w.status); });
+    b.appendChild(sec('Open work orders (' + open.length + ')', open.length ? open.map(function (w) {
+      return h('div', { 'class': 'box' }, [h('div', { 'class': 't', text: '#' + w.number + '  ' + (w.summary || '(no description)') }),
+        h('div', { 'class': 'm', text: [w.status, w.vendor, 'opened ' + w.created, w.scheduled ? 'scheduled ' + w.scheduled : '', w.estimated ? 'est. ' + money(w.estimated) : ''].filter(Boolean).join(' | ') })]);
+    }) : [h('div', { 'class': 'note', text: 'None open.' })]));
+
+    var ari = v.ari;
+    b.appendChild(sec('Ari in Slack', !ari.available ? [h('div', { 'class': 'note', text: 'Ari activity is not available right now.' })]
+      : ari.items.length ? ari.items.map(function (a) { return h('div', { 'class': 'box' }, [h('div', { 'class': 't', text: a.summary }), h('div', { 'class': 'm', text: [a.at, a.category, a.outcome].filter(Boolean).join(' | ') })]); })
+      : [h('div', { 'class': 'note', text: 'No recent Ari actions recorded for this address.' })]));
+
+    b.appendChild(sec('Included services', v.services.length ? v.services.map(function (s) {
+      var cls = s.who === 'owner' || s.who === 'hoa' ? 'p-blue' : s.who === 'tenant' ? 'p-green' : 'p-grey';
+      var kids = [h('div', { 'class': 't' }, [s.label + '  ', h('span', { 'class': 'pill ' + cls, text: s.text })])];
+      if (s.provider) kids.push(h('div', { 'class': 'm', text: 'Provider: ' + s.provider }));
+      if (s.doNotCharge) kids.push(h('div', { 'class': 'm', text: 'Do not charge the tenant for this.' }));
+      return h('div', { 'class': 'box' }, kids);
+    }) : [h('div', { 'class': 'note', text: 'No service responsibility recorded.' })]));
+    v.serviceWarnings.forEach(function (w) { b.lastChild.appendChild(h('div', { 'class': 'hint watch', text: w.label + ' in the notes: "' + w.snippet + '"' })); });
+
+    b.appendChild(sec('Appliances and equipment', v.appliances.length ? v.appliances.map(function (a) {
+      var t = a.name + (a.included === true ? ' (included)' : a.included === false ? ' (not included)' : '');
+      return h('div', { 'class': 'box' }, [h('div', { 'class': 't', text: t }), dl([['Brand', a.brand], ['Model', a.model], ['Serial', a.serial], ['Purchased', a.purchased], ['Replaced', a.replaced]].concat(a.other.map(function (o) { return [o.name, o.value]; })))]);
+    }) : [h('div', { 'class': 'note', text: 'No appliance details recorded in Rentvine.' })]));
+
+    var w = v.warranty, wk = [];
+    if (w.homeWarrantyExpires) wk.push(h('div', { 'class': 'box' }, [h('div', { 'class': 't', text: 'Home warranty expires ' + w.homeWarrantyExpires }), h('div', { 'class': 'm', text: w.expiresInDays < 0 ? 'Expired ' + (-w.expiresInDays) + ' days ago' : w.expiresInDays + ' days left' })]));
+    else if (w.homeWarrantyOn === true) wk.push(h('div', { 'class': 'note', text: 'Home warranty is on, with no expiry date recorded.' }));
+    w.dates.forEach(function (d) { wk.push(h('div', { 'class': 'box' }, [h('div', { 'class': 't', text: d.label + ': ' + d.date }), h('div', { 'class': 'm', text: d.category + (d.ageDays != null ? ' | ' + (d.ageDays >= 0 ? Math.floor(d.ageDays / 30) + ' months ago' : 'upcoming') : '') })])); });
+    b.appendChild(sec('Warranties and dates', wk.length ? wk : [h('div', { 'class': 'note', text: 'No warranty or replacement dates recorded.' })]));
+
+    if (v.notes) b.appendChild(sec('Maintenance notes (from Rentvine)', [h('div', { 'class': 'notes', text: v.notes })]));
+
+    var tb = h('tbody'); v.history.forEach(function (x) { tb.appendChild(h('tr', {}, [h('td', { text: x.created }), h('td', { text: '#' + x.number }), h('td', { text: x.summary }), h('td', { text: x.status }), h('td', { text: x.vendor }), h('td', { text: money(x.estimated) })])); });
+    b.appendChild(sec('Work order history, last 24 months (' + v.history.length + ')', v.history.length ? [h('table', { 'class': 'tbl' }, [h('thead', {}, [h('tr', {}, ['Opened', 'WO', 'Summary', 'Status', 'Vendor', 'Est.'].map(function (t) { return h('th', { text: t }); }))]), tb])] : [h('div', { 'class': 'note', text: 'No work orders in the last 24 months.' })]));
+    b.appendChild(h('p', { 'class': 'ro', text: 'View only. Source: Rentvine' + (v.ari.available ? ' and Ari activity log.' : '.') }));
+  }
+  function openPanel(pid, address, from) {
+    opener = from || null; var my = ++token;
+    $('ptitle').textContent = address || ('Property ' + pid); $('psub').textContent = 'Loading...';
+    var b = $('pbody'); b.textContent = ''; for (var i = 0; i < 4; i++) b.appendChild(h('div', { 'class': 'sk' }));
+    $('veil').classList.add('on'); $('panel').classList.add('on'); $('panel').focus();
+    api('/api/maintenance/property/' + encodeURIComponent(pid) + '?address=' + encodeURIComponent(address || '')).then(function (v) { if (my === token) renderPanel(v); })
+      .catch(function (e) { if (my !== token) return; b.textContent = ''; b.appendChild(h('div', { 'class': 'err', text: e.message })); $('psub').textContent = ''; });
+  }
+  function closePanel() { token++; $('veil').classList.remove('on'); $('panel').classList.remove('on'); if (opener) { try { opener.focus(); } catch (e) {} } }
+
+  $('q').addEventListener('input', renderList);
+  $('refresh').addEventListener('click', function () { load(true); });
+  $('pclose').addEventListener('click', closePanel);
+  $('veil').addEventListener('click', closePanel);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $('panel').classList.contains('on')) closePanel(); });
+  load(false);
+})();
+</script>
+<script src="/hub-shell.js" defer></script>
+</body>
+</html>

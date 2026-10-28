@@ -23,7 +23,7 @@
         ['Tenant resources', 'https://resident.aloepm.com/resources/tenant', true],
         ['Lease renewals', '/renewals'], ['Move-outs', '/move-outs'], ['HOA generator', '/hoa'] ] },
       { id: 'maint', label: 'Maintenance', items: [
-        ['Vendors', '/vendors'], ['Appliance scanner', '/appliance-scanner'] ] },
+        ['Maintenance', '/maintenance'], ['Vendors', '/vendors'], ['Appliance scanner', '/appliance-scanner'] ] },
       { id: 'props', label: 'Properties', items: [
         ['Property map', '/map'], ['Property media analyzer', '/media-analyzer'] ] },
       { id: 'acct', label: 'Accounting', items: [
