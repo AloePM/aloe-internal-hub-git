@@ -3,13 +3,13 @@
 // Zinspector, Slack or storage. Phase 2 (confirmed write-back with a change history) is a separate step.
 //
 // Install (one line in server.js, after installMoveoutProperty):
-//   const { installMaintenance } = await import('./maintenance-routes.js'); installMaintenance(app, rvFetch, fetchAllRVOpenWOs);
-import { addrKey, extractServices, mapWorkOrders, readProperty } from './moveouts-property.js';
-import { groupOpenByProperty, readCategories, applianceRows, warrantyRows, findWarrantyExpires, findNotes, buildHints, whoPays, todayPhoenix } from './maintenance-data.js';
+//   const { installMaintenance } = await import('./maintenance-routes.js'); installMaintenance(app, rvFetch, fetchAllRVOpenWOs, findBillMatchedWOs);
+import { addrKey, extractServices, readProperty } from './moveouts-property.js';
+import { groupOpenByProperty, readCategories, applianceRows, warrantyRows, findWarrantyExpires, findNotes, buildHints, whoPays, todayPhoenix, ownerVendors, homeWarrantyInfo, mapHistory, assignCards } from './maintenance-data.js';
 import { loadAriRows, ariForAddress } from './maintenance-ari.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-const LIST_TTL = 2 * 60 * 1000, PROP_TTL = 5 * 60 * 1000;
+const LIST_TTL = 2 * 60 * 1000, PROP_TTL = 5 * 60 * 1000, CLOSE_TTL = 15 * 60 * 1000;
 
 // Sign-in check for /api/maintenance. The hub's API lock only covers the prefixes listed in HUB_API_ENFORCE_PREFIXES,
 // and /api/maintenance is not on that list, so these routes check the same session cookie themselves (fail closed).
@@ -29,10 +29,31 @@ export function sessionOk(req, env = process.env) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function installMaintenance(app, rvFetch, fetchOpenWOs) {
+export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched) {
   if (typeof rvFetch !== 'function' || typeof fetchOpenWOs !== 'function') throw new Error('installMaintenance needs rvFetch and fetchAllRVOpenWOs');
   let listCache = { at: 0, v: null }, listPending = null;
   const propCache = new Map();
+
+  // Property id -> street address, read the same way Move-outs reads it (/properties/export). Open work orders from
+  // Rentvine do not always carry an address, so this fills the gap. Cached 6 hours; a failed read is not cached.
+  let addrMap = null, addrAt = 0, addrInflight = null;
+  async function getAddresses() {
+    if (addrMap && Date.now() - addrAt < 6 * 3600 * 1000) return addrMap;
+    if (!addrInflight) addrInflight = (async () => {
+      const map = new Map();
+      for (let page = 1; page <= 10; page++) {
+        const b = await rvFetch('/properties/export', { pageSize: 500, page });
+        if (b && b.error) throw new Error(b.error);
+        const items = Array.isArray(b) ? b : (b && (b.data || b.results)) || [];
+        if (!items.length) break;
+        for (const it of items) { const p = it.property || it; if (p && p.propertyID && p.address) map.set(String(p.propertyID), String(p.address).trim()); }
+        if (items.length < 500) break;
+      }
+      addrMap = map; addrAt = Date.now(); return map;
+    })().finally(() => { addrInflight = null; });
+    return addrInflight;
+  }
+  const addressFor = async (pid) => { try { return (await getAddresses()).get(String(pid)) || ''; } catch (e) { console.error('[maintenance] addresses', e.message); return ''; } };
 
   app.use('/api/maintenance', (req, res, next) => {
     if (sessionOk(req)) return next();
@@ -47,11 +68,38 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs) {
     res.set('Cache-Control', 'no-store');
     try {
       if (!(listCache.v && Date.now() - listCache.at < LIST_TTL) || req.query.fresh === '1') {
-        if (!listPending) listPending = fetchOpenWOs().then((wos) => { listCache = { at: Date.now(), v: { properties: groupOpenByProperty(wos), openTotal: wos.length, asOf: new Date().toISOString() } }; }).finally(() => { listPending = null; });
+        if (!listPending) listPending = fetchOpenWOs().then(async (wos) => {
+          const properties = groupOpenByProperty(wos);
+          if (properties.some((g) => !g.address)) { for (const g of properties) if (!g.address) g.address = await addressFor(g.propertyId); properties.sort((a, b) => (b.oldestDays ?? -1) - (a.oldestDays ?? -1) || a.address.localeCompare(b.address)); }
+          listCache = { at: Date.now(), v: { properties, openTotal: wos.length, asOf: new Date().toISOString() } };
+        }).finally(() => { listPending = null; });
         await listPending;
       }
       res.json(listCache.v);
     } catch (e) { console.error('[maintenance] list', e.message); res.status(502).json({ error: 'Could not read open work orders from Rentvine.' }); }
+  });
+
+  // Open work orders that already have an invoice (same matching the nightly Slack post uses). Read-only, cached 15 minutes.
+  let closeCache = { at: 0, v: null }, closePending = null;
+  app.get('/api/maintenance/closing-out', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (typeof findBillMatched !== 'function') return res.json({ available: false, items: [] });
+    try {
+      if (!(closeCache.v && Date.now() - closeCache.at < CLOSE_TTL) || req.query.fresh === '1') {
+        if (!closePending) closePending = Promise.resolve(findBillMatched()).then((rows) => {
+          const byNum = new Map();
+          for (const g of (listCache.v && listCache.v.properties) || []) for (const it of g.items) byNum.set(String(it.number), g);
+          const items = (Array.isArray(rows) ? rows : []).map((r) => {
+            const g = byNum.get(String(r.woNumber));
+            return { woNumber: String(r.woNumber || ''), address: String(r.address || (g && g.address) || '').trim(), propertyId: g ? g.propertyId : '', vendor: String(r.vendorName || ''),
+              amount: r.billAmount === '' || r.billAmount == null ? '' : String(r.billAmount), billDate: String(r.billDate || '').slice(0, 10), match: String(r.matchType || '') };
+          });
+          closeCache = { at: Date.now(), v: { available: true, items, asOf: new Date().toISOString() } };
+        }).finally(() => { closePending = null; });
+        await closePending;
+      }
+      res.json(closeCache.v);
+    } catch (e) { console.error('[maintenance] closing-out', e.message); res.json({ available: false, items: [], error: 'Could not check invoices right now.' }); }
   });
 
   // Everything for one property.
@@ -66,7 +114,7 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs) {
       const detail = parts[0] || {};
       const p = detail.property || detail;
       // Rentvine's property record shape varies, so fall back to the address the list already showed (display and Ari matching only).
-      const address = String(p.address || p.fullAddress || p.name || req.query.address || '').trim().slice(0, 200);
+      const address = String((await addressFor(pid)) || p.address || p.fullAddress || p.name || req.query.address || '').trim().slice(0, 200);
       const sv = extractServices(parts);
       const services = sv.services.map((s) => ({ ...s, ...(() => { const w = whoPays(s.raw); return { who: w.who, text: w.text, doNotCharge: w.who === 'owner' || w.who === 'hoa' }; })() }));
 
@@ -76,6 +124,8 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs) {
       if (vals && !vals.error) cats = readCategories(vals);
       const appliances = applianceRows(cats);
       const warranty = warrantyRows(cats, findWarrantyExpires(detail));
+      const homeWarranty = homeWarrantyInfo(cats, findWarrantyExpires(detail));
+      const vendors = ownerVendors(cats);
 
       // work order history (24 months, same mapping Move-outs uses)
       let all = [];
@@ -86,7 +136,7 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs) {
         all = all.concat(items);
         if (items.length < 100) break;
       }
-      const history = mapWorkOrders(all);
+      const history = mapHistory(all);
       const openItems = history.filter((w) => !w.closed && !/^(Completed|Cancelled|Rejected|Completed Already Billed)$/.test(w.status));
 
       // Ari activity (soft-fail: the panel still works without it)
@@ -96,8 +146,9 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs) {
       const v = {
         propertyId: pid, address, status: String(p.status || p.statusName || ''), source: via,
         services, serviceWarnings: sv.warnings, notes: findNotes(detail),
-        appliances, warranty, history, openCount: openItems.length,
+        appliances, warranty, homeWarranty, ownerVendors: vendors, history, openCount: openItems.length,
         hints: buildHints({ history, openItems, warranty, appliances, services }, todayPhoenix()),
+        cards: assignCards(openItems, { history, homeWarranty, ownerVendors: vendors, notes: findNotes(detail), appliances, services }, todayPhoenix()),
         ari, asOf: new Date().toISOString(),
       };
       propCache.set(pid, { at: Date.now(), v });

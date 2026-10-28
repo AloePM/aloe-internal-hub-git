@@ -21,12 +21,14 @@ export function groupOpenByProperty(openWOs, today = todayPhoenix()) {
     const pid = String(wo.propertyID || wo.propertyId || '');
     if (!/^\d{1,9}$/.test(pid)) continue;
     let g = map.get(pid);
-    if (!g) { g = { propertyId: pid, address: squash(wo._unitAddress || wo.unitAddress), openCount: 0, oldest: null, items: [] }; map.set(pid, g); }
+    if (!g) { g = { propertyId: pid, address: squash(wo._unitAddress || wo.unitAddress), openCount: 0, moveOutCount: 0, oldest: null, items: [] }; map.set(pid, g); }
     if (!g.address) g.address = squash(wo._unitAddress || wo.unitAddress);
     const created = day(wo.dateTimeCreated);
+    const statusId = Number(wo.workOrderStatusID || 0);
     g.openCount++;
+    if (statusId === 23) g.moveOutCount = (g.moveOutCount || 0) + 1;
     if (created && (!g.oldest || created < g.oldest)) g.oldest = created;
-    g.items.push({ id: String(wo.workOrderID || ''), number: String(wo.workOrderNumber || ''), created, summary: squash(wo.agentSummary || wo.description).slice(0, 160) });
+    g.items.push({ id: String(wo.workOrderID || ''), number: String(wo.workOrderNumber || ''), created, summary: squash(wo.agentSummary || wo.description).slice(0, 160), statusId, moveOut: statusId === 23 });
   }
   const rows = [...map.values()].map((g) => ({ ...g, oldestDays: g.oldest ? daysBetween(g.oldest, today) : null }));
   rows.sort((a, b) => (b.oldestDays ?? -1) - (a.oldestDays ?? -1) || a.address.localeCompare(b.address));
@@ -65,7 +67,7 @@ export function applianceRows(categories) {
   const rows = [];
   for (const c of categories) {
     if (!APPLIANCE_CATS.test(c.name)) continue;
-    const row = { name: c.name, included: null, brand: '', model: '', serial: '', purchased: '', replaced: '', other: [] };
+    const row = { name: c.name, included: null, brand: '', model: '', serial: '', purchased: '', replaced: '', warrantyExpires: '', other: [] };
     for (const f of c.fields) {
       const n = f.name.toLowerCase(), v = squash(f.value);
       if (v === '') continue;
@@ -73,12 +75,13 @@ export function applianceRows(categories) {
       else if (/brand/.test(n)) row.brand = v;
       else if (/model/.test(n)) row.model = v;
       else if (/serial/.test(n)) row.serial = v;
+      else if (/warrant|expires/.test(n) && isDate(v)) row.warrantyExpires = day(v);
       else if (/purchas|install/.test(n) && isDate(v)) row.purchased = day(v);
       else if (/replace/.test(n) && isDate(v)) row.replaced = day(v);
       else if (c.name.toLowerCase() === f.name.toLowerCase()) row.other.push({ name: f.name, value: v });
       else row.other.push({ name: f.name, value: v });
     }
-    const has = row.included !== null || row.brand || row.model || row.serial || row.purchased || row.replaced || row.other.length;
+    const has = row.included !== null || row.brand || row.model || row.serial || row.purchased || row.replaced || row.warrantyExpires || row.other.length;
     if (has) rows.push(row);
   }
   return rows;
@@ -90,7 +93,6 @@ export function warrantyRows(categories, warrantyExpires, today = todayPhoenix()
   for (const c of categories) {
     for (const f of c.fields) {
       if (!isDate(f.value)) continue;
-      if (!/warrant|replac|install|purchas|paint|repair|service/i.test(f.name + ' ' + c.name)) continue;
       const d = day(f.value);
       rows.push({ label: f.name, category: c.name, date: d, ageDays: daysBetween(d, today) });
     }
@@ -155,4 +157,115 @@ export function buildHints({ history, openItems, warranty, appliances, services 
     if (s.who === 'unknown') hints.push({ level: 'info', text: `${s.label}: who is responsible is not recorded in Rentvine.` });
   }
   return hints;
+}
+
+// Owner preferred vendor / warranty-vendor fields (HVAC, Roof, Builder warranty, Landscaper for trees or irrigation).
+export function ownerVendors(categories) {
+  const out = [];
+  for (const c of categories) {
+    if (!/owner preferred vendor/i.test(c.name)) continue;
+    for (const f of c.fields) { const v = squash(f.value); if (v) out.push({ name: f.name, value: v }); }
+  }
+  return out;
+}
+
+// Home warranty card: on/off, company, expiry (custom field first, then the property's Warranty Expires), policy, whether a login is on file.
+export function homeWarrantyInfo(categories, propertyWarrantyExpires, today = todayPhoenix()) {
+  const flat = categories.flatMap((c) => c.fields.map((f) => ({ ...f, cat: c.name })));
+  const get = (re) => { const f = flat.find((x) => re.test(x.name)); return f ? squash(f.value) : ''; };
+  const toggle = flat.find((f) => /^home warranty$/i.test(f.name));
+  const company = get(/home warranty company/i), policy = get(/home warranty policy/i), login = get(/home warranty login/i);
+  const exp = [get(/home warranty expiration/i), propertyWarrantyExpires].find((d) => isDate(d)) || '';
+  return {
+    on: toggle ? TOGGLE_ON.test(squash(toggle.value)) : null, company, policy, loginOnFile: !!login, login,
+    expires: exp ? day(exp) : '', expiresInDays: exp ? daysBetween(today, day(exp)) : null,
+  };
+}
+
+// ---------- 36-month work order history (own mapper; Move-outs code is not touched) ----------
+const STATUS = { 1: 'Open', 6: 'Estimating', 21: 'Troubleshooting Steps Sent', 28: 'HVAC Tune Ups', 4: 'Requested', 24: 'Internal Work Order Request', 25: 'Unit Turn', 26: 'Home Warranty', 22: 'Renewal Walk Through', 23: 'Move Out', 14: 'Scheduled', 5: 'On Hold', 2: 'Completed', 7: 'Rejected', 18: 'Completed Already Billed', 3: 'Cancelled', 27: 'Waiting for parts', 31: 'Owner Maintained' };
+const stripHtml = (s) => squash(String(s == null ? '' : s).replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'"));
+export function mapHistory(raw, now = new Date(), months = 36) {
+  const list = Array.isArray(raw) ? raw : raw && Array.isArray(raw.data) ? raw.data : [];
+  const cutoff = new Date(now); cutoff.setMonth(cutoff.getMonth() - months);
+  const out = [];
+  for (const it of list) {
+    const w = (it && it.workOrder) || it || {}; const c = (it && it.contact) || {};
+    const created = day(w.dateTimeCreated);
+    if (!created || new Date(created + 'T12:00:00Z') < cutoff) continue;
+    const sid = Number(w.workOrderStatusID);
+    const summary = squash(w.agentSummary) || stripHtml(w.description);
+    const est = parseFloat(w.estimatedAmount);
+    out.push({
+      id: String(w.workOrderID || ''), number: String(w.workOrderNumber || ''), created, closed: day(w.dateClosed) || null,
+      scheduled: day(w.scheduledStartDate) || null, statusId: sid || 0, status: STATUS[sid] || (sid ? 'Status ' + sid : ''), vendor: squash(c.name),
+      summary: summary.length > 280 ? summary.slice(0, 280) + '...' : summary, estimated: isFinite(est) && est > 0 ? est : null,
+    });
+  }
+  out.sort((a, b) => b.created.localeCompare(a.created));
+  return out;
+}
+
+// ---------- "Before you assign" card ----------
+const ITEMS = [
+  ['garbage disposal', /disposal/i], ['dishwasher', /dishwasher/i], ['refrigerator', /fridge|refrigerator|freezer|ice ?maker/i],
+  ['washer', /washer|washing machine/i], ['dryer', /dryer/i], ['water heater', /water heater/i], ['A/C', /\ba\/?c\b|air condition|cooling|hvac/i],
+  ['heating', /\bheat(ing)?\b|furnace/i], ['toilet', /toilet/i], ['irrigation / sprinklers', /irrigat|sprinkler/i], ['garage door', /garage door/i],
+  ['smoke detector', /smoke|carbon monoxide/i], ['oven / stove', /\boven\b|stove|\brange\b/i], ['microwave', /microwave/i], ['roof', /roof/i],
+  ['pest', /pest|termite|roach|scorpion|\bbees?\b|\bants?\b/i], ['plumbing leak', /leak/i], ['drain / clog', /drain|clog/i],
+];
+export function itemOf(text) { const t = String(text || ''); const hit = ITEMS.find(([, re]) => re.test(t)); return hit ? hit[0] : ''; }
+
+export function repeatsFor(open, history, months = 36) {
+  const item = itemOf(open.summary);
+  if (!item) return null;
+  const prior = (history || []).filter((w) => w.id !== open.id && w.statusId !== 3 && itemOf(w.summary) === item);
+  if (!prior.length) return null;
+  const withVendor = prior.find((w) => w.vendor);
+  return { item, total: prior.length + 1, months, lastVendor: withVendor ? withVendor.vendor : '', lastVendorWO: withVendor ? withVendor.number : '', lastVendorDate: withVendor ? withVendor.created : '',
+    prior: prior.slice(0, 5).map((w) => ({ number: w.number, created: w.created, status: w.status, vendor: w.vendor, summary: w.summary.slice(0, 120) })) };
+}
+const ORD = ['', '', 'second', 'third', 'fourth', 'fifth'];
+const VENDOR_FIELD = [[/^(A\/C|heating)$/, /hvac/i], [/^roof$/, /roof/i], [/^irrigation/, /landscap|irrigation/i]];
+const SERVICE_FOR = [[/^pest$/, /pest/i], [/^irrigation/, /landscap/i]];
+
+// One card per open work order: everything Ari flags in Slack, in front of the person who assigns the vendor.
+export function assignCards(openItems, ctx, today = todayPhoenix()) {
+  const { history = [], homeWarranty = {}, ownerVendors: ov = [], notes = '', appliances = [], services = [] } = ctx || {};
+  return (openItems || []).map((o) => {
+    const items = [];
+    const add = (level, text) => items.push({ level, text });
+    if (o.statusId === 23) add('info', 'Move-out work order. It also shows on the Move-outs page.');
+    if (o.statusId === 25) add('info', 'Unit turn. Persia or Teri handle this stage, not Roberto.');
+    if (homeWarranty.on === true || homeWarranty.company) {
+      if (homeWarranty.expiresInDays != null && homeWarranty.expiresInDays < 0) add('info', `Home warranty on file but expired ${homeWarranty.expires}${homeWarranty.company ? ' (' + homeWarranty.company + ')' : ''}.`);
+      else add('stop', `Home warranty on file${homeWarranty.company ? ': ' + homeWarranty.company : ''}${homeWarranty.expires ? ', expires ' + homeWarranty.expires : ''}. Check whether it covers this before assigning a vendor.`);
+    }
+    const item = itemOf(o.summary);
+    const vf = VENDOR_FIELD.find(([re]) => re.test(item));
+    const pref = ov.filter((x) => (vf && vf[1].test(x.name)) || /builder warranty/i.test(x.name));
+    for (const x of pref) add('stop', `Owner preferred vendor / warranty (${x.name}): ${x.value}`);
+    if (!pref.length && ov.length) add('info', 'Owner has other preferred vendors on file (see the property panel).');
+    const rep = repeatsFor(o, history);
+    if (rep) {
+      const nth = ORD[rep.total] || rep.total + 'th';
+      add(rep.total >= 3 ? 'stop' : 'watch', `This is the ${nth} ${rep.item} work order in ${rep.months} months.${rep.lastVendor ? ` Last handled by ${rep.lastVendor} (#${rep.lastVendorWO}, ${rep.lastVendorDate}).` : ''}`);
+    }
+    const key = item.split(/[ /]/)[0];
+    const ap = key ? appliances.find((a) => new RegExp(key, 'i').test(a.name)) : null;
+    if (ap) {
+      const d = ap.replaced || ap.purchased, age = d ? daysBetween(d, today) : null;
+      if (ap.warrantyExpires && daysBetween(today, ap.warrantyExpires) >= 0) add('stop', `${ap.name}: warranty runs until ${ap.warrantyExpires}.`);
+      if (age != null && age >= 0 && age < 730) add('watch', `${ap.name} was ${ap.replaced ? 'replaced' : 'purchased'} ${d}. It may still be under warranty.`);
+      else if (age != null && age >= 365 * 10) add('watch', `${ap.name} is about ${Math.floor(age / 365)} years old. A repair may not be worth it.`);
+      if (ap.serial) add('info', `${ap.name} serial on file: ${ap.serial}.`);
+    }
+    const sv = SERVICE_FOR.find(([re]) => re.test(item));
+    const svc = sv ? services.find((s) => sv[1].test(s.label)) : null;
+    if (svc && (svc.who === 'owner' || svc.who === 'hoa')) add('stop', `${svc.label}: ${svc.text}. Do not charge the tenant.`);
+    else if (svc && svc.who === 'tenant') add('info', `${svc.label}: tenant is responsible.`);
+    if (squash(notes)) add('watch', 'Maintenance notes are on file for this home. Read them below before assigning.');
+    if (!items.length) add('ok', 'Nothing flagged from what is recorded in Rentvine.');
+    return { id: o.id, number: o.number, summary: o.summary, status: o.status, statusId: o.statusId, created: o.created, vendor: o.vendor, items };
+  });
 }

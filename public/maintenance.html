@@ -44,14 +44,17 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .sec h3::after{content:'';flex:1;height:1px;background:var(--rule)}
 .box{border:1px solid var(--rule);border-radius:var(--r2);padding:10px 12px;margin-bottom:8px;background:#fff}
 .box .t{font-weight:700}.box .m{font-size:12px;color:var(--muted)}
-.hint{padding:9px 12px;border-radius:var(--r2);margin-bottom:6px;font-size:13px}.hint.watch{background:var(--amber-d);color:#6b3f00}.hint.info{background:#E6EFF0;color:var(--ink2)}
+.hint{padding:9px 12px;border-radius:var(--r2);margin-bottom:6px;font-size:13px}.hint.watch{background:var(--amber-d);color:#6b3f00}.hint.info{background:#E6EFF0;color:var(--ink2)}.hint.stop{background:var(--red-d);color:#8a1f1f;font-weight:600}.hint.ok{background:var(--green-d);color:#0b6b45}
+.card{border:1px solid var(--rule);border-radius:var(--r2);padding:10px 12px;margin-bottom:10px;background:#fff}.card .t{font-weight:700;margin-bottom:6px}.card .m{font-size:12px;color:var(--muted);margin-bottom:6px}
+details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r);margin-bottom:14px}details.close summary{cursor:pointer;padding:12px 16px;font-weight:800;min-height:44px;display:flex;align-items:center;gap:8px}details.close summary:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}
+.crow{display:grid;grid-template-columns:90px minmax(0,2fr) minmax(0,1.5fr) 90px 150px;gap:10px;padding:10px 16px;border-top:1px solid var(--rule);align-items:center;font-size:13px}.crow button{all:unset;cursor:pointer;color:#0A5468;font-weight:700}.crow button:focus-visible{outline:2px solid #2A8FA6}
 .kv{display:grid;grid-template-columns:130px 1fr;gap:2px 10px;font-size:13px;margin-top:4px}.kv dt{color:var(--muted)}.kv dd{overflow-wrap:anywhere}
 .notes{white-space:pre-wrap;font-size:13px;background:#F8FAFC;border:1px solid var(--rule);border-radius:var(--r2);padding:10px 12px;overflow-wrap:anywhere}
 .tbl{width:100%;border-collapse:collapse;font-size:13px}.tbl th{background:#E6EFF0;color:var(--muted);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:8px 10px}
 .tbl td{padding:8px 10px;border-top:1px solid var(--rule);vertical-align:top}
 .ro{font-size:12px;color:var(--muted);margin-top:6px}
 .sk{background:linear-gradient(90deg,#eef3f3,#f8fbfb,#eef3f3);border-radius:8px;height:46px;margin-bottom:8px}
-@media (max-width:900px){.top,.main{padding-left:16px;padding-right:16px}.top{padding-left:64px}.row{grid-template-columns:1fr 70px 90px}.row .snip{display:none}.kpis{grid-template-columns:1fr}.kv{grid-template-columns:110px 1fr}.tbl{display:block;overflow-x:auto}}
+@media (max-width:900px){.crow{grid-template-columns:1fr 1fr}.crow>*{min-width:0;overflow-wrap:anywhere}.top,.main{padding-left:16px;padding-right:16px}.top{padding-left:64px}.row{grid-template-columns:1fr 70px 90px}.row .snip{display:none}.kpis{grid-template-columns:1fr}.kv{grid-template-columns:110px 1fr}.tbl{display:block;overflow-x:auto}}
 @media (prefers-reduced-motion:reduce){.panel{transition:none}}
 </style>
 </head>
@@ -65,12 +68,13 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 </div>
 <div class="main">
   <div class="kpis" id="kpis"></div>
+  <div id="closing"></div>
   <div class="bar">
     <input class="search" id="q" type="search" placeholder="Search address" aria-label="Search address" autocomplete="off">
     <span class="note" id="count"></span>
   </div>
   <div class="list" id="list"><div class="empty">Loading open work orders...</div></div>
-  <p class="ro">View only. This page does not change anything in Rentvine, Aptly or Slack.</p>
+  <p class="ro">View only. This page does not change anything in Rentvine, Aptly or Slack. Move-out work orders are also on the Move-outs page.</p>
 </div>
 
 <div class="veil" id="veil"></div>
@@ -119,16 +123,34 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
     rows.forEach(function (p) {
       var latest = p.items.slice().sort(function (a, b) { return b.created.localeCompare(a.created); })[0];
       var b = h('button', { 'class': 'row', type: 'button', 'data-pid': p.propertyId }, [
-        h('span', { 'class': 'addr', text: p.address || ('Property ' + p.propertyId) }),
+        h('span', { 'class': 'addr' }, [p.address || ('Property ' + p.propertyId), p.moveOutCount ? h('span', { 'class': 'pill p-blue', style: 'margin-left:8px', text: 'Move-out' }) : null]),
         h('span', { text: String(p.openCount) }), h('span', {}, [agePill(p.oldestDays)]),
         h('span', { 'class': 'snip', text: latest ? latest.summary : '' })]);
       b.addEventListener('click', function () { openPanel(p.propertyId, p.address, b); });
       l.appendChild(b);
     });
   }
+  function loadClosing(fresh) {
+    api('/api/maintenance/closing-out' + (fresh ? '?fresh=1' : '')).then(function (d) {
+      var box = $('closing'); box.textContent = '';
+      if (!d.available) { box.appendChild(h('p', { 'class': 'note', style: 'margin-bottom:12px', text: 'Closing-out list is not available right now.' })); return; }
+      if (!d.items.length) return;
+      var det = h('details', { 'class': 'close', open: '' }, [h('summary', {}, ['Closing out: invoice received, likely complete, please close ', h('span', { 'class': 'pill p-amber', text: String(d.items.length) })])]);
+      d.items.forEach(function (x) {
+        var addr = x.propertyId ? h('button', { type: 'button' }) : h('span');
+        addr.textContent = x.address || 'Address not shown';
+        if (x.propertyId) addr.addEventListener('click', function () { openPanel(x.propertyId, x.address, addr); });
+        var guess = /reimburse/i.test(x.match);
+        det.appendChild(h('div', { 'class': 'crow' }, [h('span', { text: 'WO #' + x.woNumber }), addr, h('span', { text: x.vendor }), h('span', { text: x.amount ? money(x.amount) : '' }),
+          h('span', { 'class': 'pill ' + (guess ? 'p-grey' : 'p-green'), text: guess ? 'Keyword guess' : x.match })]));
+      });
+      det.appendChild(h('div', { 'class': 'note', style: 'padding:8px 16px 12px', text: 'Same matching as the nightly 11pm Slack post. Check the invoice, then close the work order in Rentvine. This page does not close anything.' }));
+      box.appendChild(det);
+    }).catch(function () {});
+  }
   function load(fresh) {
     $('refresh').disabled = true;
-    api('/api/maintenance/properties' + (fresh ? '?fresh=1' : '')).then(function (d) { ALL = d.properties; renderKpis(d); renderList(); })
+    api('/api/maintenance/properties' + (fresh ? '?fresh=1' : '')).then(function (d) { ALL = d.properties; renderKpis(d); renderList(); loadClosing(fresh); })
       .catch(function (e) { $('list').textContent = ''; $('list').appendChild(h('div', { 'class': 'err', text: e.message })); })
       .then(function () { $('refresh').disabled = false; });
   }
@@ -142,6 +164,10 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
     $('ptitle').textContent = v.address || ('Property ' + v.propertyId);
     $('psub').textContent = (v.status ? v.status + ' | ' : '') + v.openCount + ' open work order' + (v.openCount === 1 ? '' : 's') + ' | updated ' + new Date(v.asOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
+    if ((v.cards || []).length) b.appendChild(sec('Before you assign a vendor', v.cards.map(function (c) {
+      return h('div', { 'class': 'card' }, [h('div', { 'class': 't', text: '#' + c.number + '  ' + (c.summary || '(no description)') }),
+        h('div', { 'class': 'm', text: [c.status, c.vendor ? 'vendor: ' + c.vendor : 'no vendor yet', 'opened ' + c.created].filter(Boolean).join(' | ') })].concat(c.items.map(function (x) { return h('div', { 'class': 'hint ' + x.level, text: x.text }); })));
+    })));
     if (v.hints.length) b.appendChild(sec('What to look at', v.hints.map(function (x) { return h('div', { 'class': 'hint ' + x.level, text: x.text }); })));
 
     var open = v.history.filter(function (w) { return !w.closed && !/^(Completed|Cancelled|Rejected|Completed Already Billed)$/.test(w.status); });
@@ -166,19 +192,25 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 
     b.appendChild(sec('Appliances and equipment', v.appliances.length ? v.appliances.map(function (a) {
       var t = a.name + (a.included === true ? ' (included)' : a.included === false ? ' (not included)' : '');
-      return h('div', { 'class': 'box' }, [h('div', { 'class': 't', text: t }), dl([['Brand', a.brand], ['Model', a.model], ['Serial', a.serial], ['Purchased', a.purchased], ['Replaced', a.replaced]].concat(a.other.map(function (o) { return [o.name, o.value]; })))]);
+      return h('div', { 'class': 'box' }, [h('div', { 'class': 't', text: t }), dl([['Brand', a.brand], ['Model', a.model], ['Serial', a.serial], ['Purchased', a.purchased], ['Replaced', a.replaced], ['Warranty expires', a.warrantyExpires]].concat(a.other.map(function (o) { return [o.name, o.value]; })))]);
     }) : [h('div', { 'class': 'note', text: 'No appliance details recorded in Rentvine.' })]));
 
+    var hw = v.homeWarranty || {}, hk = [];
+    if (hw.on === true || hw.company || hw.expires) {
+      hk.push(h('div', { 'class': 'box' }, [h('div', { 'class': 't' }, ['Home warranty  ', h('span', { 'class': 'pill ' + (hw.expiresInDays != null && hw.expiresInDays < 0 ? 'p-red' : 'p-green'), text: hw.expiresInDays != null && hw.expiresInDays < 0 ? 'Expired' : 'On file' })]),
+        dl([['Company', hw.company], ['Expires', hw.expires ? hw.expires + (hw.expiresInDays != null ? (hw.expiresInDays < 0 ? ' (expired ' + (-hw.expiresInDays) + ' days ago)' : ' (' + hw.expiresInDays + ' days left)') : '') : ''], ['Policy number', hw.policy], ['Login', hw.login]])]));
+    } else hk.push(h('div', { 'class': 'note', text: hw.on === false ? 'No home warranty on file.' : 'Home warranty not recorded.' }));
+    b.appendChild(sec('Home warranty', hk));
+    if ((v.ownerVendors || []).length) b.appendChild(sec('Owner preferred vendor and warranty vendors', [h('div', { 'class': 'box' }, [dl(v.ownerVendors.map(function (o) { return [o.name, o.value]; }))])]));
+
     var w = v.warranty, wk = [];
-    if (w.homeWarrantyExpires) wk.push(h('div', { 'class': 'box' }, [h('div', { 'class': 't', text: 'Home warranty expires ' + w.homeWarrantyExpires }), h('div', { 'class': 'm', text: w.expiresInDays < 0 ? 'Expired ' + (-w.expiresInDays) + ' days ago' : w.expiresInDays + ' days left' })]));
-    else if (w.homeWarrantyOn === true) wk.push(h('div', { 'class': 'note', text: 'Home warranty is on, with no expiry date recorded.' }));
     w.dates.forEach(function (d) { wk.push(h('div', { 'class': 'box' }, [h('div', { 'class': 't', text: d.label + ': ' + d.date }), h('div', { 'class': 'm', text: d.category + (d.ageDays != null ? ' | ' + (d.ageDays >= 0 ? Math.floor(d.ageDays / 30) + ' months ago' : 'upcoming') : '') })])); });
-    b.appendChild(sec('Warranties and dates', wk.length ? wk : [h('div', { 'class': 'note', text: 'No warranty or replacement dates recorded.' })]));
+    b.appendChild(sec('Other dates on file (warranties, replacements, treatments)', wk.length ? wk : [h('div', { 'class': 'note', text: 'No warranty or replacement dates recorded.' })]));
 
     if (v.notes) b.appendChild(sec('Maintenance notes (from Rentvine)', [h('div', { 'class': 'notes', text: v.notes })]));
 
     var tb = h('tbody'); v.history.forEach(function (x) { tb.appendChild(h('tr', {}, [h('td', { text: x.created }), h('td', { text: '#' + x.number }), h('td', { text: x.summary }), h('td', { text: x.status }), h('td', { text: x.vendor }), h('td', { text: money(x.estimated) })])); });
-    b.appendChild(sec('Work order history, last 24 months (' + v.history.length + ')', v.history.length ? [h('table', { 'class': 'tbl' }, [h('thead', {}, [h('tr', {}, ['Opened', 'WO', 'Summary', 'Status', 'Vendor', 'Est.'].map(function (t) { return h('th', { text: t }); }))]), tb])] : [h('div', { 'class': 'note', text: 'No work orders in the last 24 months.' })]));
+    b.appendChild(sec('Work order history, last 36 months (' + v.history.length + ')', v.history.length ? [h('table', { 'class': 'tbl' }, [h('thead', {}, [h('tr', {}, ['Opened', 'WO', 'Summary', 'Status', 'Vendor', 'Est.'].map(function (t) { return h('th', { text: t }); }))]), tb])] : [h('div', { 'class': 'note', text: 'No work orders in the last 36 months.' })]));
     b.appendChild(h('p', { 'class': 'ro', text: 'View only. Source: Rentvine' + (v.ari.available ? ' and Ari activity log.' : '.') }));
   }
   function openPanel(pid, address, from) {
