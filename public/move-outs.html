@@ -60,6 +60,23 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .pl-tbl th{background:#E6EFF0;color:#4A6466;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;white-space:nowrap}
 .pl-tbl td{padding:10px 12px;border-top:1px solid var(--rule);vertical-align:top}
 .pl-addr{font-weight:700;color:var(--ink)}
+.dt-back{position:fixed;inset:0;background:rgba(13,26,26,.45);z-index:19000;overflow-y:auto;padding:24px 12px}
+.dt-box{max-width:1120px;margin:0 auto;background:var(--bg,#f6f8f8);border-radius:14px;padding:20px 22px 28px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.dt-top-row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.dt-back-btn{background:#fff;border:1px solid #cfd8d8;border-radius:8px;padding:6px 12px;font:700 13px Manrope,sans-serif;color:#0A5468;cursor:pointer}
+.dt-title{font-size:26px;margin:6px 0 4px}.dt-sub{font-size:13px;color:#4b5b5b}.dt-btns{margin:12px 0 14px;display:flex;gap:8px;flex-wrap:wrap}
+.dt-btns a,.dt-btn{display:inline-block;background:#fff;border:1px solid #cfd8d8;border-radius:8px;padding:7px 12px;font:700 13px Manrope,sans-serif;color:#0A5468;cursor:pointer;text-decoration:none}
+.dt-grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
+.dt-cols{display:grid;grid-template-columns:3fr 2fr;gap:12px;align-items:start}
+.dt-card{background:#fff;border:1px solid #e1e8e8;border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.dt-top{border-top:4px solid #2A8FA6}.dt-top.bad{border-top-color:#a11d16}.dt-top.warn{border-top-color:#d4820a}
+.dt-h{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#4b5b5b;margin-bottom:8px}
+.dt-big{font-size:20px;font-weight:800;margin-bottom:4px}.dt-small{font-size:12px;color:#4b5b5b;margin-top:3px}
+.dt-links{margin-top:8px;display:flex;gap:12px}.dt-tbl td,.dt-tbl th{vertical-align:top}
+.dt-hrow{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #eef2f2;font-size:13px}.dt-hrow:first-of-type{border-top:0}
+.dt-line{display:flex;justify-content:space-between;padding:5px 0;font-size:13px}.dt-det{margin-top:10px}.dt-det summary{cursor:pointer;font-size:12px;color:#0A5468;font-weight:700}
+.dt-name{background:none;border:0;padding:0;font:inherit;font-weight:700;color:#0A5468;text-decoration:underline;cursor:pointer;text-align:left}
+@media(max-width:800px){.dt-grid3,.dt-cols{grid-template-columns:1fr}}
 .pl-small{font-size:12px;color:var(--muted)}
 .ib{display:flex;flex-wrap:wrap;gap:6px 28px;margin:8px 0 6px;padding:8px 10px;border:1px solid var(--rule);border-radius:10px;background:#f8fbfb;font-size:13px;font-weight:400}.ib-c,.ib-m{min-width:200px}
 .bl-strip{border:1px solid #f0c36d;background:#fff8e6;border-radius:12px;padding:12px 16px;margin:0 0 18px}.bl-h{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#8a5200;margin-bottom:6px}.bl-i{margin:6px 0;font-size:13px}.bl-i a,.bl-t a{color:#0A5468}
@@ -74,7 +91,7 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .sv-pill.ok{background:#e3f6ec;color:#0b6b46}
 .sv-pill.warn{background:var(--amber-d);color:#8a5200}
 .sv-pill.bad{background:#fde8e8;color:#a11d16}
-.rb-back{position:fixed;inset:0;background:rgba(20,41,46,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.rb-back{position:fixed;inset:0;background:rgba(20,41,46,.45);display:flex;align-items:center;justify-content:center;z-index:19500;padding:16px}
 .rb-box{background:#fff;border-radius:14px;padding:20px 22px;max-width:480px;width:100%;max-height:90vh;overflow:auto}
 .rb-box h3{margin:0 0 6px;font-size:16px}
 .rb-box label{display:block;font-size:12px;font-weight:700;margin-top:10px;color:#44585E}
@@ -528,8 +545,9 @@ function renderMoveOuts() {
         });
       }
       it.done = plOk ? (it.card ? isComplete(it.card) : (it.arch ? true : !it.unres)) : !it.unres;
-      it.biz = bizLeft(it.m.moveOut);
+      it.biz = bizLeft(it.m.moveOut); it.ak = akey(it.m.addr);
     });
+    window.__rcItems = items;
     var inactiveList = [];
     items = items.filter(function (it) {
       var h = it.m.leaseID != null && hidMap[String(it.m.leaseID)];
@@ -570,7 +588,7 @@ function renderMoveOuts() {
       shown.forEach(function (it) {
         var m = it.m, open = !!ui.open[it.i];
         var stage = it.card ? esc(it.card.stage) : it.arch ? '<span class="pl-pill">Archived in Aptly</span>' : (plOk ? '<span class="pl-small">No card on the board</span>' : '<span class="pl-small">—</span>');
-        h += '<tr><td><button type="button" class="rc-open" data-i="' + it.i + '" aria-expanded="' + open + '" aria-controls="rc-d-' + it.i + '"><span class="rc-caret" aria-hidden="true">▶</span><span>' + esc(m.addr || '--') + '<span class="pl-small" style="display:block;font-weight:500">' + esc((m.portfolio || '--') + ' · ' + (m.tenant || '--')) + '</span>' + ibLine(it.card) + '</span></button>' + blBadge(akey(m.addr)) + '</td>'
+        h += '<tr><td><button type="button" class="rc-open" data-i="' + it.i + '" aria-expanded="' + open + '" aria-controls="rc-d-' + it.i + '"><span class="rc-caret" aria-hidden="true">▶</span><span>' + esc(m.addr || '--') + '<span class="pl-small" style="display:block;font-weight:500">' + esc((m.portfolio || '--') + ' · ' + (m.tenant || '--')) + '</span>' + ibLine(it.card) + '</span></button>' + blBadge(akey(m.addr)) + '<div>' + dtLink(m.addr, akey(m.addr), String(m.moveOut || '').slice(0, 10), 'Turn plan', 'sv-link') + '</div></td>'
           + '<td>' + esc(m.moveOut ? m.moveOut.slice(0, 10) : '--') + (it.age !== null ? '<div class="pl-small">' + (it.age < 0 ? (mode === 'todo' ? 'in ' + (-it.age) + ' d' : 'Closed early') : it.age + ' d ago') + '</div>' : '') + ((mode !== 'todo' && it.age !== null && it.age < 0 && window.__mg && window.__mg.map[m.addr] && window.__mg.map[m.addr].managed === false) ? '<div class="pl-small" style="color:#8a5200;font-weight:700">Home no longer managed</div>' : '') + '</td>'
           + (mode === 'todo' ? '<td>' + leftHtml(it.biz) + '</td><td>' + rbCell(m.addr, akey(m.addr), m.moveOut) + '</td>' : '')
           + '<td>' + stage + (it.inactive ? '<div class="pl-small" style="color:#b45309">Property inactive in Rentvine</div>' : '') + '</td><td>' + money2(it.tc) + '</td><td>' + money2(it.pb) + '</td>'
@@ -1051,7 +1069,7 @@ function plRender() {
   else {
     th += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Stage</th><th>In stage</th><th>Moved out</th><th>Ready by</th><th>Turn steps</th><th>Turn items needed</th><th>Open checklist</th><th>Last activity</th><th>Flags</th><th>Repairs</th></tr></thead><tbody>';
     turns.forEach(function (c) {
-      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div>' + infoBlock(c) + blBadge(c.addrKey) + svBadges(c) + '</td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + rbCell(c.address, c.addrKey, c.moveOutDate) + '</td><td>' + tpCell(c) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
+      th += '<tr><td>' + dtAddr(c) + '<div class="pl-small">' + esc(c.owners.join(', ')) + '</div>' + infoBlock(c) + blBadge(c.addrKey) + svBadges(c) + '</td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + rbCell(c.address, c.addrKey, c.moveOutDate) + '</td><td>' + tpCell(c) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
     });
     th += '</tbody></table></div>';
   }
@@ -1075,7 +1093,7 @@ function plRender() {
   else {
     uh += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Tenants</th><th>Move-out</th><th>Ready by</th><th>Walks (John)</th><th>Owes</th><th>Stage</th><th>Type</th><th>Owner</th><th>Checklist</th><th>Flags</th></tr></thead><tbody>';
     ups.forEach(function (c) {
-      uh += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div>' + compTag(c) + aptlyLink(c) + svBadges(c) + '</td><td>' + tenantCell(c) + '</td><td>' + plWhen(c) + '</td><td>' + rbCell(c.address, c.addrKey, c.moveOutDate) + '</td><td>' + wkCell(c) + '</td><td>' + balCell(c) + '</td><td>' + esc(c.stage) + '</td><td>' + esc(c.moveOutType || '—') + '</td><td>' + esc(c.owners.join(', ') || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td></tr>';
+      uh += '<tr><td>' + dtAddr(c) + compTag(c) + aptlyLink(c) + svBadges(c) + '</td><td>' + tenantCell(c) + '</td><td>' + plWhen(c) + '</td><td>' + rbCell(c.address, c.addrKey, c.moveOutDate) + '</td><td>' + wkCell(c) + '</td><td>' + balCell(c) + '</td><td>' + esc(c.stage) + '</td><td>' + esc(c.moveOutType || '—') + '</td><td>' + esc(c.owners.join(', ') || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td></tr>';
     });
     uh += '</tbody></table></div>';
   }
@@ -1130,6 +1148,7 @@ async function rbSave(id, reset) {
     rbClose();
     if (plState === 'done') plRender();
     if (window.reconRedraw) window.reconRedraw();
+    if (window.dtRefresh) window.dtRefresh();
   } catch (e) { sv.disabled = false; rbMsg('Could not reach the hub (' + e.message + ').'); }
 }
 async function rbOpen(btn) {
@@ -1316,6 +1335,144 @@ async function tpLoad() {
   plRender();
   if (window.reconRedraw) window.reconRedraw();
 }
+
+// ---- Turn plan page: click an address to open a panel (read-only; nothing here changes Rentvine or Aptly) ----
+var DT = { open: null, hist: {} };
+function dtMo(c) { return String((c && (c.moveOutDate || c.moveOut)) || '').slice(0, 10); }
+function dtLink(addr, ak, mo, label, cls) {
+  if (!ak || enFor(ak)) return '';
+  return '<button type="button" class="' + cls + ' dt-addr" data-ak="' + esc(ak) + '" data-mo="' + esc(mo) + '" data-addr="' + esc(addr) + '">' + esc(label) + '</button>';
+}
+function dtAddr(c) {
+  var b = dtLink(c.address, c.addrKey, dtMo(c), c.address, 'dt-name');
+  return '<div class="pl-addr">' + (b || esc(c.address)) + '</div>';
+}
+function dtMoney(n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
+function dtMoney2(n) { return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function dtClose() { var b = document.getElementById('dt-back'); if (b) b.remove(); document.removeEventListener('keydown', dtKey_); var o = DT.open && DT.open.opener; DT.open = null; if (o && document.contains(o)) o.focus(); }
+function dtKey_(e) { if (e.key === 'Escape' && !document.getElementById('rb-back') && !document.getElementById('rp-back') && !document.getElementById('wo-back') && !document.getElementById('od-back')) dtClose(); }
+function dtOpen(btn) {
+  var ak = btn.getAttribute('data-ak'), mo = btn.getAttribute('data-mo') || '', addr = btn.getAttribute('data-addr') || '';
+  if (!ak || document.getElementById('dt-back')) return;
+  DT.open = { ak: ak, mo: mo, addr: addr, opener: btn };
+  var back = document.createElement('div'); back.id = 'dt-back'; back.className = 'dt-back';
+  back.innerHTML = '<div class="dt-box" role="dialog" aria-modal="true" aria-labelledby="dt-title"><div id="dt-body"></div></div>';
+  document.body.appendChild(back);
+  back.addEventListener('mousedown', function (e) { if (e.target === back) dtClose(); });
+  document.addEventListener('keydown', dtKey_);
+  dtRender(); dtData();
+  var x = document.getElementById('dt-x'); if (x) x.focus();
+}
+async function dtData() {
+  var o = DT.open; if (!o) return;
+  var mo = rbIso(o.mo), id = mo ? rbId(o.ak, mo) : '';
+  if (id) {
+    try {
+      var r = await fetch('/api/moveouts/turn/' + encodeURIComponent(id), { credentials: 'same-origin' });
+      var j = await r.json().catch(function () { return null; });
+      DT.hist[id] = r.ok && j && !j.error ? { log: j.log || [] } : { error: true };
+    } catch (e) { DT.hist[id] = { error: true }; }
+    dtRender();
+  }
+  var pid = tpPid(o.addr);
+  if (pid && !TP.map[pid]) {
+    try {
+      var r2 = await fetch('/api/moveouts/workorders/' + encodeURIComponent(pid), { credentials: 'same-origin' });
+      var j2 = await r2.json().catch(function () { return null; });
+      TP.map[pid] = r2.ok && j2 && j2.workOrders ? { list: j2.workOrders } : { error: true };
+    } catch (e) { TP.map[pid] = { error: true }; }
+    dtRender();
+  }
+}
+window.dtRefresh = function () { if (DT.open) { var id = rbId(DT.open.ak, rbIso(DT.open.mo)); if (id) delete DT.hist[id]; dtData(); dtRender(); } };
+function dtCards(cl, p, addr) {
+  var rd = '', nt = '', mk = '';
+  if (!cl) {
+    rd = '<div class="dt-small">No move-out date on the card, so there is no estimate.</div>';
+    nt = '<div class="dt-small">No move-out date yet.</div>';
+    mk = '<div class="dt-small">No move-out date yet.</div>';
+  } else {
+    var tone = cl.tone === 'bad' ? ' bad' : cl.tone === 'warn' ? ' warn' : '';
+    rd = '<div class="dt-big">' + esc(plDate(cl.ready)) + (cl.st ? ' <span class="sv-pill ' + cl.tone + '">' + esc(cl.st) + '</span>' : '') + '</div>';
+    if (cl.mi) rd += '<div class="dt-small">' + (cl.gap < 0 ? Math.abs(cl.gap) + ' days after the ' + esc(plDate(cl.mi)) + ' move-in.' : cl.gap + ' days before the ' + esc(plDate(cl.mi)) + ' move-in.') + '</div>';
+    rd += '<div class="dt-small">' + (cl.rec && cl.rec.readyBy ? 'Set by ' + esc(cl.rec.by || 'staff') + (cl.rec.reason ? ': ' + esc(cl.rec.reason) : '') : 'Estimate: ' + RB.settings.readyDays + ' days after move-out.') + '</div>';
+    rd += tpHint(addr, cl.ready, cl.mo);
+    rd += '<div class="dt-links"><button type="button" class="sv-link rb-set" data-id="' + esc(cl.id) + '" data-ak="' + esc(DT.open.ak) + '" data-mo="' + esc(cl.mo) + '" data-addr="' + esc(addr) + '">Set by hand</button> <button type="button" class="sv-link" data-dt-go="dt-hist">See history</button></div>';
+    nt = cl.mi ? '<div class="dt-big">Move-in ' + esc(plDate(cl.mi)) + '</div><div class="dt-small">Pending lease in Rentvine. ' + (cl.gap < 0 ? 'At this pace they would wait until ' + esc(plDate(cl.ready)) + '.' : 'Ready by is ' + cl.gap + ' days before move-in.') + '</div>'
+      : '<div class="dt-big">No move-in yet</div><div class="dt-small">' + (!RB.loaded ? 'Checking…' : RB.ok ? 'No pending lease in Rentvine for this home.' : 'Move-in dates are unavailable right now.') + '</div>';
+    mk = '<div class="dt-big">Show from ' + esc(plDate(cl.show)) + '</div><div class="dt-small">Estimate: move-out plus ' + RB.settings.showFromDays + ' days.' + (p && p.last ? ' Work orders run to ' + esc(plDate(p.last)) + ', so photos may not be final until then.' : '') + '</div>';
+  }
+  var t = cl && cl.tone === 'bad' ? ' bad' : cl && cl.tone === 'warn' ? ' warn' : '';
+  return '<div class="dt-grid3"><div class="dt-card dt-top' + t + '"><div class="dt-h">Ready by</div>' + rd + '</div><div class="dt-card"><div class="dt-h">New tenant</div>' + nt + '</div><div class="dt-card"><div class="dt-h">Marketing and showings</div>' + mk + '</div></div>';
+}
+function dtPlan(addr, mo) {
+  var pid = tpPid(addr), T = pid ? TP.map[pid] : null, h = '<div class="dt-card"><div class="dt-h">Turn plan</div>';
+  if (!pid) return h + '<div class="dt-small">' + (SV.state === 'done' ? 'This home is not matched to a Rentvine property, so there are no work orders to show.' : 'Checking…') + '</div></div>';
+  if (!T) return h + '<div class="dt-small">Reading work orders from Rentvine…</div></div>';
+  if (T.error) return h + '<div class="dt-small">Work orders could not be read from Rentvine right now.</div></div>';
+  var p = tpCalc(addr, mo);
+  if (!p || !p.list.length) return h + '<div class="dt-small">No work orders since the move-out walk.</div></div>';
+  var list = p.list.slice().sort(function (a, b) { return String(a.created).localeCompare(String(b.created)); });
+  h += '<div class="dt-small">Work orders created since the move-out walk, read from Rentvine. ' + p.doneN + ' of ' + p.list.length + ' done' + (p.est != null ? ' · Estimated ' + dtMoney(p.est) : '') + '.</div>';
+  h += '<div style="overflow-x:auto"><table class="wo-tbl dt-tbl"><thead><tr><th>Work</th><th>Vendor</th><th>Status</th><th>Date</th><th>Estimate</th></tr></thead><tbody>';
+  list.forEach(function (w) {
+    var done = /^Completed/.test(w.status || ''), when = done ? (w.closed ? 'Done ' + plDate(w.closed) : '') : (w.scheduled ? plDate(w.scheduled) : 'No date');
+    var s = String(w.summary || '').replace(/\s+/g, ' '); if (s.length > 80) s = s.slice(0, 80) + '…';
+    h += '<tr><td><b>' + esc(tpKind(w)) + '</b>' + (s ? ' <span class="dt-small">' + esc(s) + '</span>' : '') + '<div class="dt-small">Work order #' + esc(w.number || w.id) + '</div></td><td>' + esc(w.vendor || '—') + '</td><td>' + woStatusBadge(w) + '</td><td>' + esc(when) + '</td><td>' + (w.estimated ? dtMoney(w.estimated) : '—') + '</td></tr>';
+  });
+  return h + '</tbody></table></div></div>';
+}
+function dtHist(cl) {
+  var h = '<div class="dt-card" id="dt-hist"><div class="dt-h">Ready by history</div>';
+  if (!cl) return h + '<div class="dt-small">No move-out date yet.</div></div>';
+  var H = DT.hist[cl.id];
+  if (!H) return h + '<div class="dt-small">Loading…</div></div>';
+  if (H.error) return h + '<div class="dt-small">The history could not be read right now.</div></div>';
+  var log = (H.log || []).slice().reverse();
+  log.forEach(function (e) {
+    h += '<div class="dt-hrow"><span class="sv-pill' + (e.readyBy ? '' : ' warn') + '">' + (e.readyBy ? esc(plDate(e.readyBy)) : 'Estimate') + '</span><div><b>' + esc(plDate(String(e.at || '').slice(0, 10))) + '</b> · ' + (e.readyBy ? 'Set by hand' : 'Put back to the estimate') + (e.reason ? ': ' + esc(e.reason) : '') + '<div class="dt-small">' + esc(e.by || '') + '</div></div></div>';
+  });
+  h += '<div class="dt-hrow"><span class="sv-pill">' + esc(plDate(cl.est)) + '</span><div><b>Start</b> · Estimate of ' + RB.settings.readyDays + ' days after the move-out<div class="dt-small">Worked out by the hub</div></div></div>';
+  return h + '</div>';
+}
+function dtCharges(item) {
+  var h = '<div class="dt-card"><div class="dt-h">Charges (as of today)</div>';
+  if (!item) return h + '<div class="dt-small">No move-out charges to show yet. They appear once the lease has moved out in Rentvine.</div></div>';
+  h += '<div class="dt-line"><span>6000 tenant charges</span><b>' + dtMoney2(item.tc) + '</b></div><div class="dt-line"><span>6070-1 / 6070-2 bills</span><b>' + dtMoney2(item.pb) + '</b></div>';
+  h += '<div style="margin-top:8px"><span class="rc-st" style="color:' + item.st.color + '">' + esc(item.st.label) + '</span></div>';
+  h += '<details class="dt-det"><summary>Show every line</summary>' + item.ch + '</details></div>';
+  return h;
+}
+function dtRender() {
+  var el = document.getElementById('dt-body'); if (!el || !DT.open) return;
+  var o = DT.open, mo = rbIso(o.mo), addr = o.addr, card = null, item = null;
+  ((PL && PL.cards) || []).forEach(function (c) { if (!card && c.addrKey === o.ak && (!mo || dtMo(c) === mo)) card = c; });
+  var best = 1e12;
+  ((window.__rcItems) || []).forEach(function (it) {
+    if (it.ak !== o.ak) return;
+    var d = mo && it.m.moveOut ? Math.abs(Date.parse(String(it.m.moveOut).slice(0, 10) + 'T12:00:00Z') - Date.parse(mo + 'T12:00:00Z')) / 86400000 : 0;
+    if (d <= 60 && d < best) { best = d; item = it; }
+  });
+  var cl = rbCalc(o.ak, mo), p = tpCalc(addr, o.mo);
+  var sub = [];
+  if (mo) sub.push('Moved out ' + esc(plDate(mo)));
+  if (item && item.biz) sub.push('Deposit deadline ' + esc(plDate(item.biz.deadline)) + ' (' + (item.biz.late ? Math.abs(item.biz.left) + ' business days overdue' : item.biz.today ? 'due today' : item.biz.left + ' business days left') + ')');
+  if (card && card.stage) sub.push('Aptly stage: ' + esc(card.stage));
+  var btns = (card ? aptlyLink(card).replace('class="sv-link"', 'class="dt-btn"').replace('<div class="sv-row">', '<span>').replace('</div>', '</span>') : '');
+  var pid = tpPid(addr);
+  if (pid) btns += '<button type="button" class="dt-btn" data-wo="' + esc(pid) + '" data-addr="' + esc(addr) + '">Past work orders</button>';
+  el.innerHTML = '<div class="dt-top-row"><button type="button" class="dt-back-btn" id="dt-x">← Back</button><span class="dt-small">Read-only. Nothing here changes Rentvine or Aptly.</span></div>'
+    + '<h2 id="dt-title" class="dt-title">' + esc(addr) + '</h2><div class="dt-sub">' + sub.join(' · ') + '</div><div class="dt-btns">' + btns + '</div>'
+    + dtCards(cl, p, addr)
+    + '<div class="dt-cols"><div>' + dtPlan(addr, o.mo) + dtHist(cl) + '</div><div>' + dtCharges(item) + '</div></div>';
+  var x = document.getElementById('dt-x'); if (x) x.addEventListener('click', dtClose);
+}
+document.addEventListener('click', function (e) {
+  var go = e.target.closest && e.target.closest('[data-dt-go]');
+  if (go) { var t = document.getElementById(go.getAttribute('data-dt-go')); if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  var b = e.target.closest && e.target.closest('.dt-addr');
+  if (b) dtOpen(b);
+});
 
 // ---- Repair items (saved in hub storage; never written to Aptly or Rentvine) ----
 var RP = { sums: {}, cur: null, opener: null };
