@@ -74,7 +74,7 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .dt-big{font-size:20px;font-weight:800;margin-bottom:4px}.dt-small{font-size:12px;color:#4b5b5b;margin-top:3px}
 .dt-links{margin-top:8px;display:flex;gap:12px}.dt-tbl td,.dt-tbl th{vertical-align:top}
 .dt-hrow{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #eef2f2;font-size:13px}.dt-hrow:first-of-type{border-top:0}
-.dt-line{display:flex;justify-content:space-between;padding:5px 0;font-size:13px}.dt-det{margin-top:10px}.dt-det summary{cursor:pointer;font-size:12px;color:#0A5468;font-weight:700}
+.dt-line{display:flex;justify-content:space-between;padding:5px 0;font-size:13px}.dt-det{margin-top:10px}.dt-det .card{border:0;padding:0;box-shadow:none;background:none}.dt-det .card>div:first-child{display:none}.dt-det .card>div[style*="grid-template-columns"]{grid-template-columns:1fr !important}.dt-warn{margin-top:8px;background:#fdf0dc;color:#8a5200;border-radius:8px;padding:8px 10px;font-size:12px}.dt-det summary{cursor:pointer;font-size:12px;color:#0A5468;font-weight:700}
 .dt-name{background:none;border:0;padding:0;font:inherit;font-weight:700;color:#0A5468;text-decoration:underline;cursor:pointer;text-align:left}
 @media(max-width:800px){.dt-grid3,.dt-cols{grid-template-columns:1fr}}
 .pl-small{font-size:12px;color:var(--muted)}
@@ -1265,7 +1265,7 @@ async function odOpen(btn) {
 document.addEventListener('click', function (e) { var b = e.target.closest && e.target.closest('.od-open'); if (b) odOpen(b); });
 // ---- Turn plan: work orders from Rentvine on each row (read-only; nothing here changes Rentvine) ----
 var TP = { map: {}, state: 'idle' };
-var TP_KINDS = [['Paint', /paint/i], ['Carpet', /carpet/i], ['Flooring', /floor|vinyl|\btile\b|\blvp\b/i], ['Clean', /clean/i], ['Yard', /yard|landscap|weed|\btree|irrigat/i], ['Appliance', /appliance|refrigerator|fridge|dishwasher|washer|dryer|\brange\b|stove|oven/i], ['HVAC', /hvac|\ba\/c\b|air condition|heater|furnace/i], ['Plumbing', /plumb|leak|toilet|faucet|water heater|drain/i], ['Pest', /pest|termite|roach|rodent/i], ['Locks', /\block|\bkeys?\b|re-?key/i], ['Repairs', /repair|drywall|patch|\bfix|replace|door|window|blind|screen|fence|garage/i]];
+var TP_KINDS = [['Walk', /^\s*\d+\s+(house|front|mail|garage|back)?\s*keys?\b|move.?out (walk|inspection)|walk.?through/i], ['Clean', /carpet\s+(steam\s+)?clean/i], ['Paint', /paint/i], ['Carpet', /carpet/i], ['Flooring', /floor|vinyl|\btile\b|\blvp\b/i], ['Clean', /clean/i], ['Yard', /yard|landscap|weed|\btree|irrigat|bush|shrub|\blawn|grass|gravel|overgrown/i], ['Appliance', /appliance|refrigerator|fridge|dishwasher|washer|dryer|\brange\b|stove|oven/i], ['HVAC', /hvac|\ba\/c\b|air condition|heater|furnace/i], ['Plumbing', /plumb|leak|toilet|faucet|water heater|drain/i], ['Pest', /pest|termite|roach|rodent/i], ['Locks', /\block|\bkeys?\b|re-?key/i], ['Repairs', /repair|drywall|patch|\bfix|replace|door|window|blind|screen|fence|garage/i]];
 function tpKind(w) { var s = String(w.summary || ''); for (var i = 0; i < TP_KINDS.length; i++) if (TP_KINDS[i][1].test(s)) return TP_KINDS[i][0]; return 'Other'; }
 function tpPid(addr) { var e = SV.map && SV.map[addr]; return e && e.matched && e.propertyId ? String(e.propertyId) : ''; }
 function tpCalc(addr, moveOut) {
@@ -1443,6 +1443,60 @@ function dtCharges(item) {
   h += '<details class="dt-det"><summary>Show every line</summary>' + item.ch + '</details></div>';
   return h;
 }
+// ---- Turn plan page, step 2: update for the new tenant and owner summary (drafts only; nothing is sent) ----
+var DT_NOUN = { Paint: 'painting', Repairs: 'repairs', Clean: 'cleaning', Carpet: 'new carpet installation', Flooring: 'flooring', Yard: 'yard work', Appliance: 'appliance work', HVAC: 'A/C service', Plumbing: 'plumbing work', Pest: 'pest control', Locks: 'lock changes', Other: 'other work' };
+function dtJoin(a) { return a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]; }
+function dtCap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function dtTenantText(cl, p, addr) {
+  var s = 'Hi [Tenant name],\n\nA quick update on your new home at ' + addr + '. ';
+  var done = [], todo = [];
+  if (p) p.kinds.forEach(function (k) { if (k.kind === 'Walk') return; if (k.doneN === k.n) done.push(DT_NOUN[k.kind] || k.kind.toLowerCase()); else todo.push(k); });
+  if (cl.gap >= 0) s += 'Your move-in date is ' + plDate(cl.mi) + '. ';
+  if (!done.length && !todo.length) {
+    s += 'We are getting the home ready for you. We expect it to be ready on ' + plDate(cl.ready) + ', and we will confirm your key pickup time once it is.';
+  } else {
+    if (done.length) s += dtCap(dtJoin(done)) + (done.length > 1 ? ' are' : ' is') + ' finished. ';
+    todo.forEach(function (k) { var n = DT_NOUN[k.kind] || k.kind.toLowerCase(); s += dtCap(n) + (k.date ? ' is scheduled for ' + plDate(k.date) + '. ' : ' is still being scheduled. '); });
+    s += 'We now expect the home to be ready on ' + plDate(cl.ready) + (todo.length ? ', and we will confirm your key pickup time once the work is finished.' : '. We will confirm your key pickup time shortly.');
+  }
+  return s + '\n\nPlease call us with any questions.\nAloe Property Management';
+}
+function dtTenant(cl, p, addr) {
+  var h = '<div class="dt-card"><div class="dt-h">Update for the new tenant <span class="sv-pill">Draft</span></div>';
+  if (!cl || !cl.mi) return h + '<div class="dt-small">No pending lease in Rentvine for this home, so there is no new tenant to update yet.</div></div>';
+  var key = DT.open.ak + '|' + DT.open.mo, text = DT.tu && DT.tu.key === key && DT.tu.edited ? DT.tu.text : dtTenantText(cl, p, addr);
+  h += '<div class="dt-small">Written from the work orders. Nothing is sent. Read it, change it, then send it yourself from the Move-Ins card in Aptly.</div>';
+  h += '<textarea id="dt-tu" class="od-text" rows="10" spellcheck="true">' + esc(text) + '</textarea>';
+  h += '<div class="dt-links"><button type="button" class="cp-btn" id="dt-tu-copy">Copy text</button></div>';
+  if (cl.gap < 0) h += '<div class="dt-warn">The move-in date is before the Ready by date. Decide whether to move the new tenant in later or speed up the work before sending.</div>';
+  return h + '</div>';
+}
+function dtOwner(card, p) {
+  var h = '<div class="dt-card"><div class="dt-h">Owner summary</div>';
+  if (!p || !p.list.length) h += '<div class="dt-small">No work orders since the move-out yet.</div>';
+  else {
+    var done = [], todo = [];
+    p.kinds.forEach(function (k) { if (k.kind === 'Walk') return; if (k.doneN === k.n) done.push(k.kind); else todo.push(k.kind + (k.date ? ' ' + plDate(k.date) : '')); });
+    h += '<div class="dt-line"><span>Work orders done</span><b>' + p.doneN + ' of ' + p.list.length + '</b></div>';
+    if (p.est != null) h += '<div class="dt-line"><span>Estimated cost</span><b>' + dtMoney(p.est) + '</b></div>';
+    if (done.length) h += '<div class="dt-small">Done: ' + esc(done.join(', ')) + '</div>';
+    if (todo.length) h += '<div class="dt-small">Still to do: ' + esc(todo.join(', ')) + '</div>';
+  }
+  h += '<div class="dt-small">The owner email about tenant items and maintenance items is written from the Move-Out Notes on the card.</div>';
+  if (card) h += '<div class="dt-links">' + odBtn(card) + '</div>';
+  return h + '</div>';
+}
+document.addEventListener('input', function (e) {
+  if (e.target && e.target.id === 'dt-tu' && DT.open) DT.tu = { key: DT.open.ak + '|' + DT.open.mo, text: e.target.value, edited: true };
+});
+document.addEventListener('click', function (e) {
+  var b = e.target.closest && e.target.closest('#dt-tu-copy'); if (!b) return;
+  var t = document.getElementById('dt-tu'), v = t ? t.value : '';
+  function done() { var o = b.textContent; b.textContent = 'Copied'; setTimeout(function () { b.textContent = o; }, 1200); }
+  function fallback() { var x = document.createElement('textarea'); x.value = v; x.style.position = 'fixed'; x.style.opacity = '0'; document.body.appendChild(x); x.select(); try { document.execCommand('copy'); done(); } catch (er) {} x.remove(); }
+  try { navigator.clipboard.writeText(v).then(done, fallback); } catch (er) { fallback(); }
+});
+
 function dtRender() {
   var el = document.getElementById('dt-body'); if (!el || !DT.open) return;
   var o = DT.open, mo = rbIso(o.mo), addr = o.addr, card = null, item = null;
@@ -1464,7 +1518,7 @@ function dtRender() {
   el.innerHTML = '<div class="dt-top-row"><button type="button" class="dt-back-btn" id="dt-x">← Back</button><span class="dt-small">Read-only. Nothing here changes Rentvine or Aptly.</span></div>'
     + '<h2 id="dt-title" class="dt-title">' + esc(addr) + '</h2><div class="dt-sub">' + sub.join(' · ') + '</div><div class="dt-btns">' + btns + '</div>'
     + dtCards(cl, p, addr)
-    + '<div class="dt-cols"><div>' + dtPlan(addr, o.mo) + dtHist(cl) + '</div><div>' + dtCharges(item) + '</div></div>';
+    + '<div class="dt-cols"><div>' + dtPlan(addr, o.mo) + dtHist(cl) + '</div><div>' + dtTenant(cl, p, addr) + dtOwner(card, p) + dtCharges(item) + '</div></div>';
   var x = document.getElementById('dt-x'); if (x) x.addEventListener('click', dtClose);
 }
 document.addEventListener('click', function (e) {
