@@ -1038,14 +1038,14 @@ function plRender() {
   P.innerHTML = ph + '</div>';
 
   // Unit turns = closed out (disposition sent) but repairs / remodel still going. Nothing else.
-  turns = turns.filter(function (c) { return /^disposition sent/i.test((c.stage || '').trim()); });
+  turns = cards.filter(function (c) { return /^(disposition sent|complete repairs and bills)/i.test((c.stage || '').trim()); });
   stuck = turns.filter(function (c) { return (c.daysInStage || 0) >= 14; });
   var th = '<div class="main"><div class="kpi-grid g4">'
-    + kpi('Units in turn', turns.length, 'Disposition sent, work not done', '#7c3aed')
+    + kpi('Units in turn', turns.length, 'Repairs and bills, or disposition sent', '#7c3aed')
     + kpi('Open 14+ days', stuck.length, 'Longest first below', stuck.length ? '#e03e3e' : '#0fa86c')
     + kpi('Longest open', turns.length ? Math.max.apply(null, turns.map(function (c) { return c.daysInStage || 0; })) + ' d' : '—', 'Days in current stage', '#d4820a')
     + kpi('Nobody assigned', turns.filter(function (c) { return !c.assigned; }).length, 'In turn stages', '#3CC3E1')
-    + '</div><p class="pl-note">Cards in “Disposition sent- Repairs still in progress” only (closed out, repairs or remodel still going), longest first. Turn steps come from the Rentvine work orders created since the move-out walk. Showing status will be added next.</p>';
+    + '</div><p class="pl-note">Cards in “Complete Repairs and Bills” and “Disposition sent- Repairs still in progress” (repairs, cleaning, landscaping or remodel still going), longest first. A card in Complete Repairs and Bills also stays in To close out until it reaches Disposition sent. Turn steps come from the Rentvine work orders created since the move-out walk. Showing status will be added next.</p>';
   turns = turns.slice().sort(function (a, b) { return (b.daysInStage || 0) - (a.daysInStage || 0); });
   if (!turns.length) th += '<div class="pl-wrap"><div class="pl-empty">No units in turn right now.</div></div>';
   else {
