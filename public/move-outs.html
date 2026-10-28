@@ -1045,13 +1045,13 @@ function plRender() {
     + kpi('Open 14+ days', stuck.length, 'Longest first below', stuck.length ? '#e03e3e' : '#0fa86c')
     + kpi('Longest open', turns.length ? Math.max.apply(null, turns.map(function (c) { return c.daysInStage || 0; })) + ' d' : '—', 'Days in current stage', '#d4820a')
     + kpi('Nobody assigned', turns.filter(function (c) { return !c.assigned; }).length, 'In turn stages', '#3CC3E1')
-    + '</div><p class="pl-note">Cards in “Disposition sent- Repairs still in progress” only (closed out, repairs or remodel still going), longest first. Turn steps and showing status will be added next.</p>';
+    + '</div><p class="pl-note">Cards in “Disposition sent- Repairs still in progress” only (closed out, repairs or remodel still going), longest first. Turn steps come from the Rentvine work orders created since the move-out walk. Showing status will be added next.</p>';
   turns = turns.slice().sort(function (a, b) { return (b.daysInStage || 0) - (a.daysInStage || 0); });
   if (!turns.length) th += '<div class="pl-wrap"><div class="pl-empty">No units in turn right now.</div></div>';
   else {
-    th += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Stage</th><th>In stage</th><th>Moved out</th><th>Ready by</th><th>Turn items needed</th><th>Open checklist</th><th>Last activity</th><th>Flags</th><th>Repairs</th></tr></thead><tbody>';
+    th += '<div class="pl-wrap"><table class="pl-tbl"><thead><tr><th>Property</th><th>Stage</th><th>In stage</th><th>Moved out</th><th>Ready by</th><th>Turn steps</th><th>Turn items needed</th><th>Open checklist</th><th>Last activity</th><th>Flags</th><th>Repairs</th></tr></thead><tbody>';
     turns.forEach(function (c) {
-      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div>' + infoBlock(c) + blBadge(c.addrKey) + svBadges(c) + '</td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + rbCell(c.address, c.addrKey, c.moveOutDate) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
+      th += '<tr><td><div class="pl-addr">' + esc(c.address) + '</div><div class="pl-small">' + esc(c.owners.join(', ')) + '</div>' + infoBlock(c) + blBadge(c.addrKey) + svBadges(c) + '</td><td>' + esc(c.stage) + '</td><td>' + plDays(c.daysInStage, 14, 30) + '</td><td>' + plWhen(c) + '</td><td>' + rbCell(c.address, c.addrKey, c.moveOutDate) + '</td><td>' + tpCell(c) + '</td><td>' + esc(c.turnItems || '—') + '</td><td>' + plChecklist(c) + '</td><td>' + plLast(c) + '</td><td>' + (plFlags(c) || '<span class="pl-small">—</span>') + '</td><td>' + rpButton(c) + '</td></tr>';
     });
     th += '</tbody></table></div>';
   }
@@ -1107,7 +1107,7 @@ function rbCell(addr, ak, moveOut) {
   if (!c) return '<span class="pl-small">No move-out date</span>';
   var h = '<b>' + esc(plDate(c.ready)) + '</b>' + (c.st ? ' <span class="sv-pill ' + c.tone + '">' + c.st + '</span>' : '')
     + '<div class="pl-small">' + (c.rec && c.rec.readyBy ? 'Set by ' + esc(c.rec.by || 'staff') : 'Estimate: ' + RB.settings.readyDays + ' days after move-out') + '</div>'
-    + '<div class="pl-small">Show from ' + esc(plDate(c.show)) + '</div>';
+    + '<div class="pl-small">Show from ' + esc(plDate(c.show)) + '</div>' + tpHint(addr, c.ready, c.mo);
   if (c.mi) h += '<div class="pl-small">Move-in ' + esc(plDate(c.mi)) + ' · ' + (c.gap < 0 ? Math.abs(c.gap) + ' d after move-in' : c.gap + ' d before') + '</div>';
   else h += '<div class="pl-small">' + (!RB.loaded ? 'Checking move-in…' : RB.ok ? 'No move-in lease yet' : 'Move-in unavailable') + '</div>';
   return h + '<button type="button" class="cp-btn rb-set" data-id="' + esc(c.id) + '" data-ak="' + esc(ak) + '" data-mo="' + esc(c.mo) + '" data-addr="' + esc(addr) + '">Set</button>';
@@ -1244,6 +1244,79 @@ async function odOpen(btn) {
   } catch (e) { var b2 = document.getElementById('od-body'); if (b2) b2.textContent = 'Could not reach the hub (' + e.message + ').'; }
 }
 document.addEventListener('click', function (e) { var b = e.target.closest && e.target.closest('.od-open'); if (b) odOpen(b); });
+// ---- Turn plan: work orders from Rentvine on each row (read-only; nothing here changes Rentvine) ----
+var TP = { map: {}, state: 'idle' };
+var TP_KINDS = [['Paint', /paint/i], ['Carpet', /carpet/i], ['Flooring', /floor|vinyl|\btile\b|\blvp\b/i], ['Clean', /clean/i], ['Yard', /yard|landscap|weed|\btree|irrigat/i], ['Appliance', /appliance|refrigerator|fridge|dishwasher|washer|dryer|\brange\b|stove|oven/i], ['HVAC', /hvac|\ba\/c\b|air condition|heater|furnace/i], ['Plumbing', /plumb|leak|toilet|faucet|water heater|drain/i], ['Pest', /pest|termite|roach|rodent/i], ['Locks', /\block|\bkeys?\b|re-?key/i], ['Repairs', /repair|drywall|patch|\bfix|replace|door|window|blind|screen|fence|garage/i]];
+function tpKind(w) { var s = String(w.summary || ''); for (var i = 0; i < TP_KINDS.length; i++) if (TP_KINDS[i][1].test(s)) return TP_KINDS[i][0]; return 'Other'; }
+function tpPid(addr) { var e = SV.map && SV.map[addr]; return e && e.matched && e.propertyId ? String(e.propertyId) : ''; }
+function tpCalc(addr, moveOut) {
+  var pid = tpPid(addr), T = pid ? TP.map[pid] : null;
+  if (!T || !T.list) return null;
+  var mo = rbIso(moveOut), from = mo ? rbAdd(mo, -21) : '';
+  var list = T.list.filter(function (w) { return !/^(Rejected|Cancelled|Owner Maintained)/.test(w.status || '') && (!from || (w.created || '') >= from); });
+  var kinds = {}, order = [], open = [], est = 0, hasEst = false;
+  list.forEach(function (w) {
+    var k = tpKind(w), done = /^Completed/.test(w.status || '');
+    if (!kinds[k]) { kinds[k] = { kind: k, n: 0, doneN: 0, date: '' }; order.push(k); }
+    kinds[k].n++; if (done) kinds[k].doneN++;
+    else { open.push({ kind: k, vendor: w.vendor || '', date: w.scheduled || '' }); if (w.scheduled && w.scheduled > kinds[k].date) kinds[k].date = w.scheduled; }
+    if (w.estimated) { est += w.estimated; hasEst = true; }
+  });
+  open.sort(function (a, b) { return (a.date || '9999').localeCompare(b.date || '9999'); });
+  var dated = open.filter(function (o) { return o.date; }), last = dated.length ? dated[dated.length - 1].date : '';
+  return { list: list, kinds: order.map(function (k) { return kinds[k]; }), open: open, next: open[0] || null, last: last, undated: open.length - dated.length, est: hasEst ? est : null, doneN: list.length - open.length };
+}
+function tpCell(c) {
+  if (enFor(c.addrKey)) return '<span class="pl-small">—</span>';
+  var pid = tpPid(c.address);
+  if (!pid) return '<span class="pl-small">' + (SV.state === 'done' ? 'Property not matched in Rentvine' : 'Checking…') + '</span>';
+  var T = TP.map[pid];
+  if (!T) return '<span class="pl-small">Checking work orders…</span>';
+  if (T.error) return '<span class="pl-small">Work orders unavailable</span>';
+  var p = tpCalc(c.address, c.moveOutDate);
+  if (!p || !p.list.length) return '<span class="pl-small">No work orders since the move-out</span>';
+  var h = p.kinds.map(function (k) {
+    var done = k.doneN === k.n;
+    return '<span class="sv-pill' + (done ? ' ok' : k.date ? ' warn' : '') + '">' + esc(k.kind) + (!done && k.date ? ' ' + esc(plDate(k.date)) : '') + '</span>';
+  }).join('');
+  h += '<div class="pl-small">' + p.doneN + ' of ' + p.list.length + ' done' + (p.est != null ? ' · Est $' + Math.round(p.est).toLocaleString('en-US') : '') + '</div>';
+  if (p.next) h += '<div class="pl-small">Next: ' + esc(p.next.kind) + (p.next.vendor ? ' · ' + esc(p.next.vendor) : '') + (p.next.date ? ' · ' + esc(plDate(p.next.date)) : ' · no date yet') + '</div>';
+  else h += '<div class="pl-small">All work orders done</div>';
+  return h;
+}
+function tpHint(addr, ready, moveOut) {
+  var p = tpCalc(addr, moveOut);
+  if (!p || !p.last) return '';
+  var sug = rbAdd(p.last, 1);
+  if (sug === ready) return '<div class="pl-small">Work orders agree: last one ' + esc(plDate(p.last)) + '</div>';
+  return '<div class="pl-small">Work orders suggest <b>' + esc(plDate(sug)) + '</b> (last one ' + esc(plDate(p.last)) + ' plus a day to clean)' + (p.undated ? ' · ' + p.undated + ' without a date' : '') + '</div>';
+}
+async function tpLoad() {
+  if (!PL || !PL.cards || TP.state === 'loading') return;
+  var EARLY = ['Upcoming Move-Out', '14 Days Out', '5 Days Out'], pids = [];
+  PL.cards.forEach(function (c) {
+    if (EARLY.indexOf((c.stage || '').trim()) >= 0) return;
+    var pid = tpPid(c.address); if (pid && pids.indexOf(pid) < 0) pids.push(pid);
+  });
+  if (!pids.length) { TP.state = 'done'; return; }
+  TP.state = 'loading';
+  var i = 0;
+  async function worker() {
+    while (i < pids.length) {
+      var pid = pids[i++];
+      try {
+        var r = await fetch('/api/moveouts/workorders/' + encodeURIComponent(pid), { credentials: 'same-origin' });
+        var j = await r.json().catch(function () { return null; });
+        TP.map[pid] = r.ok && j && j.workOrders ? { list: j.workOrders } : { error: true };
+      } catch (e) { TP.map[pid] = { error: true }; }
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]);
+  TP.state = 'done';
+  plRender();
+  if (window.reconRedraw) window.reconRedraw();
+}
+
 // ---- Repair items (saved in hub storage; never written to Aptly or Rentvine) ----
 var RP = { sums: {}, cur: null, opener: null };
 var RP_PAYER = [['tbd', 'Not decided'], ['tenant', 'Tenant'], ['owner', 'Owner'], ['aloe', 'Aloe']];
@@ -1375,6 +1448,7 @@ async function svLoad() {
     if (r.ok && j && j.results) { SV.map = j.results; SV.state = 'done'; } else SV.state = 'error';
   } catch (e) { SV.state = 'error'; }
   plRender();
+  tpLoad();
 }
 function svWho(s) { return s.who === 'owner' ? 'Owner pays' : s.who === 'hoa' ? 'HOA covers' : s.who === 'tenant' ? 'Tenant' : s.who === 'unknown' ? 'not recorded' : (s.text || s.raw || 'see property'); }
 function svBadges(c) {
