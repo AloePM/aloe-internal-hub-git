@@ -78,6 +78,7 @@ export const SECTION_DEFS = [
   { key: 'passed', title: 'Scheduled date passed, still open', hint: 'Confirm the work happened' },
   { key: 'tenant', title: 'Waiting on tenant', hint: 'Troubleshooting steps sent 2+ days ago' },
   { key: 'internal', title: 'Internal work order requests', hint: 'Handled in house' },
+  { key: 'parked', title: 'Parked: on hold, waiting on parts or the owner', hint: 'These are off the daily list until they go quiet. Red when nobody has contacted anyone or written a note in 7 days. Check in at least weekly' },
   { key: 'quiet', title: 'No contact or note in 5+ days', hint: 'Nobody has texted, emailed or written a note on the card in 5 days' },
   { key: 'turns', title: 'Unit turns and move-outs', hint: 'Persia or Teri. Kept apart from Roberto\'s list and numbers. Amber when nobody has made contact or written a note in 5 days; red when a follow-up you set is due', muted: true },
 ];
@@ -120,7 +121,13 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
       else put('turns', 'grey', 'Persia / Teri');
       continue;
     }
-    if (PARKED.has(stage)) { parked++; if (base.followUpOn && base.followUpOn <= today) put('followups', 'red', 'Follow-up set for ' + base.followUpOn); continue; }
+    if (PARKED.has(stage)) {
+      parked++;
+      if (base.followUpOn && base.followUpOn <= today) { put('followups', 'red', 'Follow-up set for ' + base.followUpOn); continue; }
+      const idleP = lastTouchDays != null ? lastTouchDays : (notesKnown ? daysInStage : null);
+      put('parked', idleP != null && idleP >= 7 ? 'red' : idleP != null && idleP >= 5 ? 'amber' : 'grey', stage + (idleP != null && idleP >= 5 ? '. No contact or note in ' + idleP + ' days.' : '. Check in at least weekly.') + (base.followUpOn ? ' Follow-up set for ' + base.followUpOn + '.' : ''));
+      continue;
+    }
     if (base.followUpOn && base.followUpOn <= today) { put('followups', 'red', 'Follow-up set for ' + base.followUpOn); continue; }
     if (!vendor && (stage === 'Open' || stage === 'Dispatch Work Order')) { put('dispatch', (daysInStage || 0) >= 1 ? 'red' : 'amber', 'Needs a vendor assigned'); continue; }
     // A "Vendor confirmed" comment written after the vendor was assigned (a reassignment makes an older one stale).

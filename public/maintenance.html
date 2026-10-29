@@ -80,6 +80,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 button.chip{font:inherit;color:inherit;text-align:left;width:100%;min-height:44px;cursor:pointer}button.chip.go:hover{border-color:#0A5468;box-shadow:0 1px 4px rgba(10,84,104,.18)}button.chip:focus-visible,.toplink:focus-visible{outline:3px solid #0A5468;outline-offset:2px}.chip.zero{opacity:.55}
 #tchips:focus{outline:none}.tsec{scroll-margin-top:12px}.tsec:focus{outline:none}.tsec.flash{animation:secflash 1.6s ease-out}@keyframes secflash{0%{background:#FFF3CC}100%{background:transparent}}@media (prefers-reduced-motion:reduce){.tsec.flash{animation:none}}
 .toplink{margin:8px 0 2px;background:none;border:0;color:#0A5468;font:700 12px Manrope,system-ui,sans-serif;text-decoration:underline;cursor:pointer;min-height:44px;padding:0 4px}
+button.alink{background:none;border:0;padding:4px 0;margin:0;font-family:inherit;text-align:left;color:#0A5468;text-decoration:underline;text-underline-offset:2px;cursor:pointer;min-height:44px}button.alink:hover{color:#063a49}button.alink:focus-visible{outline:3px solid #0A5468;outline-offset:2px}
 .lks{font-size:12px;font-weight:700;white-space:nowrap}.lks a{color:#0A5468;margin-right:10px;text-decoration:underline;display:inline-block;padding:4px 0}.lks a:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}.wwrap .cbx{margin:0 10px;flex:none;width:98px;display:flex;flex-direction:column;align-items:stretch}.wwrap .cbx .cbtn{margin:0;width:auto}.wwrap .cbx .lks{text-align:center}.wwrap .cbx .lks a{margin:0 5px}
 .mini{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid #B4C3C3;background:#fff;color:#0A5468;font:700 12px Manrope,system-ui,sans-serif;cursor:pointer}.mini:hover:not(:disabled){background:#E6EFF0}.mini:disabled{opacity:.55;cursor:default}.mini:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}
 .trow .nt.stale{border-left-color:var(--red);background:var(--red-d)}
@@ -231,6 +232,14 @@ button.chip{font:inherit;color:inherit;text-align:left;width:100%;min-height:44p
     if (/^[A-Za-z0-9]{8,40}$/.test(String(cardId || ''))) k.push(h('a', { href: 'https://app.getaptly.com/ticket/workOrder/' + cardId, target: '_blank', rel: 'noopener noreferrer', text: 'Aptly' }));
     return k.length ? h('div', { 'class': 'lks' }, k) : null;
   }
+  // The address opens the same Details panel as the Details button (when the property is known).
+  function addrEl(it) {
+    var label = it.address || (it.propertyId ? 'Property ' + it.propertyId : 'Address not shown');
+    if (!it.propertyId) return h('div', { 'class': 'addr', text: label });
+    var b = h('button', { 'class': 'addr alink', type: 'button', 'aria-label': 'Open details for ' + label, text: label });
+    b.addEventListener('click', function () { openPanel(it.propertyId, it.address, b); });
+    return b;
+  }
   function trow(it, sec) {
     var lvl = it.level === 'red' ? 'p-red' : it.level === 'amber' ? 'p-amber' : 'p-grey';
     var req = [h('div', {}, [h('b', { text: '#' + it.number + '  ' }), it.emergency ? h('span', { 'class': 'pill p-emg', text: 'Possible emergency: ' + it.emergency }) : null]), woLinks(it.id, it.cardId), h('div', { 'class': 'why', text: it.summary })];
@@ -244,7 +253,7 @@ button.chip{font:inherit;color:inherit;text-align:left;width:100%;min-height:44p
     var vcb = null;
     if (it.matched && it.vendor && (sec.key === 'vendor' || sec.key === 'confirmed')) { vcb = h('button', { 'class': 'mini', type: 'button', text: it.vendorConfirm ? 'Vendor confirmed again' : 'Vendor confirmed' }); vcb.addEventListener('click', function () { openComments(it, vcb, true); }); }
     return h('div', { 'class': 'trow' }, [
-      h('div', {}, [h('div', { 'class': 'addr', text: it.address || (it.propertyId ? 'Property ' + it.propertyId : 'Address not shown') }), it.moveOut ? h('span', { 'class': 'pill p-blue', text: 'Move-out' }) : null]),
+      h('div', {}, [addrEl(it), it.moveOut ? h('span', { 'class': 'pill p-blue', text: 'Move-out' }) : null]),
       h('div', {}, req),
       h('div', {}, [h('span', { 'class': 'pill ' + lvl, text: sec.key === 'dispatch' ? 'Us: assign vendor' : it.vendor ? 'Vendor: ' + it.vendor : it.stage }), h('div', { 'class': 'why', text: it.why })]),
       h('div', {}, [h('b', { text: it.daysInStage == null ? 'n/a' : age(it.daysInStage) }), h('div', { 'class': 'why', text: it.stage })]),
@@ -276,7 +285,6 @@ button.chip{font:inherit;color:inherit;text-align:left;width:100%;min-height:44p
         $('tchips').appendChild(cb);
       } else $('tchips').appendChild(h('div', { 'class': 'chip' + (red ? ' r' : '') + (n ? '' : ' zero') }, kids));
     });
-    $('tchips').appendChild(h('div', { 'class': 'chip' }, [h('b', { text: String(d.parked) }), h('span', { text: 'Parked (on hold, parts, owner)' })]));
     var any = false;
     d.sections.forEach(function (s) {
       if (!s.items.length || s.key === 'turns') return; any = true;
