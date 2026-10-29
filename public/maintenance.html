@@ -19,7 +19,7 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .btn:hover:not(:disabled){background:#E6EFF0}.btn:disabled{opacity:.6;cursor:default}
 .btn:focus-visible,.row:focus-visible,input:focus-visible,.x:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}
 .main{padding:20px 28px 60px;max-width:1400px;margin:0 auto}
-.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}@media (max-width:700px){.kpis{grid-template-columns:1fr 1fr}}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}@media (max-width:700px){.kpis{grid-template-columns:1fr 1fr}}
 .kpi{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);padding:14px 18px}
 .kpi b{display:block;font-size:28px;font-weight:800;letter-spacing:-.03em;line-height:1.1}
 .kpi span{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
@@ -109,7 +109,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
   </div>
   <div id="unitView" hidden>
     <div id="usecs"><div class="empty">Loading unit turns...</div></div>
-    <p class="ro">Unit turns are work orders in the Unit Turn stage. They belong to Persia or Teri and are not counted in the maintenance numbers above. Follow-ups and comments work the same as on Today.</p>
+    <p class="ro">Unit turns and move-outs are work orders in the Unit Turn or Move Out stage (in Aptly or Rentvine). Unit turns belong to Persia or Teri. None of these are counted in the maintenance numbers above. Follow-ups and comments work the same as on Today.</p>
   </div>
   <div id="homeView" hidden>
   <div class="bar">
@@ -127,7 +127,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
       <label>Sort by<select id="fSort"><option value="old">Oldest first</option><option value="new">Newest first</option><option value="vendor">Vendor</option><option value="issue">Issue type</option><option value="stage">Stage</option><option value="addr">Address</option><option value="emg">Possible emergency first</option></select></label>
       <label>Group into sections<select id="fGroup"><option value="stage">Stage</option><option value="vendor">Vendor</option><option value="issue">Issue type</option><option value="emg">Emergency</option><option value="none">No sections</option></select></label>
       <label>Search address or request<input type="search" id="wq" placeholder="Address or words" autocomplete="off"></label>
-      <div><label class="chk"><input type="checkbox" id="fEmg"> Possible emergency only</label><label class="chk"><input type="checkbox" id="fMove"> Move-outs only</label></div>
+      <div><label class="chk"><input type="checkbox" id="fEmg"> Possible emergency only</label></div>
     </div>
     <p class="note" id="wcount" style="margin-bottom:8px"></p>
     <div class="list" id="wolist"><div class="empty">Loading work orders...</div></div>
@@ -167,10 +167,12 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 
   function renderKpis(data) {
     var oldest = 0; data.properties.forEach(function (p) { if (p.oldestDays != null && p.oldestDays > oldest) oldest = p.oldestDays; });
-    var k = $('kpis'); k.textContent = '';
-    [[data.properties.length, 'Homes with open work orders'], [data.openTotal, 'Open work orders (not counting unit turns)'], [oldest ? age(oldest) : 'n/a', 'Oldest open'], [data.unitTurnTotal == null ? '-' : data.unitTurnTotal, 'Unit turns (own tab)']].forEach(function (x) {
+    var k = $('kpis'); k.textContent = ''; var c = data.counts || { all: data.openTotal, maint: data.openTotal, turns: 0, moveouts: 0 };
+    [[data.properties.length, 'Homes with open work orders'], [c.all, 'All open work orders'], [c.maint, 'Maintenance only (no unit turns or move-outs)'], [oldest ? age(oldest) : 'n/a', 'Oldest open (maintenance)']].forEach(function (x) {
       k.appendChild(h('div', { 'class': 'kpi' }, [h('b', { text: String(x[0]) }), h('span', { text: x[1] })]));
     });
+    k.appendChild(h('div', { 'class': 'note', style: 'grid-column:1/-1;margin-top:-2px', text: c.all + ' open = ' + c.maint + ' maintenance + ' + c.turns + ' unit turn' + (c.turns === 1 ? '' : 's') + ' + ' + c.moveouts + ' move-out' + (c.moveouts === 1 ? '' : 's') + '. Unit turns and move-outs are on their own tab.' }));
+    var ub = $('seg').querySelector('[data-mode="units"]'); if (ub) ub.textContent = 'Unit turns / move-outs (' + (c.turns + c.moveouts) + ')';
     $('asof').textContent = 'Updated ' + new Date(data.asOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   }
   function renderList() {
@@ -273,7 +275,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     var box = $('usecs'); box.textContent = '';
     if (!TODAY) return;
     var s = TODAY.sections.filter(function (x) { return x.key === 'turns'; })[0];
-    if (!s || !s.items.length) { box.appendChild(h('div', { 'class': 'empty', text: 'No unit turns right now.' })); return; }
+    if (!s || !s.items.length) { box.appendChild(h('div', { 'class': 'empty', text: 'No unit turns or move-outs right now.' })); return; }
     var red = s.items.filter(function (x) { return x.level === 'red'; }).length, amb = s.items.filter(function (x) { return x.level === 'amber'; }).length;
     var sec = h('div', { 'class': 'tsec' }, [h('h2', {}, [s.title, h('span', { 'class': 'pill ' + (red ? 'p-red' : amb ? 'p-amber' : 'p-grey'), text: String(s.items.length) }), h('small', { text: s.hint })])]);
     var list = h('div', { 'class': 'list' }, [h('div', { 'class': 'trow head' }, [h('span', { text: 'Address' }), h('span', { text: 'Request' }), h('span', { text: 'Waiting on' }), h('span', { text: 'In stage' }), h('span', { 'class': 'hd2', text: 'Last contact' }), h('span', { text: 'Next step' })])]);
@@ -482,14 +484,13 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
   function renderWO() {
     var box = $('wolist'); box.textContent = '';
     if (!WO) return;
-    var f = { st: $('fStage').value, vd: $('fVendor').value, is: $('fIssue').value, age: Number($('fAge').value || 0), emg: $('fEmg').checked, mv: $('fMove').checked, q: $('wq').value.trim().toLowerCase(), sort: $('fSort').value, grp: $('fGroup').value };
+    var f = { st: $('fStage').value, vd: $('fVendor').value, is: $('fIssue').value, age: Number($('fAge').value || 0), emg: $('fEmg').checked, q: $('wq').value.trim().toLowerCase(), sort: $('fSort').value, grp: $('fGroup').value };
     var rows = WO.filter(function (r) {
       if (f.st && r.stage !== f.st) return false;
       if (f.vd === '__none' ? !!r.vendor : (f.vd && r.vendor !== f.vd)) return false;
       if (f.is && r.issue !== f.is) return false;
       if (f.age && !(r.ageDays != null && r.ageDays >= f.age)) return false;
       if (f.emg && !r.emergency) return false;
-      if (f.mv && !r.moveOut) return false;
       if (f.q && (r.address + ' ' + r.summary + ' ' + r.number + ' ' + r.vendor).toLowerCase().indexOf(f.q) < 0) return false;
       return true;
     });
@@ -505,7 +506,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     });
   }
   function loadWO(fresh) {
-    api('/api/maintenance/workorders' + (fresh ? '?fresh=1' : '')).then(function (d) { WO = d.rows.filter(function (r) { return r.stage !== 'Unit Turn'; }); STAGES = (d.stages || []).filter(function (x) { return x !== 'Unit Turn'; }); fillFilters(); renderWO(); })
+    api('/api/maintenance/workorders' + (fresh ? '?fresh=1' : '')).then(function (d) { WO = d.rows.filter(function (r) { return r.kind === 'maint'; }); STAGES = (d.stages || []).filter(function (x) { return x !== 'Unit Turn' && x !== 'Move Out'; }); fillFilters(); renderWO(); })
       .catch(function (e) { $('wolist').textContent = ''; $('wolist').appendChild(h('div', { 'class': 'err', text: e.message })); });
   }
   function setMode(m) {
@@ -516,7 +517,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     if (m === 'units') renderUnits();
   }
   Array.prototype.forEach.call($('seg').children, function (b) { b.addEventListener('click', function () { setMode(b.getAttribute('data-mode')); }); });
-  ['fStage', 'fVendor', 'fIssue', 'fAge', 'fSort', 'fGroup', 'fEmg', 'fMove'].forEach(function (id) { $(id).addEventListener('change', renderWO); });
+  ['fStage', 'fVendor', 'fIssue', 'fAge', 'fSort', 'fGroup', 'fEmg'].forEach(function (id) { $(id).addEventListener('change', renderWO); });
   $('wq').addEventListener('input', renderWO);
 
   function load(fresh) {

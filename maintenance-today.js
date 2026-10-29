@@ -53,6 +53,20 @@ export function aptlyDiag(map) {
     withLastActivity: v.filter((x) => x.lastInboundAt || x.lastOutboundAt).length };
 }
 
+// Which list a work order belongs to. Aptly's stage or Rentvine's status can each say Unit Turn / Move Out (they do not always match),
+// so either one counts. 'turn' = Unit Turn (Persia / Teri), 'moveout' = Move Out, otherwise 'maint' (Roberto's maintenance list).
+export function workKind(aptlyStage, rvStage, rvStatusId) {
+  const a = String(aptlyStage || ''), r = String(rvStage || ''), sid = Number(rvStatusId || 0);
+  if (a === 'Unit Turn' || r === 'Unit Turn' || sid === 25) return 'turn';
+  if (a === 'Move Out' || r === 'Move Out' || sid === 23) return 'moveout';
+  return 'maint';
+}
+export function countKinds(kinds) {
+  const c = { all: 0, maint: 0, turns: 0, moveouts: 0 };
+  for (const k of kinds || []) { c.all++; if (k === 'turn') c.turns++; else if (k === 'moveout') c.moveouts++; else c.maint++; }
+  return c;
+}
+
 const PARKED = new Set(['On Hold', 'Waiting for parts', 'Owner Maintained']);
 const NO_VENDOR_TIMER = new Set([...PARKED, 'Home Warranty', 'Troubleshooting Steps Sent', 'Internal Work Order Request', 'Unit Turn', 'Scheduled', 'Open', 'Dispatch Work Order']);
 export const SECTION_DEFS = [
@@ -65,7 +79,7 @@ export const SECTION_DEFS = [
   { key: 'tenant', title: 'Waiting on tenant', hint: 'Troubleshooting steps sent 2+ days ago' },
   { key: 'internal', title: 'Internal work order requests', hint: 'Handled in house' },
   { key: 'quiet', title: 'No contact or note in 5+ days', hint: 'Nobody has texted, emailed or written a note on the card in 5 days' },
-  { key: 'turns', title: 'Unit turns', hint: 'Persia or Teri. Kept apart from Roberto\'s list and numbers. Amber when nobody has made contact or written a note in 5 days; red when a follow-up you set is due', muted: true },
+  { key: 'turns', title: 'Unit turns and move-outs', hint: 'Persia or Teri. Kept apart from Roberto\'s list and numbers. Amber when nobody has made contact or written a note in 5 days; red when a follow-up you set is due', muted: true },
 ];
 
 // rows = buildWorkOrderRows output; aptly = Map(number -> aptlyInfo); fu = foldFollowups output ({byWo}); today = 'YYYY-MM-DD' (Phoenix)
@@ -93,13 +107,13 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
     // Red only when it is overdue: no note for 3+ days, or no note at all on a work order that is 2+ days old (a brand-new one is not late yet).
     const staleNote = notesKnown && (noteD == null ? (r.ageDays == null || r.ageDays >= 2) : noteD >= 3);
     const f = (fu.byWo || {})[String(r.number)] || null;
-    const base = { id: r.id, number: r.number, propertyId: r.propertyId, address: r.address, summary: r.summary, stage, vendor, moveOut: stage === 'Move Out' || r.moveOut,
+    const base = { id: r.id, number: r.number, propertyId: r.propertyId, address: r.address, summary: r.summary, stage, vendor, moveOut: stage === 'Move Out' || r.moveOut || workKind(a && a.stage, r.stage, r.statusId) === 'moveout',
       emergency: r.emergency, cardId: a && a.cardId ? a.cardId : '', daysInStage, assignedDays, lastInDays: inD, lastOutDays: outD, scheduled: sched || null,
       followUpOn: f ? f.followUpOn : null, lastNote: f && f.notes[0] ? f.notes[0] : null, noteCount: f ? f.notes.length : 0, matched: !!a,
       notesKnown, commentCount: notesKnown ? a.commentCount : 0, aptNote: a && a.lastNote ? { by: a.lastNote.by, at: a.lastNote.at, days: noteD, text: a.lastNote.text } : null, staleNote };
     const put = (key, level, why) => sections[key].push({ ...base, level, why });
 
-    if (stage === 'Unit Turn' || r.stage === 'Unit Turn') {
+    if (workKind(a && a.stage, r.stage, r.statusId) !== 'maint') {
       const idle = lastTouchDays != null ? lastTouchDays : (notesKnown ? daysInStage : null);
       if (base.followUpOn && base.followUpOn <= today) put('turns', 'red', 'Follow-up set for ' + base.followUpOn);
       else if (idle != null && idle >= 5) put('turns', 'amber', 'No contact or note in ' + idle + ' days. Persia / Teri.');

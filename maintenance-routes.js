@@ -8,7 +8,7 @@
 import { addrKey, extractServices, readProperty } from './moveouts-property.js';
 import { groupOpenByProperty, readCategories, applianceRows, warrantyRows, findWarrantyExpires, findNotes, buildHints, whoPays, todayPhoenix, ownerVendors, homeWarrantyInfo, mapHistory, assignCards, buildWorkOrderRows, STAGE_ORDER } from './maintenance-data.js';
 import { loadAriRows, ariForAddress } from './maintenance-ari.js';
-import { indexAptly, aptlyDiag, buildToday, foldFollowups, withNotes } from './maintenance-today.js';
+import { indexAptly, aptlyDiag, buildToday, foldFollowups, withNotes, workKind, countKinds } from './maintenance-today.js';
 import { validateEntry, makeFollowupStore } from './maintenance-followups.js';
 import { validateComment, followupComment, formatComment, makeAptlyCommenter, mapComments } from './maintenance-comments.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -73,9 +73,9 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
     try {
       if (!(listCache.v && Date.now() - listCache.at < LIST_TTL) || req.query.fresh === '1') {
         if (!listPending) listPending = fetchOpenWOs().then(async (wos) => {
-          const turnWOs = (wos || []).filter((w) => Number(w.workOrderStatusID) === 25); const properties = groupOpenByProperty((wos || []).filter((w) => Number(w.workOrderStatusID) !== 25)); // unit turns are counted on their own tab
+          const am = await cardIdMap(); const kindOfWO = (w) => workKind((am.get(String(w.workOrderNumber || '')) || {}).stage, '', w.workOrderStatusID); const counts = countKinds((wos || []).map(kindOfWO)); const properties = groupOpenByProperty((wos || []).filter((w) => kindOfWO(w) === 'maint')); // unit turns and move-outs have their own tab
           if (properties.some((g) => !g.address)) { for (const g of properties) if (!g.address) g.address = await addressFor(g.propertyId); properties.sort((a, b) => (b.oldestDays ?? -1) - (a.oldestDays ?? -1) || a.address.localeCompare(b.address)); }
-          listCache = { at: Date.now(), v: { properties, openTotal: (wos || []).length - turnWOs.length, unitTurnTotal: turnWOs.length, asOf: new Date().toISOString() } };
+          listCache = { at: Date.now(), v: { properties, openTotal: counts.all, counts, asOf: new Date().toISOString() } };
         }).finally(() => { listPending = null; });
         await listPending;
       }
@@ -106,7 +106,7 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
   }
   app.get('/api/maintenance/workorders', async (req, res) => {
     res.set('Cache-Control', 'no-store');
-    try { const v = await getWORows(req.query.fresh === '1'); const m = await cardIdMap(); res.json({ ...v, rows: v.rows.map((r) => ({ ...r, cardId: cardOf(m, r.number) })) }); }
+    try { const v = await getWORows(req.query.fresh === '1'); const m = await cardIdMap(); res.json({ ...v, rows: v.rows.map((r) => ({ ...r, cardId: cardOf(m, r.number), kind: workKind((m.get(String(r.number)) || {}).stage, r.stage, r.statusId) })) }); }
     catch (e) { console.error('[maintenance] workorders', e.message); res.status(502).json({ error: 'Could not read work orders from Rentvine.' }); }
   });
 
@@ -179,7 +179,7 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
       let fu = { available: false, reason: 'error', rows: [] };
       try { fu = await store.list(); } catch (e) { console.error('[maintenance] followups', e.message); }
       const t = buildToday(wo.rows, apt.map, foldFollowups(fu.rows), todayPhoenix());
-      res.json({ ...t, openTotal: wo.rows.filter((r) => r.stage !== 'Unit Turn').length, unitTurnTotal: wo.rows.filter((r) => r.stage === 'Unit Turn').length, asOf: new Date().toISOString(),
+      res.json({ ...t, openTotal: wo.rows.length, counts: countKinds(wo.rows.map((r) => workKind((apt.map.get(String(r.number)) || {}).stage, r.stage, r.statusId))), asOf: new Date().toISOString(),
         aptly: { available: apt.available, ...(apt.available ? aptlyDiag(apt.map) : {}), notes }, followups: { available: fu.available, reason: fu.reason || '' }, canComment: !!(commenter.configured && apt.available) });
     } catch (e) { console.error('[maintenance] today', e.message); res.status(502).json({ error: 'Could not build the Today list from Rentvine.' }); }
   });
