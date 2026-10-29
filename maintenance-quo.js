@@ -4,6 +4,7 @@ const BASE = 'https://api.quo.com/v1';
 const digits = (s) => String(s == null ? '' : s).replace(/\D/g, '');
 export const e164 = (s) => { const d = digits(s); if (d.length === 10) return '+1' + d; if (d.length === 11 && d[0] === '1') return '+' + d; return ''; };
 export const maskPhone = (s) => { const d = digits(s).slice(-10); return d.length === 10 ? '(***) ***-' + d.slice(6) : ''; };
+export const showPhone = (s) => { const d = digits(s).slice(-10); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : ''; };
 const clip = (s, n) => { const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 
 export function makeQuoClient({ env = process.env, fetchImpl = globalThis.fetch, now = () => Date.now() } = {}) {
@@ -28,13 +29,14 @@ export function makeQuoClient({ env = process.env, fetchImpl = globalThis.fetch,
     if (v.ok) cache.set(p, { at: now(), v }); if (cache.size > 500) cache.delete(cache.keys().next().value);
     return v;
   }
-  return { configured: !!token, phoneNumberId, messagesFor };
+  const fromNumber = e164(env.QUO_FROM_NUMBER || '+16028549884'); // Main Office line, used only to pre-select the line in a Quo text link
+  return { configured: !!token, phoneNumberId, fromNumber, messagesFor };
 }
 
 // Merge the messages from several numbers, newest first.
 export function mergeThreads(perPhone, limit = 12) {
   const all = [];
-  for (const { phone, res } of perPhone) if (res && res.ok) for (const m of res.items) all.push({ ...m, who: maskPhone(phone) });
+  for (const { phone, name, res } of perPhone) if (res && res.ok) for (const m of res.items) all.push({ ...m, who: (name ? name + ' ' : '') + showPhone(phone) });
   all.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
   return all.slice(0, limit);
 }
