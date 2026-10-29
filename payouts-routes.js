@@ -57,7 +57,7 @@ export async function allPages(rvFetch, route, report, { max = 25, fields = null
 
 const PROP_COLS = ['propertyID', 'propertyAddress', 'propertyCity', 'portfolioID', 'portfolioName', 'portfolioOwnerIDs', 'managementFeeSettingID', 'managementFeeSettingName', 'isActive', 'property_text_61', 'property_text_62', 'property_text_63'];
 const SETTLE_COLS = ['settlementDate', 'datePosted', 'propertyID', 'unitID', 'amount', 'contactID', 'payoutTypeID', 'bankAccountID'];
-const LEASE_COLS = ['leaseID', 'propertyID', 'rentAmount', 'primaryLeaseStatusID'];
+const LEASE_COLS = ['leaseID', 'propertyID', 'rentAmount', 'primaryLeaseStatusID', 'leaseStatusName', 'moveInDate', 'expectedMoveOutDate', 'noticeDate', 'isMovingOut'];
 const BILL_COLS = ['transactionID', 'billID', 'propertyID', 'portfolioID', 'chargeAccountID', 'chargeAccountName', 'datePosted', 'dateDue', 'amount', 'amountUnpaid', 'isPaid', 'isVoided', 'isSuppressed', 'description', 'contactName'];
 // Every unpaid bill (any date) plus everything posted in the window. Server-side filters are unreliable (isSuppressed is silently
 // ignored), so only the two filters known to work are sent and everything else is filtered in code.
@@ -92,7 +92,7 @@ export async function loadPayoutData(rvFetch, { sinceDays = 45, typical = {}, re
 
 // Turn raw report rows into the owner list the math module expects. `rents` = { propertyID: monthlyRent }.
 // Owners are grouped by PORTFOLIO. A portfolio can have several owner contacts; a payout to any of them counts as that portfolio's payout.
-export function shapeOwners({ props, settle, bills, typical = {}, reserve = 0 }, rents = {}, expectedBill = new Set()) {
+export function shapeOwners({ props, settle, bills, typical = {}, reserve = 0 }, rents = {}, expectedBill = new Set(), leaseInfo = {}, todayISO = today()) {
   const trust = settle.filter((r) => r.bankAccountID === undefined || num(r.bankAccountID) === TRUST_BANK_ACCOUNT_ID);
   const payoutsByContact = {};
   for (const r of trust) {
@@ -133,7 +133,13 @@ export function shapeOwners({ props, settle, bills, typical = {}, reserve = 0 },
         amountUnpaid: truthy(b.isPaid) ? num(b.amount) : num(b.amountUnpaid || b.amount), isPaid: false, isVoided: false,
         desc: (b.description || b.chargeAccountName || 'Bill') + (truthy(b.isPaid) ? ' (paid ' + toISO(b.datePosted) + ')' : ' (unpaid)'), billID: b.billID, vendor: b.contactName,
       }));
+      const lt = leaseTags(leaseInfo[id], lp ? lp.date : '', todayISO);
+      const billHistory = markDuplicates((billsBy[id] || []).map((b) => ({
+        billID: b.billID, date: toISO(b.datePosted), accountID: num(b.chargeAccountID), account: b.chargeAccountName || '', vendor: b.contactName || '', desc: b.description || '',
+        amount: num(b.amount), unpaid: truthy(b.isPaid) ? 0 : num(b.amountUnpaid || b.amount), paid: truthy(b.isPaid), counted: counted.includes(b), dup: false,
+      })).sort((x, y) => (y.date > x.date ? 1 : y.date < x.date ? -1 : 0)));
       return {
+        tags: lt.tags, moveOutSoon: lt.moveOutSoon, lease: leaseInfo[id] || null, billHistory,
         propertyID: id, address: [p.propertyAddress, p.propertyCity].filter(Boolean).join(', '),
         rent, fee, feeKnown: feeBills.length ? true : plan.known, feePlan: (p.managementFeeSettingName || '') + (feeBills.length ? ' (posted)' : ' (expected)'),
         settledIn: inn, bills: expense,
@@ -147,12 +153,53 @@ export function shapeOwners({ props, settle, bills, typical = {}, reserve = 0 },
   return owners;
 }
 
-// Monthly rent per property from active leases (Lease report: rentAmount).
-export async function defaultRents(rvFetch) {
+// Rent and move-in / move-out dates per property from active leases (Lease report).
+// info[propertyID] = { moveIn, moveOut, notice, status } as YYYY-MM-DD ("" when none). Move-out only counts when notice was given.
+export async function defaultLeaseInfo(rvFetch) {
   const leases = await allPages(rvFetch, 'lease', { displayColumns: LEASE_COLS, filters: [{ name: 'primaryLeaseStatusID', comparator: 'equals', value: '2' }] }, { fields: LEASE_COLS, max: 15 });
-  const out = {};
-  for (const l of leases) out[String(l.propertyID)] = (out[String(l.propertyID)] || 0) + num(l.rentAmount);
-  return out;
+  const rents = {}, info = {};
+  for (const l of leases) {
+    const id = String(l.propertyID);
+    rents[id] = (rents[id] || 0) + num(l.rentAmount);
+    const i = (info[id] ||= { moveIn: '', moveOut: '', notice: '', status: '' });
+    const mi = toISO(l.moveInDate);
+    if (mi && mi > i.moveIn) { i.moveIn = mi; i.status = l.leaseStatusName || i.status; }
+    const leaving = truthy(l.isMovingOut) || /notice|vacat/i.test(String(l.leaseStatusName || '')) || !!toISO(l.noticeDate);
+    const mo = toISO(l.expectedMoveOutDate);
+    if (leaving && mo && (!i.moveOut || mo < i.moveOut)) { i.moveOut = mo; i.notice = toISO(l.noticeDate); }
+  }
+  return { rents, info };
+}
+export const defaultRents = async (rvFetch) => (await defaultLeaseInfo(rvFetch)).rents;
+
+// Tags for the tenant side of a property: new move-in, moving out within 30 days / this month / next month.
+const dayDiff = (a, b) => Math.round((Date.parse(a + 'T12:00:00Z') - Date.parse(b + 'T12:00:00Z')) / 864e5);
+const md = (iso) => Number(iso.slice(5, 7)) + '/' + Number(iso.slice(8, 10));
+const nextMonthKey = (iso) => { let y = Number(iso.slice(0, 4)), m = Number(iso.slice(5, 7)) + 1; if (m > 12) { m = 1; y++; } return y + '-' + String(m).padStart(2, '0'); };
+export function leaseTags(info, since, todayISO) {
+  const tags = []; let moveOutSoon = false;
+  if (!info) return { tags, moveOutSoon };
+  if (info.moveIn) {
+    const age = dayDiff(todayISO, info.moveIn);
+    if (age >= 0 && (age <= 45 || (since && since !== '0000-00-00' && info.moveIn > since))) tags.push({ key: 'new_move_in', text: 'New move-in ' + md(info.moveIn) });
+  }
+  if (info.moveOut) {
+    const d = dayDiff(info.moveOut, todayISO);
+    if (d <= 30 && d >= -30) { tags.push({ key: 'move_out_30', text: d < 0 ? 'Move-out date passed ' + md(info.moveOut) : 'Moving out ' + md(info.moveOut) + ' (' + d + (d === 1 ? ' day)' : ' days)') }); moveOutSoon = true; }
+    if (info.moveOut.slice(0, 7) === todayISO.slice(0, 7)) tags.push({ key: 'move_out_month', text: 'Moving out this month ' + md(info.moveOut) });
+    if (info.moveOut.slice(0, 7) === nextMonthKey(todayISO)) tags.push({ key: 'move_out_next', text: 'Moving out next month ' + md(info.moveOut) });
+  }
+  return { tags, moveOutSoon };
+}
+
+// Marks bills that look entered twice: same property, same account, same amount, same vendor or description, posted within 10 days.
+export function markDuplicates(list) {
+  const key = (b) => String(b.vendor || b.desc || '').trim().toLowerCase();
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    const a = list[i], b = list[j];
+    if (a.accountID === b.accountID && Math.abs(a.amount - b.amount) < 0.005 && key(a) === key(b) && a.date && b.date && Math.abs(dayDiff(a.date, b.date)) <= 10) { a.dup = true; b.dup = true; }
+  }
+  return list;
 }
 
 // Decisions (approve / hold / ask owner + note). Default store is in memory until you approve a real place to keep them.
@@ -161,7 +208,7 @@ export function makeMemoryDecisionStore() {
   return { persistent: false, get: async () => Object.fromEntries(m), set: async (ownerID, d) => { m.set(String(ownerID), { ...d, at: new Date().toISOString() }); return m.get(String(ownerID)); } };
 }
 
-export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionStore(), getRents = defaultRents, getExpectedBills = async () => new Set(), typical = {}, reserve = 0, env = process.env } = {}) {
+export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionStore(), getRents = null, getLeaseInfo = defaultLeaseInfo, getExpectedBills = async () => new Set(), typical = {}, reserve = 0, env = process.env } = {}) {
   if (typeof rvFetch !== 'function') throw new Error('installPayouts needs rvFetch');
   const guard = (req, res) => { if (!sessionOk(req, env)) { res.status(401).json({ error: 'Sign in required' }); return false; } return true; };
   let cache = { at: 0, v: null }, inflight = null;
@@ -175,8 +222,9 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       if (!fresh && cache.v && Date.now() - cache.at < TTL) return res.json(cache.v);
       if (!inflight) inflight = (async () => {
       const raw = await loadPayoutData(rvFetch, { typical, reserve });
-      const rents = await getRents(rvFetch);
-      const owners = shapeOwners(raw, rents, await getExpectedBills(rvFetch));
+      const li = getRents ? { rents: await getRents(rvFetch), info: {} } : await getLeaseInfo(rvFetch);
+      const rents = li.rents;
+      const owners = shapeOwners(raw, rents, await getExpectedBills(rvFetch), li.info);
       const out = {
         asOf: new Date().toISOString(), scope: 'Rental Trust (bank account ' + TRUST_BANK_ACCOUNT_ID + ')', reserve,
         decisionsSaved: !!decisions.persistent, flagText: FLAG_TEXT,

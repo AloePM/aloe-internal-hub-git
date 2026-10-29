@@ -2,27 +2,36 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Owner Payouts - Aloe Hub</title>
 <style>
-:root{--bg:#f6f8f5;--card:#fff;--ink:#1d2a22;--mute:#667568;--line:#e2e8e0;--green:#2f7d4f;--amber:#b7791f;--red:#b3392f;--amberbg:#fdf3dc;--redbg:#fbe6e3;--greenbg:#e6f3ea}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-main{max-width:1180px;margin:0 auto;padding:24px 20px 60px}
-h1{font-size:22px;margin:0 0 4px}.sub{color:var(--mute);margin:0 0 16px}
+:root{--bg:#f8fafc;--card:#fff;--ink:#1b2b34;--mute:#5f7479;--line:#dbe6e8;--teal:#3cc3e1;--teal2:#4bb4d2;--tealdk:#167a93;--tealbg:#e4f6fb;--silver:#b4c3c3;--silverbg:#eef2f2;--amber:#9a6208;--amberbg:#fdf3dc;--red:#b3392f;--redbg:#fbe6e3}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;border-top:5px solid var(--teal)}
+main{max-width:1240px;margin:0 auto;padding:22px 20px 60px}
+h1{font-size:22px;margin:0 0 4px;color:var(--tealdk)}.sub{color:var(--mute);margin:0 0 16px}
 .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 14px}
-.bar input[type=search]{padding:8px 10px;border:1px solid var(--line);border-radius:8px;min-width:220px}
-button{font:inherit;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 12px;cursor:pointer}
-button:hover{border-color:var(--green)}button.on{background:var(--green);color:#fff;border-color:var(--green)}
+.bar input[type=search],.bar select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;font:inherit;color:var(--ink)}
+.bar input[type=search]{min-width:220px}
+button{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+button:hover{border-color:var(--teal2)}button.on{background:var(--tealdk);color:#fff;border-color:var(--tealdk)}
 .note{background:var(--amberbg);border:1px solid #ecd9a6;border-radius:8px;padding:8px 12px;margin:0 0 14px;color:#6b4a0c}
-table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+table{width:100%;border-collapse:collapse;background:var(--card)}
+#t{border:1px solid var(--line);border-radius:10px;overflow:hidden}
 th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
 th:first-child,td:first-child,th.l,td.l{text-align:left}
-th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);background:#fafbf9}
-tr.owner{cursor:pointer}tr.owner:hover{background:#f3f7f2}
-.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600}
-.ok{background:var(--greenbg);color:var(--green)}.look{background:var(--amberbg);color:var(--amber)}.bad{background:var(--redbg);color:var(--red)}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--tealdk);background:var(--tealbg);user-select:none}
+th.s{cursor:pointer}th.s:hover{background:#d3eff8}th .ar{display:inline-block;width:12px;color:var(--tealdk)}
+tr.owner{cursor:pointer}tr.owner:hover{background:#f0fafd}
+.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600;margin:2px 4px 0 0}
+.ok{background:var(--tealbg);color:var(--tealdk)}.look{background:var(--amberbg);color:var(--amber)}.bad{background:var(--redbg);color:var(--red)}
+.tag{background:var(--silverbg);color:#3b5358;border:1px solid var(--silver)}.tag.in{background:var(--tealbg);color:var(--tealdk);border-color:var(--teal2)}.tag.out{background:var(--amberbg);color:var(--amber);border-color:#e2c477}.tag.first{background:#fff;color:var(--tealdk);border-color:var(--teal2)}
 .neg{color:var(--red);font-weight:600}
-tr.detail td{background:#fafbf9;padding:0}
+tr.detail td{background:#fbfdfe;padding:0;white-space:normal}
 .inner{padding:14px 18px 18px}
-.inner table{font-size:13px}.inner td.l,.inner th.l{padding-left:22px}
 .flags{margin:0 0 10px;padding:0;list-style:none}.flags li{margin:2px 0}
+.prop{border:1px solid var(--line);border-radius:10px;background:#fff;margin:0 0 12px;overflow:hidden}
+.ph{display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 14px;background:var(--silverbg);border-bottom:1px solid var(--line)}
+.ph .addr{font-weight:600}.ph .nums{display:flex;gap:18px;flex-wrap:wrap}.ph .nums span{color:var(--mute)}.ph .nums b{color:var(--ink)}
+.prop table{font-size:13px}.prop td,.prop th{padding:6px 14px}.prop td.g,.prop th.g{padding-left:28px}
+.prop th{background:#fff;color:var(--mute);border-bottom:1px solid var(--line)}
+tr.dup td{background:var(--amberbg)}tr.old td{color:var(--mute)}
 .dec{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
 .dec input[type=text]{flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--line);border-radius:8px}
 .mark{color:var(--amber);font-weight:600}
@@ -37,18 +46,39 @@ tr.detail td{background:#fafbf9;padding:0}
   <div class="bar">
     <input type="search" id="q" placeholder="Search owner or address">
     <button id="fAll" class="on">All</button><button id="fLook">Needs a look</button><button id="fOk">Looks fine</button>
+    <select id="selPaid" title="Payout history">
+      <option value="all">Payout history: any</option><option value="never">Never paid before</option><option value="has">Has been paid before</option>
+    </select>
+    <select id="selTen" title="Tenants">
+      <option value="all">Tenants: any</option><option value="new_move_in">New move-in</option><option value="move_out_30">Moving out within 30 days</option><option value="move_out_month">Moving out this month</option><option value="move_out_next">Moving out next month</option>
+    </select>
     <button id="refresh">Refresh</button>
   </div>
-  <table id="t"><thead><tr><th>Owner</th><th>Settled in</th><th>Mgmt fees</th><th>Unpaid bills</th><th>Recurring</th><th>Reserve</th><th>Amount to pay</th><th>Last payout</th><th class="l">Status</th></tr></thead><tbody id="body"></tbody></table>
+  <table id="t"><thead><tr id="head"></tr></thead><tbody id="body"></tbody></table>
 </main>
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = (n) => (n < 0 ? '-' : '') + '$' + Math.abs(Number(n) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-let data = null, filter = 'all', open = new Set();
+const mdy = (iso) => iso ? iso.slice(5, 7) + '/' + iso.slice(8, 10) + '/' + iso.slice(0, 4) : '';
+let data = null, filter = 'all', paid = 'all', ten = 'all', open = new Set(), sortKey = null, sortDir = 1;
+
+const COLS = [
+  ['name', 'Owner', 'l'], ['settledIn', 'Settled in'], ['fees', 'Mgmt fees'], ['unpaidBills', 'Unpaid bills'], ['recurringTotal', 'Recurring'],
+  ['reserve', 'Reserve'], ['amountToPay', 'Amount to pay'], ['lastPayout', 'Last payout'], ['status', 'Status', 'l'],
+];
+function head() {
+  $('#head').innerHTML = COLS.map(([k, label, cls]) => '<th class="s ' + (cls || '') + '" data-k="' + k + '">' + label + '<span class="ar">' + (sortKey === k ? (sortDir > 0 ? ' ▲' : ' ▼') : '') + '</span></th>').join('');
+}
+$('#head').addEventListener('click', (e) => {
+  const th = e.target.closest('th[data-k]'); if (!th) return;
+  const k = th.dataset.k;
+  if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = k === 'name' || k === 'status' ? 1 : -1; }
+  head(); if (data) render();
+});
 
 async function load(refresh) {
-  $('#sub').textContent = 'Loading from Rentvine...';
+  $('#sub').textContent = 'Loading from Rentvine... this can take up to a minute';
   try {
     const r = await fetch('/api/payouts/list' + (refresh ? '?refresh=1' : ''), {credentials: 'same-origin'});
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
@@ -64,35 +94,64 @@ function statusPill(o) {
   const bad = o.flags.includes('below_zero');
   return '<span class="pill ' + (bad ? 'bad' : 'look') + '">Needs a look</span>';
 }
+function ownerTags(o) {
+  const c = o.tagCounts || {}, t = [];
+  if (o.neverPaid) t.push('<span class="pill tag first">First payout</span>');
+  if (c.new_move_in) t.push('<span class="pill tag in">New move-in' + (c.new_move_in > 1 ? ' x' + c.new_move_in : '') + '</span>');
+  if (c.move_out_30) t.push('<span class="pill tag out">Moving out in 30 days' + (c.move_out_30 > 1 ? ' x' + c.move_out_30 : '') + '</span>');
+  if (c.move_out_month) t.push('<span class="pill tag">Out this month' + (c.move_out_month > 1 ? ' x' + c.move_out_month : '') + '</span>');
+  if (c.move_out_next) t.push('<span class="pill tag">Out next month' + (c.move_out_next > 1 ? ' x' + c.move_out_next : '') + '</span>');
+  return t.join('');
+}
+function sortVal(o, k) {
+  if (k === 'name') return o.name.toLowerCase();
+  if (k === 'status') return o.flags.length ? 1 : 0;
+  if (k === 'lastPayout') return o.lastPayout == null ? -1 : o.lastPayout;   // never paid sorts as lowest
+  return Number(o[k]) || 0;
+}
 
 function render() {
   const q = $('#q').value.trim().toLowerCase();
-  const rows = data.owners.filter((o) => {
+  let rows = data.owners.filter((o) => {
     if (filter === 'look' && !o.flags.length) return false;
     if (filter === 'ok' && o.flags.length) return false;
+    if (paid === 'never' && !o.neverPaid) return false;
+    if (paid === 'has' && o.neverPaid) return false;
+    if (ten !== 'all' && !((o.tagCounts || {})[ten] > 0)) return false;
     if (!q) return true;
     return o.name.toLowerCase().includes(q) || o.properties.some((p) => p.address.toLowerCase().includes(q));
   });
+  if (sortKey) rows = rows.slice().sort((a, b) => { const x = sortVal(a, sortKey), y = sortVal(b, sortKey); return (x < y ? -1 : x > y ? 1 : 0) * sortDir; });
   $('#body').innerHTML = rows.map((o) => {
     const d = data.decisions[o.ownerID];
-    const main = '<tr class="owner" data-id="' + esc(o.ownerID) + '"><td>' + esc(o.name) + ' <span class="muted tiny">(' + o.properties.length + ')</span>' + (d ? ' <span class="pill ok">' + esc(d.action.replace('_', ' ')) + '</span>' : '') + '</td>' +
+    const main = '<tr class="owner" data-id="' + esc(o.ownerID) + '"><td>' + esc(o.name) + ' <span class="muted tiny">(' + o.properties.length + ')</span>' + (d ? ' <span class="pill ok">' + esc(d.action.replace('_', ' ')) + '</span>' : '') + '<div>' + ownerTags(o) + '</div></td>' +
       '<td>' + money(o.settledIn) + '</td><td>' + money(o.fees) + '</td><td>' + money(o.unpaidBills) + '</td><td>' + money(o.recurringTotal) + '</td><td>' + money(o.reserve) + '</td>' +
-      '<td class="' + (o.amountToPay < 0 ? 'neg' : '') + '"><b>' + money(o.amountToPay) + '</b></td><td>' + (o.lastPayout == null ? '<span class="muted">none seen</span>' : money(o.lastPayout)) + '</td><td class="l">' + statusPill(o) + '</td></tr>';
+      '<td class="' + (o.amountToPay < 0 ? 'neg' : '') + '"><b>' + money(o.amountToPay) + '</b></td><td>' + (o.lastPayout == null ? '<span class="muted">none seen</span>' : money(o.lastPayout) + '<div class="muted tiny">' + esc(mdy(o.lastPayoutDate)) + '</div>') + '</td><td class="l">' + statusPill(o) + '</td></tr>';
     return main + (open.has(String(o.ownerID)) ? detail(o, d) : '');
-  }).join('') || '<tr><td colspan="9" class="l muted">' + (data.owners.length ? 'Nothing matches this filter or search.' : 'Rentvine returned no owners. See the counts above.') + '</td></tr>';
+  }).join('') || '<tr><td colspan="9" class="l muted">' + (data.owners.length ? 'Nothing matches these filters or search.' : 'Rentvine returned no owners. See the counts above.') + '</td></tr>';
 }
 
+function billTable(p) {
+  const h = p.billHistory || [];
+  if (!h.length) return '<div class="muted tiny" style="padding:8px 14px">No bills in Rentvine for this property in the last 45 days, and none unpaid.</div>';
+  return '<table><thead><tr><th class="l">Posted</th><th class="l">Account</th><th class="l">Vendor / description</th><th>Amount</th><th class="l g">Status</th><th class="l">This payout</th><th class="l"></th></tr></thead><tbody>' +
+    h.map((b) => '<tr class="' + (b.dup ? 'dup' : '') + (b.counted ? '' : ' old') + '"><td class="l">' + esc(mdy(b.date)) + '</td><td class="l">' + esc(b.account || ('Account ' + b.accountID)) + '</td><td class="l">' + esc([b.vendor, b.desc].filter(Boolean).join(' - ')) + (b.billID ? ' <span class="muted tiny">bill #' + esc(b.billID) + '</span>' : '') + '</td>' +
+      '<td>' + money(b.amount) + '</td><td class="l g">' + (b.paid ? 'Paid' : 'Unpaid ' + money(b.unpaid)) + '</td><td class="l">' + (b.counted ? 'Counted' : 'Already paid out') + '</td><td class="l">' + (b.dup ? '<span class="mark">&#9873; looks like a duplicate</span>' : '') + '</td></tr>').join('') + '</tbody></table>';
+}
+function propTags(p) {
+  return (p.tags || []).map((t) => '<span class="pill tag ' + (t.key === 'new_move_in' ? 'in' : t.key === 'move_out_30' ? 'out' : '') + '">' + esc(t.text) + '</span>').join('');
+}
 function detail(o, d) {
   const flags = o.flags.map((f) => '<li class="' + (f === 'below_zero' ? 'neg' : 'mark') + '">&bull; ' + esc(data.flagText[f] || f) + '</li>').join('');
   const props = o.properties.map((p) => {
-    const bills = p.bills.map((b) => esc(b.desc || 'Bill') + ' ' + money(b.amountUnpaid)).join('<br>');
-    const rec = p.recurring.map((r) => esc(r.label) + ' ' + (r.amount ? money(r.amount) : '<span class="mark">amount?</span>')).join('<br>');
-    return '<tr><td class="l">' + esc(p.address) + (p.billExpected ? ' <span class="mark" title="Open work order, bill expected">&#9873; bill expected</span>' : '') + '<div class="muted tiny">' + esc(p.feePlan) + '</div></td>' +
-      '<td>' + money(p.rent) + '</td><td>' + money(p.fee) + '</td><td>' + money(p.settledIn) + '</td><td class="l tiny">' + (bills || '<span class="muted">none</span>') + '</td><td class="l tiny">' + (rec || '<span class="muted">none</span>') + '</td><td class="' + (p.net < 0 ? 'neg' : '') + '">' + money(p.net) + '</td></tr>';
+    const rec = p.recurring.map((r) => esc(r.label) + ' ' + (r.amount ? money(r.amount) : '<span class="mark">amount?</span>')).join(', ');
+    return '<div class="prop"><div class="ph"><div><span class="addr">' + esc(p.address) + '</span>' + (p.billExpected ? ' <span class="mark" title="Open work order, bill expected">&#9873; bill expected</span>' : '') +
+      '<div class="muted tiny">' + esc(p.feePlan) + (rec ? ' &middot; expected: ' + rec : '') + '</div><div>' + propTags(p) + '</div></div>' +
+      '<div class="nums"><span>Rent <b>' + money(p.rent) + '</b></span><span>Fee <b>' + money(p.fee) + '</b></span><span>Settled in <b>' + money(p.settledIn) + '</b></span><span>Net <b class="' + (p.net < 0 ? 'neg' : '') + '">' + money(p.net) + '</b></span></div></div>' +
+      billTable(p) + '</div>';
   }).join('');
   return '<tr class="detail"><td colspan="9"><div class="inner">' +
-    (flags ? '<ul class="flags">' + flags + '</ul>' : '') +
-    '<table><thead><tr><th>Property</th><th>Rent</th><th>Mgmt fee</th><th>Settled in</th><th class="l">Unpaid bills</th><th class="l">Recurring bills</th><th>Net</th></tr></thead><tbody>' + props + '</tbody></table>' +
+    (flags ? '<ul class="flags">' + flags + '</ul>' : '') + props +
     '<div class="dec" data-id="' + esc(o.ownerID) + '"><button data-a="approve">Approve</button><button data-a="hold">Hold</button><button data-a="ask_owner">Ask owner</button>' +
     '<input type="text" maxlength="500" placeholder="Note (optional)" value="' + esc(d ? d.note : '') + '"></div></div></td></tr>';
 }
@@ -109,9 +168,12 @@ $('#body').addEventListener('click', async (e) => {
   const tr = e.target.closest('tr.owner'); if (!tr) return;
   const id = tr.dataset.id; open.has(id) ? open.delete(id) : open.add(id); render();
 });
-$('#q').addEventListener('input', render);
-for (const [id, f] of [['fAll', 'all'], ['fLook', 'look'], ['fOk', 'ok']]) $('#' + id).addEventListener('click', () => { filter = f; for (const x of ['fAll', 'fLook', 'fOk']) $('#' + x).classList.toggle('on', x === id); render(); });
+$('#q').addEventListener('input', () => data && render());
+$('#selPaid').addEventListener('change', (e) => { paid = e.target.value; if (data) render(); });
+$('#selTen').addEventListener('change', (e) => { ten = e.target.value; if (data) render(); });
+for (const [id, f] of [['fAll', 'all'], ['fLook', 'look'], ['fOk', 'ok']]) $('#' + id).addEventListener('click', () => { filter = f; for (const x of ['fAll', 'fLook', 'fOk']) $('#' + x).classList.toggle('on', x === id); if (data) render(); });
 $('#refresh').addEventListener('click', () => load(true));
+head();
 load();
 </script>
 <script src="/hub-shell.js"></script>

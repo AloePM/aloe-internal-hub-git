@@ -35,6 +35,7 @@ export function propertyRow(p) {
     unpaidBills: dollars(billsC), bills,
     recurring: p.recurring || [], recurringTotal: dollars(recC),
     billExpected: !!p.billExpected,
+    billHistory: p.billHistory || [], lease: p.lease || null, tags: p.tags || [], moveOutSoon: !!p.moveOutSoon,
     // settled money less the fee and the expenses for this property
     net: dollars(settled - fee - billsC - recC),
   };
@@ -56,6 +57,7 @@ export function ownerRow(o, opts = {}) {
     if (last != null && last > 0 && amountToPay < last * cfg.lowerThanLastPct) flags.push('lower_than_last');
   }
   if (rows.some((r) => r.billExpected)) flags.push('bill_expected');
+  if (rows.some((r) => r.moveOutSoon)) flags.push('move_out_soon');
   if (rows.some((r) => (r.recurring || []).some((x) => !x.amount))) flags.push('recurring_unknown');
   const needsLook = flags.some((f) => f !== 'bill_expected' || true) && flags.length > 0;
   return {
@@ -63,7 +65,8 @@ export function ownerRow(o, opts = {}) {
     settledIn: dollars(sum('settledIn')), fees: dollars(sum('fee')),
     unpaidBills: dollars(sum('unpaidBills')), recurringTotal: dollars(sum('recurringTotal')),
     reserve: dollars(reserve), expected: dollars(expected), amountToPay: dollars(amountToPay),
-    lastPayout: last == null ? null : dollars(last),
+    lastPayout: last == null ? null : dollars(last), lastPayoutDate: o.lastPayoutDate || null, neverPaid: last == null,
+    tagCounts: Object.fromEntries(['new_move_in', 'move_out_30', 'move_out_month', 'move_out_next'].map((k) => [k, rows.filter((r) => (r.tags || []).some((t) => t.key === k)).length])),
     flags, status: flags.length ? 'Needs a look' : 'Looks fine', needsLook,
   };
 }
@@ -79,5 +82,6 @@ export const FLAG_TEXT = {
   less_than_usual: 'Less than usual - under expected rent minus fee',
   lower_than_last: 'Lower than last payout',
   bill_expected: 'Open work order, bill expected',
+  move_out_soon: 'Tenant moving out within 30 days - consider holding funds',
   recurring_unknown: 'Recurring bill has no typical amount yet',
 };
