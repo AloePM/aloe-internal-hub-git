@@ -77,6 +77,9 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 .trow .why{font-size:12px;color:var(--muted)}.trow .nt{font-size:12px;color:#243030;background:#F8FAFC;border-left:3px solid var(--teal);padding:2px 8px;margin-top:3px;overflow-wrap:anywhere}
 .donow{background:#F2F8F9;border:1px solid #B4C3C3;border-left:4px solid #0A5468;border-radius:8px;padding:8px 12px;margin:6px 0}.donow ol{margin:6px 0 0 18px;padding:0}.donow li{margin:3px 0;font-size:13px;line-height:1.4;overflow-wrap:anywhere}
 .lnkb{display:inline-flex;align-items:center;text-decoration:none}
+button.chip{font:inherit;color:inherit;text-align:left;width:100%;min-height:44px;cursor:pointer}button.chip.go:hover{border-color:#0A5468;box-shadow:0 1px 4px rgba(10,84,104,.18)}button.chip:focus-visible,.toplink:focus-visible{outline:3px solid #0A5468;outline-offset:2px}.chip.zero{opacity:.55}
+#tchips:focus{outline:none}.tsec{scroll-margin-top:12px}.tsec:focus{outline:none}.tsec.flash{animation:secflash 1.6s ease-out}@keyframes secflash{0%{background:#FFF3CC}100%{background:transparent}}@media (prefers-reduced-motion:reduce){.tsec.flash{animation:none}}
+.toplink{margin:8px 0 2px;background:none;border:0;color:#0A5468;font:700 12px Manrope,system-ui,sans-serif;text-decoration:underline;cursor:pointer;min-height:44px;padding:0 4px}
 .lks{font-size:12px;font-weight:700;white-space:nowrap}.lks a{color:#0A5468;margin-right:10px;text-decoration:underline;display:inline-block;padding:4px 0}.lks a:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}.wwrap .cbx{margin:0 10px;flex:none;width:98px;display:flex;flex-direction:column;align-items:stretch}.wwrap .cbx .cbtn{margin:0;width:auto}.wwrap .cbx .lks{text-align:center}.wwrap .cbx .lks a{margin:0 5px}
 .mini{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid #B4C3C3;background:#fff;color:#0A5468;font:700 12px Manrope,system-ui,sans-serif;cursor:pointer}.mini:hover:not(:disabled){background:#E6EFF0}.mini:disabled{opacity:.55;cursor:default}.mini:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}
 .trow .nt.stale{border-left-color:var(--red);background:var(--red-d)}
@@ -106,7 +109,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
   <div id="closing"></div>
   <div class="seg" id="seg" role="group" aria-label="View"><button type="button" class="on" data-mode="today" aria-pressed="true">Today</button><button type="button" data-mode="home" aria-pressed="false">By home</button><button type="button" data-mode="wo" aria-pressed="false">By work order</button><button type="button" data-mode="units" aria-pressed="false">Unit turns</button></div>
   <div id="todayView">
-    <div id="tbanner"></div><div class="chips" id="tchips"></div><div id="tsecs"><div class="empty">Loading today's list...</div></div>
+    <div id="tbanner"></div><div class="chips" id="tchips" tabindex="-1"></div><div id="tsecs"><div class="empty">Loading today's list...</div></div>
     <p class="ro">Days are calendar days in Phoenix time. A vendor should be scheduled within 2 days of being assigned; follow up with the vendor at 3 days. Follow-up dates and notes are saved in the hub. Comments, and follow-ups you tick the box for, are also posted on the Aptly card. Nothing is changed in Rentvine. Until individual logins exist, people pick their name.</p>
   </div>
   <div id="unitView" hidden>
@@ -248,6 +251,14 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
       h('div', { 'class': 'why hd2', text: lastContact(it) }),
       h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, [det, cmb, txb, vcb, fu])]);
   }
+  // Count boxes at the top of Today scroll to their section. Instant scroll for people who prefer reduced motion.
+  function jumpTo(id) {
+    var el = document.getElementById(id); if (!el) return;
+    var calm = false; try { calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    try { el.scrollIntoView({ behavior: calm ? 'auto' : 'smooth', block: 'start' }); } catch (e) { el.scrollIntoView(); }
+    try { el.focus({ preventScroll: true }); } catch (e) {}
+    if (id !== 'tchips') { el.classList.add('flash'); setTimeout(function () { el.classList.remove('flash'); }, 1600); }
+  }
   function renderToday() {
     var d = TODAY, box = $('tsecs'); box.textContent = ''; $('tchips').textContent = ''; $('tbanner').textContent = '';
     if (!d) return;
@@ -258,16 +269,23 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     d.sections.forEach(function (s) {
       var n = s.items.length; if (s.muted) return;
       var red = s.items.filter(function (x) { return x.level === 'red'; }).length;
-      $('tchips').appendChild(h('div', { 'class': 'chip' + (red ? ' r' : '') }, [h('b', { text: String(n) }), h('span', { text: s.title })]));
+      var kids = [h('b', { text: String(n) }), h('span', { text: s.title })];
+      if (n && s.key !== 'turns') {
+        var cb = h('button', { 'class': 'chip go' + (red ? ' r' : ''), type: 'button', 'aria-label': s.title + ', ' + n + (red ? ', some overdue' : '') + '. Jump to this section.' }, kids);
+        cb.addEventListener('click', function () { jumpTo('sec-' + s.key); });
+        $('tchips').appendChild(cb);
+      } else $('tchips').appendChild(h('div', { 'class': 'chip' + (red ? ' r' : '') + (n ? '' : ' zero') }, kids));
     });
     $('tchips').appendChild(h('div', { 'class': 'chip' }, [h('b', { text: String(d.parked) }), h('span', { text: 'Parked (on hold, parts, owner)' })]));
     var any = false;
     d.sections.forEach(function (s) {
       if (!s.items.length || s.key === 'turns') return; any = true;
-      var sec = h('div', { 'class': 'tsec' + (s.muted ? ' muted' : '') }, [h('h2', {}, [s.title, h('span', { 'class': 'pill ' + (s.muted ? 'p-grey' : 'p-red'), text: String(s.items.length) }), h('small', { text: s.hint })])]);
+      var sec = h('div', { 'class': 'tsec' + (s.muted ? ' muted' : ''), id: 'sec-' + s.key, tabindex: '-1' }, [h('h2', {}, [s.title, h('span', { 'class': 'pill ' + (s.muted ? 'p-grey' : 'p-red'), text: String(s.items.length) }), h('small', { text: s.hint })])]);
       var list = h('div', { 'class': 'list' }, [h('div', { 'class': 'trow head' }, [h('span', { text: 'Address' }), h('span', { text: 'Request' }), h('span', { text: 'Waiting on' }), h('span', { text: 'In stage' }), h('span', { 'class': 'hd2', text: 'Last contact' }), h('span', { text: 'Next step' })])]);
       s.items.forEach(function (it) { list.appendChild(trow(it, s)); });
-      sec.appendChild(list); box.appendChild(sec);
+      sec.appendChild(list);
+      var up = h('button', { 'class': 'toplink', type: 'button', text: 'Back to the counts at the top' }); up.addEventListener('click', function () { jumpTo('tchips'); });
+      sec.appendChild(up); box.appendChild(sec);
     });
     if (!any) box.appendChild(h('div', { 'class': 'empty', text: 'Nothing needs a touch right now.' }));
     $('asof').textContent = 'Updated ' + new Date(d.asOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
