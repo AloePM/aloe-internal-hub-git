@@ -236,6 +236,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     var det = h('button', { 'class': 'mini', type: 'button', text: 'Details' }); if (it.propertyId) det.addEventListener('click', function () { openPanel(it.propertyId, it.address, det); }); else det.disabled = true;
     var cmb = h('button', { 'class': 'mini', type: 'button', text: 'Comments' + (it.notesKnown && it.commentCount ? ' (' + it.commentCount + ')' : '') }); if (it.matched) cmb.addEventListener('click', function () { openComments(it, cmb); }); else cmb.disabled = true;
     var fu = h('button', { 'class': 'mini', type: 'button', text: it.followUpOn ? 'Follow-up / notes' : 'Set follow-up' }); fu.addEventListener('click', function () { openDlg(it, fu); });
+    var txb = h('button', { 'class': 'mini', type: 'button', text: 'Texts' }); txb.addEventListener('click', function () { openTexts(it, txb); });
     var vcb = null;
     if (it.matched && it.vendor && (sec.key === 'vendor' || sec.key === 'confirmed')) { vcb = h('button', { 'class': 'mini', type: 'button', text: it.vendorConfirm ? 'Vendor confirmed again' : 'Vendor confirmed' }); vcb.addEventListener('click', function () { openComments(it, vcb, true); }); }
     return h('div', { 'class': 'trow' }, [
@@ -244,7 +245,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
       h('div', {}, [h('span', { 'class': 'pill ' + lvl, text: sec.key === 'dispatch' ? 'Us: assign vendor' : it.vendor ? 'Vendor: ' + it.vendor : it.stage }), h('div', { 'class': 'why', text: it.why })]),
       h('div', {}, [h('b', { text: it.daysInStage == null ? 'n/a' : age(it.daysInStage) }), h('div', { 'class': 'why', text: it.stage })]),
       h('div', { 'class': 'why hd2', text: lastContact(it) }),
-      h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, [det, cmb, vcb, fu])]);
+      h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, [det, cmb, txb, vcb, fu])]);
   }
   function renderToday() {
     var d = TODAY, box = $('tsecs'); box.textContent = ''; $('tchips').textContent = ''; $('tbanner').textContent = '';
@@ -364,6 +365,25 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
   // Comments dialog: read the Aptly card's comments (live) and post one, after review. Writes ONE comment on that card, nothing else.
   function whenTxt(iso) { var x = Date.parse(iso); return isFinite(x) ? new Date(x).toLocaleString([], { timeZone: 'America/Phoenix', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; }
   function vcText(vendor, date, note) { return 'Vendor confirmed: ' + (vendor || 'vendor') + '. Vendor date: ' + (date || 'not given') + '.' + (note ? ' ' + note : ''); }
+  var TXR = { not_configured: 'Quo is not set up for the hub yet.', no_lease: 'No lease is attached to this work order, so there are no tenant numbers to look up.', no_phone: 'No tenant phone number was found in Rentvine.', quo_denied: 'Quo did not accept the hub\'s key.', quo_busy: 'Quo is busy. Try again in a minute.', quo_error: 'Quo could not be reached right now.', rentvine_error: 'Rentvine could not be read right now.', bad_phone: 'The phone number could not be read.' };
+  function openTexts(it, opener) {
+    var my = { opener: opener, tx: true }; CM = my; DL = null;
+    var c = $('dcard'); c.textContent = '';
+    c.appendChild(h('h2', { id: 'dtitle', text: 'WO #' + it.number + ' texts' }));
+    c.appendChild(h('div', { 'class': 'note', text: [it.address, it.stage, it.vendor].filter(Boolean).join(' | ') }));
+    var body = h('div', { style: 'margin-top:10px' }, [h('div', { 'class': 'note', text: 'Looking up texts...' })]); c.appendChild(body);
+    var cl = h('button', { 'class': 'mini', type: 'button', style: 'margin-top:12px', text: 'Close' }); cl.addEventListener('click', closeDlg); c.appendChild(cl);
+    $('dlg').classList.add('on');
+    api('/api/maintenance/quo?id=' + encodeURIComponent(it.id)).then(function (r) {
+      if (CM !== my) return; body.textContent = '';
+      if (!r.messages || !r.messages.length) { body.appendChild(h('div', { 'class': 'banner', text: TXR[r.reason] || 'No texts found on the Main Office line for the people on this lease.' })); return; }
+      body.appendChild(h('div', { 'class': 'note', text: 'Newest first. Main Office line only. Read-only. Numbers are hidden except the last 4 digits.' }));
+      r.messages.forEach(function (m) {
+        var when = new Date(m.at); var ds = isNaN(when) ? m.at : when.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Phoenix' });
+        body.appendChild(h('div', { 'class': 'box', style: 'margin-top:6px' }, [h('div', { 'class': 'm', text: (m.dir === 'in' ? 'Tenant' : 'We sent') + ' | ' + m.who + ' | ' + ds + (m.status === 'undelivered' ? ' | NOT DELIVERED' : '') }), h('div', { style: 'white-space:pre-wrap;overflow-wrap:anywhere', text: m.text || (m.media ? '(photo or file)' : '(no text)') })]));
+      });
+    }).catch(function (e) { if (CM !== my) return; body.textContent = ''; body.appendChild(h('div', { 'class': 'err', text: e.message })); });
+  }
   function openComments(it, opener, vc) {
     CM = { it: it, opener: opener, step: 'view', name: myName(), text: '', data: null, err: '', pending: null, vc: !!vc, vcDate: '', vcNote: '' }; DL = null;
     renderCm(); $('dlg').classList.add('on'); loadCm(false);
@@ -480,7 +500,8 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
       h('span', {}, [agePill(r.ageDays)])]);
     if (r.propertyId) b.addEventListener('click', function () { openPanel(r.propertyId, r.address, b); }); else b.disabled = true;
     var cb = h('button', { 'class': 'mini cbtn', type: 'button', text: 'Comments' }); cb.addEventListener('click', function () { openComments(r, cb); });
-    return h('div', { 'class': 'wwrap' }, [b, h('div', { 'class': 'cbx' }, [cb, woLinks(r.id, r.cardId)])]);
+    var tb = h('button', { 'class': 'mini cbtn', type: 'button', text: 'Texts' }); tb.addEventListener('click', function () { openTexts(r, tb); });
+    return h('div', { 'class': 'wwrap' }, [b, h('div', { 'class': 'cbx' }, [cb, tb, woLinks(r.id, r.cardId)])]);
   }
   function renderWO() {
     var box = $('wolist'); box.textContent = '';
@@ -547,8 +568,9 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     var open = v.history.filter(function (w) { return !w.closed && !/^(Completed|Cancelled|Rejected|Completed Already Billed)$/.test(w.status); });
     b.appendChild(sec('Open work orders (' + open.length + ')', open.length ? open.map(function (w) {
       var pcb = h('button', { 'class': 'mini', type: 'button', style: 'margin-top:6px', text: 'Comments' }); pcb.addEventListener('click', function () { openComments({ number: w.number, address: v.address, stage: w.status, vendor: w.vendor }, pcb); });
+      var ptb = h('button', { 'class': 'mini', type: 'button', style: 'margin-top:6px', text: 'Texts' }); ptb.addEventListener('click', function () { openTexts({ id: w.id, number: w.number, address: v.address, stage: w.status, vendor: w.vendor }, ptb); });
       return h('div', { 'class': 'box' }, [h('div', { 'class': 't', text: '#' + w.number + '  ' + (w.summary || '(no description)') }),
-        h('div', { 'class': 'm', text: [w.status, w.vendor, 'opened ' + w.created, w.scheduled ? 'scheduled ' + w.scheduled : '', w.estimated ? 'est. ' + money(w.estimated) : ''].filter(Boolean).join(' | ') }), woLinks(w.id, w.cardId), pcb]);
+        h('div', { 'class': 'm', text: [w.status, w.vendor, 'opened ' + w.created, w.scheduled ? 'scheduled ' + w.scheduled : '', w.estimated ? 'est. ' + money(w.estimated) : ''].filter(Boolean).join(' | ') }), woLinks(w.id, w.cardId), h('span', {}, [pcb, ' ', ptb])]);
     }) : [h('div', { 'class': 'note', text: 'None open.' })]));
 
     var ari = v.ari;

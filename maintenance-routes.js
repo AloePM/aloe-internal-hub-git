@@ -10,6 +10,8 @@ import { groupOpenByProperty, readCategories, applianceRows, warrantyRows, findW
 import { loadAriRows, ariForAddress } from './maintenance-ari.js';
 import { indexAptly, aptlyDiag, buildToday, foldFollowups, withNotes, workKind, countKinds } from './maintenance-today.js';
 import { validateEntry, makeFollowupStore } from './maintenance-followups.js';
+import { makeQuoClient, mergeThreads } from './maintenance-quo.js';
+import { pickContacts } from './moveouts-property.js';
 import { validateComment, followupComment, formatComment, makeAptlyCommenter, mapComments } from './maintenance-comments.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
@@ -33,7 +35,7 @@ export function sessionOk(req, env = process.env) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, aptlyFetch, store = makeFollowupStore(), commenter = makeAptlyCommenter()) {
+export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, aptlyFetch, store = makeFollowupStore(), commenter = makeAptlyCommenter(), quo = makeQuoClient()) {
   if (typeof rvFetch !== 'function' || typeof fetchOpenWOs !== 'function') throw new Error('installMaintenance needs rvFetch and fetchAllRVOpenWOs');
   let listCache = { at: 0, v: null }, listPending = null;
   const propCache = new Map();
@@ -211,6 +213,51 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
       res.json({ available: true, found: true, canPost: !!(commenter.configured && info.cardId), asOf: new Date().toISOString(),
         comments: list.map((c) => ({ by: c.by, at: c.at, text: c.text, auto: c.auto, hub: c.hub })) });
     } catch (e) { console.error('[maintenance] comments', e.message); res.status(502).json({ error: 'Could not read the Aptly card comments.' }); }
+  });
+
+  // Texts on Quo for the people on a work order's lease (read-only). Needs sign-in. The tenant phone numbers come from Rentvine; the messages from the
+  // Main Office line in Quo. Numbers are shown masked. Any failure comes back as a plain reason, never as an error page.
+  const phoneCache = new Map(); const PHONE_TTL = 30 * 60 * 1000;
+  async function phonesForWO(id) {
+    const hit = phoneCache.get(id); if (hit && Date.now() - hit.at < PHONE_TTL) return hit.v;
+    let v = { phones: [], reason: '' };
+    try {
+      const b = await rvFetch('/maintenance/work-orders/' + id, {});
+      if (!b || b.error) throw new Error('wo');
+      const wo = b.workOrder || (Array.isArray(b.data) ? b.data[0] : b.data) || b;
+      const leaseId = String(wo.leaseID || (b.lease && b.lease.leaseID) || '');
+      if (!/^\d{1,9}$/.test(leaseId)) v = { phones: [], reason: 'no_lease' };
+      else {
+        const lb = await rvFetch('/leases/' + leaseId, {});
+        const L = lb && !lb.error ? (lb.lease || lb.data || lb) : null;
+        const tenants = L && Array.isArray(L.tenants) ? L.tenants : (lb && Array.isArray(lb.tenants) ? lb.tenants : []);
+        const found = new Set();
+        for (const t of tenants.slice(0, 6)) {
+          let ph = pickContacts(t).phones;
+          const cid = String(t.contactID || t.contactId || t.tenantContactID || '');
+          if (!ph.length && /^\d{1,9}$/.test(cid)) { try { const cb = await rvFetch('/contacts/tenants/' + cid, {}); if (cb && !cb.error) ph = pickContacts(cb).phones; } catch { /* leave empty */ } }
+          ph.forEach((p) => found.add(p));
+        }
+        v = { phones: [...found], reason: found.size ? '' : 'no_phone' };
+      }
+    } catch (e) { v = { phones: [], reason: 'rentvine_error' }; }
+    if (v.reason !== 'rentvine_error') phoneCache.set(id, { at: Date.now(), v });
+    if (phoneCache.size > 400) phoneCache.delete(phoneCache.keys().next().value);
+    return v;
+  }
+  app.get('/api/maintenance/quo', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const id = String(req.query.id || '');
+    if (!/^\d{1,9}$/.test(id)) return res.status(400).json({ error: 'Bad work order id.' });
+    if (!quo.configured) return res.json({ available: false, reason: 'not_configured', messages: [] });
+    try {
+      const { phones, reason } = await phonesForWO(id);
+      if (!phones.length) return res.json({ available: true, reason: reason || 'no_phone', people: 0, messages: [] });
+      const per = []; let bad = '';
+      for (const phone of phones.slice(0, 4)) { const r = await quo.messagesFor(phone, 10); per.push({ phone, res: r }); if (!r.ok) bad = r.reason; }
+      const messages = mergeThreads(per, 12);
+      res.json({ available: true, reason: !messages.length && bad ? bad : '', people: phones.length, messages, asOf: new Date().toISOString() });
+    } catch (e) { console.error('[maintenance] quo', e.message); res.json({ available: true, reason: 'quo_error', people: 0, messages: [] }); }
   });
 
   // Post ONE comment on the work order's Aptly card. Needs sign-in, the custom header, same origin, a picked name, and 30 posts per 10 minutes.
