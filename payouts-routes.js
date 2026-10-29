@@ -105,6 +105,7 @@ export async function loadPayoutData(rvFetch, { sinceDays = BILL_DAYS, payoutDay
 export const PLACEMENT_FEE_ACCOUNT_ID = 94;
 export const LEASE_BREAK_ACCOUNT_ID = 62;
 export const FEE_LOOKBACK_DAYS = 260;
+export const PREPAID_DAYS = 90;
 const MOVE_COLS = ['leaseID', 'propertyID', 'moveInDate', 'leaseStatusName', 'managementFeeSettingName', 'rentAmount'];
 const FEEBILL_COLS = ['propertyID', 'chargeAccountID', 'datePosted', 'amount', 'isVoided', 'description'];
 const GL_COLS = ['leaseID', 'propertyID', 'accountID', 'datePosted', 'isVoided', 'description'];
@@ -142,13 +143,16 @@ export function leaseFeeFromPlan(name, rent) {
 export function feeCheck(move, { feeBills = [], breakRows = [], brokenLeases = [], startISO = '' } = {}, todayISO = today()) {
   const moveIn = toISO(move.moveInDate), pid = String(move.propertyID), lid = num(move.leaseID);
   const plan = leaseFeeFromPlan(move.managementFeeSettingName, move.rentAmount);
-  // fees billed for this move-in: the move-in month (or 14 days before it); a brand-new property also counts startup fees billed since it signed on (the owner may have prepaid some)
+  // fees billed for this move-in: the move-in month (or 14 days before it) counts in full.
+  // Earlier startup fees count too (an owner may have prepaid part of the fee, e.g. $150 of $750): bills in the 90 days before that,
+  // but only a bill smaller than the full fee (a full-size earlier bill belongs to the previous tenant, not this move-in).
   let since = addDays(moveIn, -14); if (monthStart(moveIn) < since) since = monthStart(moveIn);
-  const sinceStart = startISO && dayDiff(moveIn, startISO) >= 0 && dayDiff(moveIn, startISO) <= FEE_LOOKBACK_DAYS;
-  if (sinceStart && startISO < since) since = startISO;
-  const billed = feeBills.filter((b) => String(b.propertyID) === pid && !truthy(b.isVoided) && toISO(b.datePosted) >= since)
-    .map((b) => ({ date: toISO(b.datePosted), amount: num(b.amount), desc: b.description || '' })).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const mine = feeBills.filter((b) => String(b.propertyID) === pid && !truthy(b.isVoided)).map((b) => ({ date: toISO(b.datePosted), amount: num(b.amount), desc: b.description || '' }));
+  const inMonth = mine.filter((b) => b.date >= since);
+  const early = plan.known && !plan.none ? mine.filter((b) => b.date < since && b.date >= addDays(moveIn, -PREPAID_DAYS) && b.amount < plan.fee - 0.005) : [];
+  const billed = [...early, ...inMonth].sort((a, b) => (a.date < b.date ? -1 : 1));
   const total = Math.round(billed.reduce((s, b) => s + b.amount, 0) * 100) / 100;
+  const sinceStart = early.length > 0;
   const horizon = addDays(moveIn, -FEE_LOOKBACK_DAYS);
   const brokeBy = breakRows.find((r) => String(r.propertyID) === pid && num(r.leaseID) !== lid && num(r.leaseID) < lid && toISO(r.datePosted) >= horizon)
     ? 'a lease break fee was charged to the previous tenant'

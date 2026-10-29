@@ -166,7 +166,7 @@ function feeTable(p) {
   if (!f.length) return '';
   return '<table><thead><tr><th class="l">Move-in</th><th>Expected fee</th><th class="l g">Placement fees billed (account 6112)</th><th class="l">Result</th></tr></thead><tbody>' + f.map((x) =>
     '<tr class="' + (x.status === 'missing' || x.status === 'check' ? 'dup' : '') + '"><td class="l">' + esc(mdy(x.moveIn)) + '</td><td>' + (x.expected === null ? '<span class="muted">n/a</span>' : money(x.expected)) + '</td><td class="l g">' +
-    (x.billed.length ? x.billed.map((b) => esc(mdy(b.date)) + ' ' + money(b.amount)).join(', ') + (x.startupCredit ? ' <span class="muted tiny">(includes startup fees since signing)</span>' : '') : '<span class="muted">none</span>') + '</td><td class="l">' + esc(x.text) + '</td></tr>').join('') + '</tbody></table>';
+    (x.billed.length ? x.billed.map((b) => esc(mdy(b.date)) + ' ' + money(b.amount)).join(', ') + (x.startupCredit ? ' <span class="muted tiny">(includes an earlier partial fee billed within 90 days before move-in)</span>' : '') : '<span class="muted">none</span>') + '</td><td class="l">' + esc(x.text) + '</td></tr>').join('') + '</tbody></table>';
 }
 function propTags(p) {
   return (p.tags || []).map((t) => '<span class="pill tag ' + (t.key === 'new_move_in' || t.key === 'new_property' ? 'in' : t.key === 'move_out_30' || t.key === 'vacant' || t.key === 'fee_missing' || t.key === 'fee_check' ? 'out' : '') + '">' + esc(t.text) + '</span>').join('');
