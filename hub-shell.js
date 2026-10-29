@@ -28,7 +28,8 @@
         ['Property map', '/map'], ['Property media analyzer', '/media-analyzer'] ] },
       { id: 'acct', label: 'Accounting', items: [
         ['Bills and recon', '/recon-bills'], ['Reconciliation', '/recon'],
-        ['Expense log', '/expense-log'], ['Suppressed fees', '/suppressed-fees'] ] },
+        ['Expense log', '/expense-log'], ['Suppressed fees', '/suppressed-fees'],
+        ['Owner payouts', '/payouts'] ] },
       { id: 'reports', label: 'Reports', items: [ ['Metrics', '/metrics'] ] },
       { id: 'agents', label: 'Agents', items: [
         ['Overview', '/agents'], ['Activity', '/agents/activity'], ['Playbooks', '/agents/playbooks'],

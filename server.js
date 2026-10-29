@@ -5190,6 +5190,7 @@ const { installMoveoutsPipeline } = await import('./moveouts-pipeline.js'); inst
 const { installMoveoutRepairs } = await import('./moveouts-repairs.js'); installMoveoutRepairs(app, storage, BUCKET);
 const { installMoveoutProperty } = await import('./moveouts-property.js'); installMoveoutProperty(app, rvFetch);
 const { installMaintenance } = await import('./maintenance-routes.js'); installMaintenance(app, rvFetch, fetchAllRVOpenWOs, findBillMatchedWOs, unitsFetch);
+const { installPayouts } = await import('./payouts-routes.js'); installPayouts(app, rvFetch);
 app.get('/move-outs', (req, res) => res.sendFile(new URL('./public/move-outs.html', import.meta.url).pathname));
 app.get('/suppressed-fees', (req, res) => res.sendFile(new URL('./suppressed-fees.html', import.meta.url).pathname));
 

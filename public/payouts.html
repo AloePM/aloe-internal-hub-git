@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Owner Payouts - Aloe Hub</title>
+<style>
+:root{--bg:#f6f8f5;--card:#fff;--ink:#1d2a22;--mute:#667568;--line:#e2e8e0;--green:#2f7d4f;--amber:#b7791f;--red:#b3392f;--amberbg:#fdf3dc;--redbg:#fbe6e3;--greenbg:#e6f3ea}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 20px 60px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--mute);margin:0 0 16px}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 14px}
+.bar input[type=search]{padding:8px 10px;border:1px solid var(--line);border-radius:8px;min-width:220px}
+button{font:inherit;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 12px;cursor:pointer}
+button:hover{border-color:var(--green)}button.on{background:var(--green);color:#fff;border-color:var(--green)}
+.note{background:var(--amberbg);border:1px solid #ecd9a6;border-radius:8px;padding:8px 12px;margin:0 0 14px;color:#6b4a0c}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child,th.l,td.l{text-align:left}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);background:#fafbf9}
+tr.owner{cursor:pointer}tr.owner:hover{background:#f3f7f2}
+.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600}
+.ok{background:var(--greenbg);color:var(--green)}.look{background:var(--amberbg);color:var(--amber)}.bad{background:var(--redbg);color:var(--red)}
+.neg{color:var(--red);font-weight:600}
+tr.detail td{background:#fafbf9;padding:0}
+.inner{padding:14px 18px 18px}
+.inner table{font-size:13px}.inner td.l,.inner th.l{padding-left:22px}
+.flags{margin:0 0 10px;padding:0;list-style:none}.flags li{margin:2px 0}
+.dec{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.dec input[type=text]{flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--line);border-radius:8px}
+.mark{color:var(--amber);font-weight:600}
+.muted{color:var(--mute)}
+.tiny{font-size:12px}
+</style></head>
+<body>
+<main>
+  <h1>Owner Payouts</h1>
+  <p class="sub" id="sub">Loading from Rentvine...</p>
+  <div class="note" id="stor" hidden>Decisions are not being saved yet. They will clear when you reload.</div>
+  <div class="bar">
+    <input type="search" id="q" placeholder="Search owner or address">
+    <button id="fAll" class="on">All</button><button id="fLook">Needs a look</button><button id="fOk">Looks fine</button>
+    <button id="refresh">Refresh</button>
+  </div>
+  <table id="t"><thead><tr><th>Owner</th><th>Settled in</th><th>Mgmt fees</th><th>Unpaid bills</th><th>Recurring</th><th>Reserve</th><th>Amount to pay</th><th>Last payout</th><th class="l">Status</th></tr></thead><tbody id="body"></tbody></table>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = (n) => (n < 0 ? '-' : '') + '$' + Math.abs(Number(n) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+let data = null, filter = 'all', open = new Set();
+
+async function load(refresh) {
+  $('#sub').textContent = 'Loading from Rentvine...';
+  try {
+    const r = await fetch('/api/payouts/list' + (refresh ? '?refresh=1' : ''), {credentials: 'same-origin'});
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+    data = await r.json();
+    $('#sub').textContent = data.scope + ' - settled money only - as of ' + new Date(data.asOf).toLocaleString('en-US', {timeZone: 'America/Phoenix'}) + ' (Phoenix)' + (data.reserve ? ' - reserve ' + money(data.reserve) + ' per owner' : ' - reserve $0');
+    $('#stor').hidden = !!data.decisionsSaved;
+    render();
+  } catch (e) { $('#sub').textContent = 'Could not load: ' + e.message; }
+}
+
+function statusPill(o) {
+  if (!o.flags.length) return '<span class="pill ok">Looks fine</span>';
+  const bad = o.flags.includes('below_zero');
+  return '<span class="pill ' + (bad ? 'bad' : 'look') + '">Needs a look</span>';
+}
+
+function render() {
+  const q = $('#q').value.trim().toLowerCase();
+  const rows = data.owners.filter((o) => {
+    if (filter === 'look' && !o.flags.length) return false;
+    if (filter === 'ok' && o.flags.length) return false;
+    if (!q) return true;
+    return o.name.toLowerCase().includes(q) || o.properties.some((p) => p.address.toLowerCase().includes(q));
+  });
+  $('#body').innerHTML = rows.map((o) => {
+    const d = data.decisions[o.ownerID];
+    const main = '<tr class="owner" data-id="' + esc(o.ownerID) + '"><td>' + esc(o.name) + ' <span class="muted tiny">(' + o.properties.length + ')</span>' + (d ? ' <span class="pill ok">' + esc(d.action.replace('_', ' ')) + '</span>' : '') + '</td>' +
+      '<td>' + money(o.settledIn) + '</td><td>' + money(o.fees) + '</td><td>' + money(o.unpaidBills) + '</td><td>' + money(o.recurringTotal) + '</td><td>' + money(o.reserve) + '</td>' +
+      '<td class="' + (o.amountToPay < 0 ? 'neg' : '') + '"><b>' + money(o.amountToPay) + '</b></td><td>' + (o.lastPayout == null ? '<span class="muted">none seen</span>' : money(o.lastPayout)) + '</td><td class="l">' + statusPill(o) + '</td></tr>';
+    return main + (open.has(String(o.ownerID)) ? detail(o, d) : '');
+  }).join('') || '<tr><td colspan="9" class="l muted">Nothing matches.</td></tr>';
+}
+
+function detail(o, d) {
+  const flags = o.flags.map((f) => '<li class="' + (f === 'below_zero' ? 'neg' : 'mark') + '">&bull; ' + esc(data.flagText[f] || f) + '</li>').join('');
+  const props = o.properties.map((p) => {
+    const bills = p.bills.map((b) => esc(b.desc || 'Bill') + ' ' + money(b.amountUnpaid)).join('<br>');
+    const rec = p.recurring.map((r) => esc(r.label) + ' ' + (r.amount ? money(r.amount) : '<span class="mark">amount?</span>')).join('<br>');
+    return '<tr><td class="l">' + esc(p.address) + (p.billExpected ? ' <span class="mark" title="Open work order, bill expected">&#9873; bill expected</span>' : '') + '<div class="muted tiny">' + esc(p.feePlan) + '</div></td>' +
+      '<td>' + money(p.rent) + '</td><td>' + money(p.fee) + '</td><td>' + money(p.settledIn) + '</td><td class="l tiny">' + (bills || '<span class="muted">none</span>') + '</td><td class="l tiny">' + (rec || '<span class="muted">none</span>') + '</td><td class="' + (p.net < 0 ? 'neg' : '') + '">' + money(p.net) + '</td></tr>';
+  }).join('');
+  return '<tr class="detail"><td colspan="9"><div class="inner">' +
+    (flags ? '<ul class="flags">' + flags + '</ul>' : '') +
+    '<table><thead><tr><th>Property</th><th>Rent</th><th>Mgmt fee</th><th>Settled in</th><th class="l">Unpaid bills</th><th class="l">Recurring bills</th><th>Net</th></tr></thead><tbody>' + props + '</tbody></table>' +
+    '<div class="dec" data-id="' + esc(o.ownerID) + '"><button data-a="approve">Approve</button><button data-a="hold">Hold</button><button data-a="ask_owner">Ask owner</button>' +
+    '<input type="text" maxlength="500" placeholder="Note (optional)" value="' + esc(d ? d.note : '') + '"></div></div></td></tr>';
+}
+
+$('#body').addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-a]');
+  if (b) {
+    const box = b.closest('.dec'), id = box.dataset.id;
+    const r = await fetch('/api/payouts/decision', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ownerID: id, action: b.dataset.a, note: box.querySelector('input').value})});
+    if (r.ok) { data.decisions[id] = await r.json(); render(); } else alert('Could not save that decision.');
+    return;
+  }
+  if (e.target.closest('.detail')) return;
+  const tr = e.target.closest('tr.owner'); if (!tr) return;
+  const id = tr.dataset.id; open.has(id) ? open.delete(id) : open.add(id); render();
+});
+$('#q').addEventListener('input', render);
+for (const [id, f] of [['fAll', 'all'], ['fLook', 'look'], ['fOk', 'ok']]) $('#' + id).addEventListener('click', () => { filter = f; for (const x of ['fAll', 'fLook', 'fOk']) $('#' + x).classList.toggle('on', x === id); render(); });
+$('#refresh').addEventListener('click', () => load(true));
+load();
+</script>
+<script src="/hub-shell.js"></script>
+</body></html>
