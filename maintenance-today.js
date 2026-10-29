@@ -65,7 +65,7 @@ export const SECTION_DEFS = [
   { key: 'tenant', title: 'Waiting on tenant', hint: 'Troubleshooting steps sent 2+ days ago' },
   { key: 'internal', title: 'Internal work order requests', hint: 'Handled in house' },
   { key: 'quiet', title: 'No contact or note in 5+ days', hint: 'Nobody has texted, emailed or written a note on the card in 5 days' },
-  { key: 'turns', title: 'Unit turns', hint: 'Persia or Teri, not on Roberto\'s list', muted: true },
+  { key: 'turns', title: 'Unit turns', hint: 'Persia or Teri. Kept apart from Roberto\'s list and numbers. Amber when nobody has made contact or written a note in 5 days; red when a follow-up you set is due', muted: true },
 ];
 
 // rows = buildWorkOrderRows output; aptly = Map(number -> aptlyInfo); fu = foldFollowups output ({byWo}); today = 'YYYY-MM-DD' (Phoenix)
@@ -99,7 +99,13 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
       notesKnown, commentCount: notesKnown ? a.commentCount : 0, aptNote: a && a.lastNote ? { by: a.lastNote.by, at: a.lastNote.at, days: noteD, text: a.lastNote.text } : null, staleNote };
     const put = (key, level, why) => sections[key].push({ ...base, level, why });
 
-    if (stage === 'Unit Turn') { put('turns', 'grey', 'Persia / Teri'); continue; }
+    if (stage === 'Unit Turn' || r.stage === 'Unit Turn') {
+      const idle = lastTouchDays != null ? lastTouchDays : (notesKnown ? daysInStage : null);
+      if (base.followUpOn && base.followUpOn <= today) put('turns', 'red', 'Follow-up set for ' + base.followUpOn);
+      else if (idle != null && idle >= 5) put('turns', 'amber', 'No contact or note in ' + idle + ' days. Persia / Teri.');
+      else put('turns', 'grey', 'Persia / Teri');
+      continue;
+    }
     if (PARKED.has(stage)) { parked++; if (base.followUpOn && base.followUpOn <= today) put('followups', 'red', 'Follow-up set for ' + base.followUpOn); continue; }
     if (base.followUpOn && base.followUpOn <= today) { put('followups', 'red', 'Follow-up set for ' + base.followUpOn); continue; }
     if (!vendor && (stage === 'Open' || stage === 'Dispatch Work Order')) { put('dispatch', (daysInStage || 0) >= 1 ? 'red' : 'amber', 'Needs a vendor assigned'); continue; }

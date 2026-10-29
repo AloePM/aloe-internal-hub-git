@@ -73,9 +73,9 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
     try {
       if (!(listCache.v && Date.now() - listCache.at < LIST_TTL) || req.query.fresh === '1') {
         if (!listPending) listPending = fetchOpenWOs().then(async (wos) => {
-          const properties = groupOpenByProperty(wos);
+          const turnWOs = (wos || []).filter((w) => Number(w.workOrderStatusID) === 25); const properties = groupOpenByProperty((wos || []).filter((w) => Number(w.workOrderStatusID) !== 25)); // unit turns are counted on their own tab
           if (properties.some((g) => !g.address)) { for (const g of properties) if (!g.address) g.address = await addressFor(g.propertyId); properties.sort((a, b) => (b.oldestDays ?? -1) - (a.oldestDays ?? -1) || a.address.localeCompare(b.address)); }
-          listCache = { at: Date.now(), v: { properties, openTotal: wos.length, asOf: new Date().toISOString() } };
+          listCache = { at: Date.now(), v: { properties, openTotal: (wos || []).length - turnWOs.length, unitTurnTotal: turnWOs.length, asOf: new Date().toISOString() } };
         }).finally(() => { listPending = null; });
         await listPending;
       }
@@ -179,7 +179,7 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
       let fu = { available: false, reason: 'error', rows: [] };
       try { fu = await store.list(); } catch (e) { console.error('[maintenance] followups', e.message); }
       const t = buildToday(wo.rows, apt.map, foldFollowups(fu.rows), todayPhoenix());
-      res.json({ ...t, openTotal: wo.rows.length, asOf: new Date().toISOString(),
+      res.json({ ...t, openTotal: wo.rows.filter((r) => r.stage !== 'Unit Turn').length, unitTurnTotal: wo.rows.filter((r) => r.stage === 'Unit Turn').length, asOf: new Date().toISOString(),
         aptly: { available: apt.available, ...(apt.available ? aptlyDiag(apt.map) : {}), notes }, followups: { available: fu.available, reason: fu.reason || '' }, canComment: !!(commenter.configured && apt.available) });
     } catch (e) { console.error('[maintenance] today', e.message); res.status(502).json({ error: 'Could not build the Today list from Rentvine.' }); }
   });

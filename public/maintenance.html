@@ -19,7 +19,7 @@ h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.5px}
 .btn:hover:not(:disabled){background:#E6EFF0}.btn:disabled{opacity:.6;cursor:default}
 .btn:focus-visible,.row:focus-visible,input:focus-visible,.x:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}
 .main{padding:20px 28px 60px;max-width:1400px;margin:0 auto}
-.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}@media (max-width:700px){.kpis{grid-template-columns:1fr 1fr}}
 .kpi{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);padding:14px 18px}
 .kpi b{display:block;font-size:28px;font-weight:800;letter-spacing:-.03em;line-height:1.1}
 .kpi span{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
@@ -102,10 +102,14 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 <div class="main">
   <div class="kpis" id="kpis"></div>
   <div id="closing"></div>
-  <div class="seg" id="seg" role="group" aria-label="View"><button type="button" class="on" data-mode="today" aria-pressed="true">Today</button><button type="button" data-mode="home" aria-pressed="false">By home</button><button type="button" data-mode="wo" aria-pressed="false">By work order</button></div>
+  <div class="seg" id="seg" role="group" aria-label="View"><button type="button" class="on" data-mode="today" aria-pressed="true">Today</button><button type="button" data-mode="home" aria-pressed="false">By home</button><button type="button" data-mode="wo" aria-pressed="false">By work order</button><button type="button" data-mode="units" aria-pressed="false">Unit turns</button></div>
   <div id="todayView">
     <div id="tbanner"></div><div class="chips" id="tchips"></div><div id="tsecs"><div class="empty">Loading today's list...</div></div>
     <p class="ro">Days are calendar days in Phoenix time. A vendor should be scheduled within 2 days of being assigned; follow up with the vendor at 3 days. Follow-up dates and notes are saved in the hub. Comments, and follow-ups you tick the box for, are also posted on the Aptly card. Nothing is changed in Rentvine. Until individual logins exist, people pick their name.</p>
+  </div>
+  <div id="unitView" hidden>
+    <div id="usecs"><div class="empty">Loading unit turns...</div></div>
+    <p class="ro">Unit turns are work orders in the Unit Turn stage. They belong to Persia or Teri and are not counted in the maintenance numbers above. Follow-ups and comments work the same as on Today.</p>
   </div>
   <div id="homeView" hidden>
   <div class="bar">
@@ -164,7 +168,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
   function renderKpis(data) {
     var oldest = 0; data.properties.forEach(function (p) { if (p.oldestDays != null && p.oldestDays > oldest) oldest = p.oldestDays; });
     var k = $('kpis'); k.textContent = '';
-    [[data.properties.length, 'Homes with open work orders'], [data.openTotal, 'Open work orders'], [oldest ? age(oldest) : 'n/a', 'Oldest open']].forEach(function (x) {
+    [[data.properties.length, 'Homes with open work orders'], [data.openTotal, 'Open work orders (not counting unit turns)'], [oldest ? age(oldest) : 'n/a', 'Oldest open'], [data.unitTurnTotal == null ? '-' : data.unitTurnTotal, 'Unit turns (own tab)']].forEach(function (x) {
       k.appendChild(h('div', { 'class': 'kpi' }, [h('b', { text: String(x[0]) }), h('span', { text: x[1] })]));
     });
     $('asof').textContent = 'Updated ' + new Date(data.asOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -254,7 +258,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     $('tchips').appendChild(h('div', { 'class': 'chip' }, [h('b', { text: String(d.parked) }), h('span', { text: 'Parked (on hold, parts, owner)' })]));
     var any = false;
     d.sections.forEach(function (s) {
-      if (!s.items.length) return; any = true;
+      if (!s.items.length || s.key === 'turns') return; any = true;
       var sec = h('div', { 'class': 'tsec' + (s.muted ? ' muted' : '') }, [h('h2', {}, [s.title, h('span', { 'class': 'pill ' + (s.muted ? 'p-grey' : 'p-red'), text: String(s.items.length) }), h('small', { text: s.hint })])]);
       var list = h('div', { 'class': 'list' }, [h('div', { 'class': 'trow head' }, [h('span', { text: 'Address' }), h('span', { text: 'Request' }), h('span', { text: 'Waiting on' }), h('span', { text: 'In stage' }), h('span', { 'class': 'hd2', text: 'Last contact' }), h('span', { text: 'Next step' })])]);
       s.items.forEach(function (it) { list.appendChild(trow(it, s)); });
@@ -262,6 +266,19 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     });
     if (!any) box.appendChild(h('div', { 'class': 'empty', text: 'Nothing needs a touch right now.' }));
     $('asof').textContent = 'Updated ' + new Date(d.asOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    renderUnits();
+  }
+  // Unit turns tab: the Unit Turn stage work orders (Persia / Teri), kept apart from Roberto's list. Same rows, buttons and follow-ups as Today.
+  function renderUnits() {
+    var box = $('usecs'); box.textContent = '';
+    if (!TODAY) return;
+    var s = TODAY.sections.filter(function (x) { return x.key === 'turns'; })[0];
+    if (!s || !s.items.length) { box.appendChild(h('div', { 'class': 'empty', text: 'No unit turns right now.' })); return; }
+    var red = s.items.filter(function (x) { return x.level === 'red'; }).length, amb = s.items.filter(function (x) { return x.level === 'amber'; }).length;
+    var sec = h('div', { 'class': 'tsec' }, [h('h2', {}, [s.title, h('span', { 'class': 'pill ' + (red ? 'p-red' : amb ? 'p-amber' : 'p-grey'), text: String(s.items.length) }), h('small', { text: s.hint })])]);
+    var list = h('div', { 'class': 'list' }, [h('div', { 'class': 'trow head' }, [h('span', { text: 'Address' }), h('span', { text: 'Request' }), h('span', { text: 'Waiting on' }), h('span', { text: 'In stage' }), h('span', { 'class': 'hd2', text: 'Last contact' }), h('span', { text: 'Next step' })])]);
+    s.items.forEach(function (it) { list.appendChild(trow(it, s)); });
+    sec.appendChild(list); box.appendChild(sec);
   }
   function loadToday(fresh) {
     api('/api/maintenance/today' + (fresh ? '?fresh=1' : '')).then(function (d) { TODAY = d; renderToday(); })
@@ -488,14 +505,15 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     });
   }
   function loadWO(fresh) {
-    api('/api/maintenance/workorders' + (fresh ? '?fresh=1' : '')).then(function (d) { WO = d.rows; STAGES = d.stages || []; fillFilters(); renderWO(); })
+    api('/api/maintenance/workorders' + (fresh ? '?fresh=1' : '')).then(function (d) { WO = d.rows.filter(function (r) { return r.stage !== 'Unit Turn'; }); STAGES = (d.stages || []).filter(function (x) { return x !== 'Unit Turn'; }); fillFilters(); renderWO(); })
       .catch(function (e) { $('wolist').textContent = ''; $('wolist').appendChild(h('div', { 'class': 'err', text: e.message })); });
   }
   function setMode(m) {
-    MODE = m; $('todayView').hidden = m !== 'today'; $('homeView').hidden = m !== 'home'; $('woView').hidden = m !== 'wo';
+    MODE = m; $('todayView').hidden = m !== 'today'; $('homeView').hidden = m !== 'home'; $('woView').hidden = m !== 'wo'; $('unitView').hidden = m !== 'units';
     Array.prototype.forEach.call($('seg').children, function (b) { var on = b.getAttribute('data-mode') === m; b.className = on ? 'on' : ''; b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
     if (m === 'wo' && !WO) loadWO(false);
-    if (m === 'today' && !TODAY) loadToday(false);
+    if ((m === 'today' || m === 'units') && !TODAY) loadToday(false);
+    if (m === 'units') renderUnits();
   }
   Array.prototype.forEach.call($('seg').children, function (b) { b.addEventListener('click', function () { setMode(b.getAttribute('data-mode')); }); });
   ['fStage', 'fVendor', 'fIssue', 'fAge', 'fSort', 'fGroup', 'fEmg', 'fMove'].forEach(function (id) { $(id).addEventListener('change', renderWO); });
@@ -578,7 +596,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
   function closePanel() { token++; $('veil').classList.remove('on'); $('panel').classList.remove('on'); if (opener) { try { opener.focus(); } catch (e) {} } }
 
   $('q').addEventListener('input', renderList);
-  $('refresh').addEventListener('click', function () { load(true); if (MODE === 'today') loadToday(true); else TODAY = null; if (MODE === 'wo') loadWO(true); else WO = null; });
+  $('refresh').addEventListener('click', function () { load(true); if (MODE === 'today' || MODE === 'units') loadToday(true); else TODAY = null; if (MODE === 'wo') loadWO(true); else WO = null; });
   $('pclose').addEventListener('click', closePanel);
   $('veil').addEventListener('click', closePanel);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $('panel').classList.contains('on')) closePanel(); });
