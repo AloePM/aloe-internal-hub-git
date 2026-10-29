@@ -229,6 +229,53 @@ const ORD = ['', '', 'second', 'third', 'fourth', 'fifth'];
 const VENDOR_FIELD = [[/^(A\/C|heating)$/, /hvac/i], [/^roof$/, /roof/i], [/^irrigation/, /landscap|irrigation/i]];
 const SERVICE_FOR = [[/^pest$/, /pest/i], [/^irrigation/, /landscap/i]];
 
+// "Do now" guidance for the person assigning the vendor: a priority label and the first steps, like Ari's Slack triage. Fixed rules, no guessing beyond
+// the keywords already used for the emergency flag and the issue type. Wording is plain text for staff; the owner of the hub can edit it here.
+const FLAG_RULES = {
+  'Active leak': { p: 'Emergency', tenant: 'Text the tenant now: shut off the valve behind the fixture, or the main water shutoff if there is no local valve. Ask for a photo.', trade: 'plumber' },
+  'Water damage': { p: 'Emergency', tenant: 'Text the tenant now: shut off the main water if the source is unknown, move belongings away from the wet area, and send photos.', trade: 'plumber or water mitigation vendor' },
+  'Sewage': { p: 'Emergency', tenant: 'Text the tenant now: stop using the affected sinks, toilets and showers until the vendor arrives.', trade: 'plumber' },
+  'No A/C': { p: 'Emergency', tenant: 'Text the tenant: check that the thermostat is set to Cool and the breaker has not tripped. Ask if anyone in the home is elderly, an infant or medically vulnerable.', trade: 'HVAC vendor' },
+  'No heat': { p: 'Emergency', tenant: 'Text the tenant: check that the thermostat is set to Heat and the breaker has not tripped. Ask if anyone in the home is elderly, an infant or medically vulnerable.', trade: 'HVAC vendor' },
+  'No hot water': { p: 'Urgent', tenant: 'Text the tenant: check the water heater breaker or pilot light and tell us what you see.', trade: 'plumber' },
+  'No power': { p: 'Urgent', tenant: 'Text the tenant now: stay away from any sparking or hot outlet, switch that breaker off if it is safe, and leave and call 911 if there is smoke or a burning smell.', trade: 'electrician' },
+  'Gas smell': { p: 'Emergency', tenant: 'Text the tenant now: leave the home, use no flames or switches, and call the gas company and 911 from outside.', trade: '', after: 'Dispatch a vendor only after the gas company says it is safe.' },
+  'Fire / smoke': { p: 'Emergency', tenant: 'Confirm everyone is safe and that 911 was called.', trade: 'restoration vendor' },
+  'Lockout / security': { p: 'Urgent', tenant: 'Confirm the tenant is safe and where they are.', trade: 'locksmith or board-up vendor' },
+};
+const ITEM_TIPS = [
+  [/^garbage disposal$/, 'Ask the tenant to press the reset button on the bottom of the unit first. They should never put a hand inside.'],
+  [/^(dishwasher|washer|dryer|refrigerator|microwave|oven \/ stove)$/, 'Confirm the appliance came with the home (move-in) and was not installed by the tenant before assigning a vendor.'],
+  [/^(toilet|drain \/ clog)$/, 'Ask the tenant whether a plunger was tried. If it is a clog, check who pays before assigning.'],
+  [/^smoke detector$/, 'Ask the tenant to try a new battery. If it is hardwired and still chirping, assign an electrician.'],
+  [/^garage door$/, 'Ask the tenant to check the remote battery and the sensors near the floor, and to send a short video.'],
+  [/^roof$/, 'Ask for photos of the ceiling and where the water comes in. Check the roof warranty below.'],
+  [/^water heater$/, 'Ask the tenant to check the breaker or pilot light. If it is leaking, they should shut off the cold water valve on top of the heater.'],
+  [/^(A\/C|heating)$/, 'Ask the tenant to check the filter and send a photo of the thermostat.'],
+];
+export function doNowFor({ o, item, flag, homeWarranty = {}, pref = [], rep = null }) {
+  if (o.statusId === 23 || o.statusId === 25) return null;
+  const rule = FLAG_RULES[flag] || null;
+  let priority = rule ? rule.p : 'Routine';
+  const steps = [];
+  if (rule) {
+    steps.push(rule.tenant);
+    if (rule.after) steps.push(rule.after);
+    else if (!o.vendor) steps.push('Dispatch a ' + rule.trade + ' right away.');
+    else steps.push('Confirm ' + o.vendor + ' has the tenant contact and a time for today.');
+  } else {
+    const tip = ITEM_TIPS.find(([re]) => re.test(item));
+    if (tip) { steps.push(tip[1]); if (/^water heater$/.test(item)) priority = 'Urgent'; }
+  }
+  const hwOn = (homeWarranty.on === true || homeWarranty.company) && !(homeWarranty.expiresInDays != null && homeWarranty.expiresInDays < 0);
+  if (hwOn && !o.vendor) steps.push('Home warranty is on file: open the claim before assigning a vendor.');
+  if (pref.length && !o.vendor) steps.push('The owner has a preferred vendor or warranty for this (see below). Use them.');
+  if (rep && rep.total >= 3) steps.push('This is a repeat issue. Ask the owner about a bigger fix or a different vendor.');
+  if (!o.vendor && steps.length) steps.push('Tell the tenant who is coming and when, within 24 business hours.');
+  if (!steps.length) return o.vendor ? null : { priority, steps: ['Assign a vendor, then update the tenant within 24 business hours.'] };
+  return { priority, steps };
+}
+
 // One card per open work order: everything Ari flags in Slack, in front of the person who assigns the vendor.
 export function assignCards(openItems, ctx, today = todayPhoenix()) {
   const { history = [], homeWarranty = {}, ownerVendors: ov = [], notes = '', appliances = [], services = [] } = ctx || {};
@@ -266,7 +313,8 @@ export function assignCards(openItems, ctx, today = todayPhoenix()) {
     else if (svc && svc.who === 'tenant') add('info', `${svc.label}: tenant is responsible.`);
     if (squash(notes)) add('watch', 'Maintenance notes are on file for this home. Read them below before assigning.');
     if (!items.length) add('ok', 'Nothing flagged from what is recorded in Rentvine.');
-    return { id: o.id, number: o.number, summary: o.summary, status: o.status, statusId: o.statusId, created: o.created, vendor: o.vendor, items };
+    const doNow = doNowFor({ o, item, flag: emergencyFlag(o.summary), homeWarranty, pref, rep });
+    return { id: o.id, number: o.number, summary: o.summary, status: o.status, statusId: o.statusId, created: o.created, vendor: o.vendor, doNow, items };
   });
 }
 

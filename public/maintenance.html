@@ -75,6 +75,7 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
 .trow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,2.2fr) minmax(0,1.5fr) 110px 140px 270px;gap:12px;align-items:center;padding:11px 16px;min-height:56px;border-top:1px solid var(--rule)}
 .trow.head{background:#E6EFF0;border-top:0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);min-height:36px}
 .trow .why{font-size:12px;color:var(--muted)}.trow .nt{font-size:12px;color:#243030;background:#F8FAFC;border-left:3px solid var(--teal);padding:2px 8px;margin-top:3px;overflow-wrap:anywhere}
+.donow{background:#F2F8F9;border:1px solid #B4C3C3;border-left:4px solid #0A5468;border-radius:8px;padding:8px 12px;margin:6px 0}.donow ol{margin:6px 0 0 18px;padding:0}.donow li{margin:3px 0;font-size:13px;line-height:1.4;overflow-wrap:anywhere}
 .lks{font-size:12px;font-weight:700;white-space:nowrap}.lks a{color:#0A5468;margin-right:10px;text-decoration:underline;display:inline-block;padding:4px 0}.lks a:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}.wwrap .cbx{margin:0 10px;flex:none;width:98px;display:flex;flex-direction:column;align-items:stretch}.wwrap .cbx .cbtn{margin:0;width:auto}.wwrap .cbx .lks{text-align:center}.wwrap .cbx .lks a{margin:0 5px}
 .mini{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid #B4C3C3;background:#fff;color:#0A5468;font:700 12px Manrope,system-ui,sans-serif;cursor:pointer}.mini:hover:not(:disabled){background:#E6EFF0}.mini:disabled{opacity:.55;cursor:default}.mini:focus-visible{outline:2px solid #2A8FA6;outline-offset:2px}
 .trow .nt.stale{border-left-color:var(--red);background:var(--red-d)}
@@ -537,8 +538,9 @@ details.close{background:#fff;border:1px solid var(--rule);border-radius:var(--r
     $('psub').textContent = (v.status ? v.status + ' | ' : '') + v.openCount + ' open work order' + (v.openCount === 1 ? '' : 's') + ' | updated ' + new Date(v.asOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
     if ((v.cards || []).length) b.appendChild(sec('Before you assign a vendor', v.cards.map(function (c) {
+      var dn = c.doNow ? h('div', { 'class': 'donow' }, [h('div', {}, [h('span', { 'class': 'pill ' + (c.doNow.priority === 'Emergency' ? 'p-red' : c.doNow.priority === 'Urgent' ? 'p-amber' : 'p-grey'), text: c.doNow.priority }), h('b', { text: '  Do now' })]), h('ol', {}, c.doNow.steps.map(function (s) { return h('li', { text: s }); }))]) : null;
       return h('div', { 'class': 'card' }, [h('div', { 'class': 't', text: '#' + c.number + '  ' + (c.summary || '(no description)') }),
-        h('div', { 'class': 'm', text: [c.status, c.vendor ? 'vendor: ' + c.vendor : 'no vendor yet', 'opened ' + c.created].filter(Boolean).join(' | ') })].concat(c.items.map(function (x) { return h('div', { 'class': 'hint ' + x.level, text: x.text }); })));
+        h('div', { 'class': 'm', text: [c.status, c.vendor ? 'vendor: ' + c.vendor : 'no vendor yet', 'opened ' + c.created].filter(Boolean).join(' | ') }), dn].concat(c.items.map(function (x) { return h('div', { 'class': 'hint ' + x.level, text: x.text }); })));
     })));
     if (v.hints.length) b.appendChild(sec('What to look at', v.hints.map(function (x) { return h('div', { 'class': 'hint ' + x.level, text: x.text }); })));
 
