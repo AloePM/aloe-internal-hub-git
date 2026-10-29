@@ -15,7 +15,12 @@ export const num = (v) => {
   const n = Number(String(v).replace(/[$,\s]/g, ''));
   return Number.isFinite(n) ? n : 0;
 };
-const rows = (r) => (Array.isArray(r) ? r : (r && Array.isArray(r.data) ? r.data : []));
+// Rentvine reports come back as { rows: [ { data: {...fields} } ] } (the hub's other report code reads them the same way).
+// Also accept a bare array or { data: [...] }, and unwrap each record's `data`.
+export const rows = (r) => {
+  const a = Array.isArray(r) ? r : (Array.isArray(r && r.rows) ? r.rows : (Array.isArray(r && r.data) ? r.data : []));
+  return a.map((x) => (x && typeof x.data === 'object' && x.data !== null && !Array.isArray(x.data) ? x.data : x));
+};
 
 // Fee dollars from the fee plan name ("$89 Management Fee / ..."). "6% ..." is a percent of rent; "0..." is no fee.
 export function feeFromPlanName(name, rent) {
@@ -55,7 +60,7 @@ async function loadBills(rvFetch, from) {
 
 export const MGMT_FEE_ACCOUNT_ID = 93;
 export const RECURRING_ACCOUNTS = { landscaping: 79, pest: 77, pool: 83 };
-export const toISO = (v) => { if (!v) return ''; const t = Date.parse(String(v).length === 10 ? v + 'T12:00:00Z' : v + ' 12:00 UTC'); return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : ''; };
+export const toISO = (v) => { if (!v) return ''; if (/^\d{4}-\d{2}-\d{2}/.test(String(v))) return String(v).slice(0, 10); const t = Date.parse(String(v).length === 10 ? v + 'T12:00:00Z' : v + ' 12:00 UTC'); return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : ''; };
 const truthy = (v) => v === true || v === 1 || v === '1' || String(v).toLowerCase() === 'true';
 
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Phoenix' });
@@ -65,11 +70,13 @@ const daysAgo = (n) => { const d = new Date(Date.now() - n * 864e5); return d.to
 export async function loadPayoutData(rvFetch, { sinceDays = 45, typical = {}, reserve = 0 } = {}) {
   const from = daysAgo(sinceDays), to = today();
   const [props, settle, bills] = await Promise.all([
-    allPages(rvFetch, 'property', { displayColumns: ['propertyID', 'propertyAddress', 'propertyCity', 'portfolioID', 'portfolioName', 'portfolioOwnerIDs', 'managementFeeSettingID', 'managementFeeSettingName', 'isActive', 'property_text_61', 'property_text_62', 'property_text_63'], filters: [{ name: 'isActive', comparator: 'booleanTrue' }] }),
+    allPages(rvFetch, 'property', { displayColumns: ['propertyID', 'propertyAddress', 'propertyCity', 'portfolioID', 'portfolioName', 'portfolioOwnerIDs', 'managementFeeSettingID', 'managementFeeSettingName', 'isActive', 'property_text_61', 'property_text_62', 'property_text_63'], filters: [] }),
     allPages(rvFetch, 'settlement-detail', { displayColumns: ['settlementDate', 'datePosted', 'propertyID', 'unitID', 'amount', 'contactID', 'payoutTypeID', 'bankAccountID'], filters: [{ name: 'settlementDate', comparator: 'betweenDate', startDate: from, endDate: to }] }),
     loadBills(rvFetch, from),
   ]);
-  return { props, settle, bills, from, to, typical, reserve };
+  // active filter is done here, not in the report call (server-side filters are unreliable); a missing isActive field counts as active
+  const active = props.filter((p) => p.isActive === undefined || p.isActive === '' || truthy(p.isActive));
+  return { props: active, settle, bills, from, to, typical, reserve };
 }
 
 // Turn raw report rows into the owner list the math module expects. `rents` = { propertyID: monthlyRent }.
@@ -156,10 +163,12 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       const fresh = req.query.refresh === '1';
       if (!fresh && cache.v && Date.now() - cache.at < TTL) return res.json(cache.v);
       const raw = await loadPayoutData(rvFetch, { typical, reserve });
-      const owners = shapeOwners(raw, await getRents(rvFetch), await getExpectedBills(rvFetch));
+      const rents = await getRents(rvFetch);
+      const owners = shapeOwners(raw, rents, await getExpectedBills(rvFetch));
       const out = {
         asOf: new Date().toISOString(), scope: 'Rental Trust (bank account ' + TRUST_BANK_ACCOUNT_ID + ')', reserve,
         decisionsSaved: !!decisions.persistent, flagText: FLAG_TEXT,
+        counts: { properties: raw.props.length, payments: raw.settle.length, bills: raw.bills.length, rents: Object.keys(rents).length },
         owners: portfolio(owners, {}), decisions: await decisions.get(),
       };
       cache = { at: Date.now(), v: out };

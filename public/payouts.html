@@ -53,7 +53,7 @@ async function load(refresh) {
     const r = await fetch('/api/payouts/list' + (refresh ? '?refresh=1' : ''), {credentials: 'same-origin'});
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
     data = await r.json();
-    $('#sub').textContent = data.scope + ' - settled money only - as of ' + new Date(data.asOf).toLocaleString('en-US', {timeZone: 'America/Phoenix'}) + ' (Phoenix)' + (data.reserve ? ' - reserve ' + money(data.reserve) + ' per owner' : ' - reserve $0');
+    $('#sub').textContent = data.scope + ' - settled money only - as of ' + new Date(data.asOf).toLocaleString('en-US', {timeZone: 'America/Phoenix'}) + ' (Phoenix)' + (data.reserve ? ' - reserve ' + money(data.reserve) + ' per owner' : ' - reserve $0') + (data.counts ? ' - read ' + data.counts.properties + ' properties, ' + data.counts.payments + ' payments, ' + data.counts.bills + ' bills, ' + data.counts.rents + ' rents' : '');
     $('#stor').hidden = !!data.decisionsSaved;
     render();
   } catch (e) { $('#sub').textContent = 'Could not load: ' + e.message; }
@@ -79,7 +79,7 @@ function render() {
       '<td>' + money(o.settledIn) + '</td><td>' + money(o.fees) + '</td><td>' + money(o.unpaidBills) + '</td><td>' + money(o.recurringTotal) + '</td><td>' + money(o.reserve) + '</td>' +
       '<td class="' + (o.amountToPay < 0 ? 'neg' : '') + '"><b>' + money(o.amountToPay) + '</b></td><td>' + (o.lastPayout == null ? '<span class="muted">none seen</span>' : money(o.lastPayout)) + '</td><td class="l">' + statusPill(o) + '</td></tr>';
     return main + (open.has(String(o.ownerID)) ? detail(o, d) : '');
-  }).join('') || '<tr><td colspan="9" class="l muted">Nothing matches.</td></tr>';
+  }).join('') || '<tr><td colspan="9" class="l muted">' + (data.owners.length ? 'Nothing matches this filter or search.' : 'Rentvine returned no owners. See the counts above.') + '</td></tr>';
 }
 
 function detail(o, d) {
