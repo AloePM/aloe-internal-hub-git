@@ -228,9 +228,15 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
       const leaseId = String(wo.leaseID || (b.lease && b.lease.leaseID) || '');
       if (!/^\d{1,9}$/.test(leaseId)) v = { phones: [], reason: 'no_lease' };
       else {
-        const lb = await rvFetch('/leases/' + leaseId, {});
-        const L = lb && !lb.error ? (lb.lease || lb.data || lb) : null;
-        const tenants = L && Array.isArray(L.tenants) ? L.tenants : (lb && Array.isArray(lb.tenants) ? lb.tenants : []);
+        // The lease export is the read the hub already trusts for tenant contacts (each item is { lease: { tenants: [...] }, ... }).
+        let tenants = [];
+        try {
+          const lb = await rvFetch('/leases/export', { 'leaseIDs[]': leaseId, pageSize: 5, page: 1 });
+          const items = Array.isArray(lb) ? lb : (lb && lb.data) || [];
+          const hit = items.find((x) => String(((x && x.lease) || {}).leaseID || '') === leaseId) || items[0];
+          tenants = (hit && hit.lease && Array.isArray(hit.lease.tenants)) ? hit.lease.tenants : [];
+        } catch { tenants = []; }
+        tenants = tenants.filter((t) => !(t && (t.isActive === false || t.isActive === 0 || t.isActive === '0')));
         const found = new Set();
         for (const t of tenants.slice(0, 6)) {
           let ph = pickContacts(t).phones;
