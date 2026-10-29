@@ -33,26 +33,38 @@ export function feeFromPlanName(name, rent) {
   return { fee: 0, known: false };
 }
 
-async function allPages(rvFetch, route, report, max = 40) {
+// Fetches every page of a report. Safety rails (a stuck loop crashed the first test server):
+//  - stops when a page repeats the previous one (Rentvine ignoring `page` would otherwise loop forever)
+//  - each record is trimmed to the fields we use as soon as it arrives, so memory stays small
+//  - hard cap on pages
+export async function allPages(rvFetch, route, report, { max = 25, fields = null, pageSize = 200 } = {}) {
   const out = [];
+  let prevSig = null;
   for (let page = 1; page <= max; page++) {
-    const r = await rvFetch('/reports/' + route, { exportTypeID: 1, json: JSON.stringify(report), page, pageSize: 200 });
+    const r = await rvFetch('/reports/' + route, { exportTypeID: 1, json: JSON.stringify(report), page, pageSize });
     if (r && r.error) throw new Error(route + ': ' + r.error);
-    const b = rows(r);
+    let b = rows(r);
+    if (!b.length) break;
+    if (fields) b = b.map((x) => { const o = {}; for (const k of fields) if (x[k] !== undefined) o[k] = x[k]; return o; });
+    const sig = b.length + '|' + JSON.stringify(b[0]) + '|' + JSON.stringify(b[b.length - 1]);
+    if (sig === prevSig) break;
+    prevSig = sig;
     out.push(...b);
-    if (b.length < 200) break;
+    if (b.length < pageSize) break;
   }
   return out;
 }
 
+const PROP_COLS = ['propertyID', 'propertyAddress', 'propertyCity', 'portfolioID', 'portfolioName', 'portfolioOwnerIDs', 'managementFeeSettingID', 'managementFeeSettingName', 'isActive', 'property_text_61', 'property_text_62', 'property_text_63'];
+const SETTLE_COLS = ['settlementDate', 'datePosted', 'propertyID', 'unitID', 'amount', 'contactID', 'payoutTypeID', 'bankAccountID'];
+const LEASE_COLS = ['leaseID', 'propertyID', 'rentAmount', 'primaryLeaseStatusID'];
 const BILL_COLS = ['transactionID', 'billID', 'propertyID', 'portfolioID', 'chargeAccountID', 'chargeAccountName', 'datePosted', 'dateDue', 'amount', 'amountUnpaid', 'isPaid', 'isVoided', 'isSuppressed', 'description', 'contactName'];
 // Every unpaid bill (any date) plus everything posted in the window. Server-side filters are unreliable (isSuppressed is silently
 // ignored), so only the two filters known to work are sent and everything else is filtered in code.
 async function loadBills(rvFetch, from) {
-  const [unpaid, recent] = await Promise.all([
-    allPages(rvFetch, 'payables', { displayColumns: BILL_COLS, filters: [{ name: 'isPaid', comparator: 'booleanFalse' }, { name: 'isVoided', comparator: 'booleanFalse' }] }),
-    allPages(rvFetch, 'payables', { displayColumns: BILL_COLS, filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: from, endDate: today() }] }),
-  ]);
+  // one report at a time: keeps peak memory low (running them together is what crashed the first test server)
+  const unpaid = await allPages(rvFetch, 'payables', { displayColumns: BILL_COLS, filters: [{ name: 'isPaid', comparator: 'booleanFalse' }, { name: 'isVoided', comparator: 'booleanFalse' }] }, { fields: BILL_COLS, max: 15 });
+  const recent = await allPages(rvFetch, 'payables', { displayColumns: BILL_COLS, filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: from, endDate: today() }] }, { fields: BILL_COLS, max: 30 });
   const seen = new Set(), out = [];
   for (const b of [...unpaid, ...recent]) { const k = b.transactionID ?? (b.billID + ':' + b.propertyID + ':' + b.chargeAccountID + ':' + b.amount); if (!seen.has(k)) { seen.add(k); out.push(b); } }
   return out;
@@ -69,11 +81,10 @@ const daysAgo = (n) => { const d = new Date(Date.now() - n * 864e5); return d.to
 // Pull everything for the trust account and shape owners -> properties.
 export async function loadPayoutData(rvFetch, { sinceDays = 45, typical = {}, reserve = 0 } = {}) {
   const from = daysAgo(sinceDays), to = today();
-  const [props, settle, bills] = await Promise.all([
-    allPages(rvFetch, 'property', { displayColumns: ['propertyID', 'propertyAddress', 'propertyCity', 'portfolioID', 'portfolioName', 'portfolioOwnerIDs', 'managementFeeSettingID', 'managementFeeSettingName', 'isActive', 'property_text_61', 'property_text_62', 'property_text_63'], filters: [] }),
-    allPages(rvFetch, 'settlement-detail', { displayColumns: ['settlementDate', 'datePosted', 'propertyID', 'unitID', 'amount', 'contactID', 'payoutTypeID', 'bankAccountID'], filters: [{ name: 'settlementDate', comparator: 'betweenDate', startDate: from, endDate: to }] }),
-    loadBills(rvFetch, from),
-  ]);
+  const t0 = Date.now(), lap = (n) => console.log('payouts load', n, Date.now() - t0, 'ms', process.memoryUsage().rss >> 20, 'MB rss');
+  const props = await allPages(rvFetch, 'property', { displayColumns: PROP_COLS, filters: [] }, { fields: PROP_COLS, max: 10 }); lap('properties ' + props.length);
+  const settle = await allPages(rvFetch, 'settlement-detail', { displayColumns: SETTLE_COLS, filters: [{ name: 'settlementDate', comparator: 'betweenDate', startDate: from, endDate: to }] }, { fields: SETTLE_COLS, max: 30 }); lap('settlements ' + settle.length);
+  const bills = await loadBills(rvFetch, from); lap('bills ' + bills.length);
   // active filter is done here, not in the report call (server-side filters are unreliable); a missing isActive field counts as active
   const active = props.filter((p) => p.isActive === undefined || p.isActive === '' || truthy(p.isActive));
   return { props: active, settle, bills, from, to, typical, reserve };
@@ -138,7 +149,7 @@ export function shapeOwners({ props, settle, bills, typical = {}, reserve = 0 },
 
 // Monthly rent per property from active leases (Lease report: rentAmount).
 export async function defaultRents(rvFetch) {
-  const leases = await allPages(rvFetch, 'lease', { displayColumns: ['leaseID', 'propertyID', 'rentAmount', 'primaryLeaseStatusID'], filters: [{ name: 'primaryLeaseStatusID', comparator: 'equals', value: '2' }] });
+  const leases = await allPages(rvFetch, 'lease', { displayColumns: LEASE_COLS, filters: [{ name: 'primaryLeaseStatusID', comparator: 'equals', value: '2' }] }, { fields: LEASE_COLS, max: 15 });
   const out = {};
   for (const l of leases) out[String(l.propertyID)] = (out[String(l.propertyID)] || 0) + num(l.rentAmount);
   return out;
@@ -153,7 +164,7 @@ export function makeMemoryDecisionStore() {
 export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionStore(), getRents = defaultRents, getExpectedBills = async () => new Set(), typical = {}, reserve = 0, env = process.env } = {}) {
   if (typeof rvFetch !== 'function') throw new Error('installPayouts needs rvFetch');
   const guard = (req, res) => { if (!sessionOk(req, env)) { res.status(401).json({ error: 'Sign in required' }); return false; } return true; };
-  let cache = { at: 0, v: null };
+  let cache = { at: 0, v: null }, inflight = null;
 
   app.get('/payouts', (req, res) => res.sendFile(new URL('./public/payouts.html', import.meta.url).pathname));
 
@@ -162,6 +173,7 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
     try {
       const fresh = req.query.refresh === '1';
       if (!fresh && cache.v && Date.now() - cache.at < TTL) return res.json(cache.v);
+      if (!inflight) inflight = (async () => {
       const raw = await loadPayoutData(rvFetch, { typical, reserve });
       const rents = await getRents(rvFetch);
       const owners = shapeOwners(raw, rents, await getExpectedBills(rvFetch));
@@ -172,6 +184,9 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
         owners: portfolio(owners, {}), decisions: await decisions.get(),
       };
       cache = { at: Date.now(), v: out };
+      return out;
+      })().finally(() => { inflight = null; });
+      const out = await inflight;
       res.json(out);
     } catch (e) { console.error('payouts list', e); res.status(502).json({ error: String(e.message || e) }); }
   });
