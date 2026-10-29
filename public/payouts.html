@@ -47,13 +47,17 @@ tr.dup td{background:var(--amberbg)}tr.old td{color:var(--mute)}
     <input type="search" id="q" placeholder="Search owner or address">
     <button id="fAll" class="on">All</button><button id="fLook">Needs a look</button><button id="fOk">Looks fine</button>
     <select id="selPaid" title="Payout history">
-      <option value="all">Payout history: any</option><option value="never">Never paid before</option><option value="has">Has been paid before</option>
+      <option value="all">Payout history: any</option><option value="never">No payout in last 3 months</option><option value="has">Paid in last 3 months</option>
     </select>
     <select id="selTen" title="Tenants">
       <option value="all">Tenants: any</option><option value="new_move_in">New move-in</option><option value="move_out_30">Moving out within 30 days</option><option value="move_out_month">Moving out this month</option><option value="move_out_next">Moving out next month</option>
     </select>
+    <select id="selAlert" title="Alerts">
+      <option value="all">Alerts: any</option><option value="vacant">Vacant home</option><option value="contrib">Owner contribution (30 days)</option><option value="new_owner">New owner (60 days)</option><option value="new_property">New property (60 days)</option><option value="no_fee">No management fee</option>
+    </select>
     <button id="refresh">Refresh</button>
   </div>
+  <div class="note" id="unm" hidden></div>
   <table id="t"><thead><tr id="head"></tr></thead><tbody id="body"></tbody></table>
 </main>
 <script>
@@ -61,7 +65,7 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = (n) => (n < 0 ? '-' : '') + '$' + Math.abs(Number(n) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const mdy = (iso) => iso ? iso.slice(5, 7) + '/' + iso.slice(8, 10) + '/' + iso.slice(0, 4) : '';
-let data = null, filter = 'all', paid = 'all', ten = 'all', open = new Set(), sortKey = null, sortDir = 1;
+let data = null, filter = 'all', paid = 'all', ten = 'all', alertSel = 'all', open = new Set(), sortKey = null, sortDir = 1;
 
 const COLS = [
   ['name', 'Owner', 'l'], ['settledIn', 'Settled in'], ['fees', 'Mgmt fees'], ['unpaidBills', 'Unpaid bills'], ['recurringTotal', 'Recurring'],
@@ -83,8 +87,11 @@ async function load(refresh) {
     const r = await fetch('/api/payouts/list' + (refresh ? '?refresh=1' : ''), {credentials: 'same-origin'});
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
     data = await r.json();
-    $('#sub').textContent = data.scope + ' - settled money only - as of ' + new Date(data.asOf).toLocaleString('en-US', {timeZone: 'America/Phoenix'}) + ' (Phoenix)' + (data.reserve ? ' - reserve ' + money(data.reserve) + ' per owner' : ' - reserve $0') + (data.counts ? ' - read ' + data.counts.properties + ' properties, ' + data.counts.payments + ' payments, ' + data.counts.bills + ' bills, ' + data.counts.rents + ' rents' : '');
+    $('#sub').textContent = data.scope + ' - settled money only - as of ' + new Date(data.asOf).toLocaleString('en-US', {timeZone: 'America/Phoenix'}) + ' (Phoenix)' + (data.reserve ? ' - reserve ' + money(data.reserve) + ' per owner' : ' - reserve $0') + (data.counts ? ' - read ' + data.counts.properties + ' properties, ' + data.counts.payments + ' payments, ' + (data.counts.payouts ?? 0) + ' owner payouts, ' + data.counts.bills + ' bills, ' + data.counts.rents + ' rents, ' + (data.counts.vacant ?? 0) + ' vacancies, ' + (data.counts.contributions ?? 0) + ' contributions' : '');
     $('#stor').hidden = !!data.decisionsSaved;
+    const um = data.unmatchedContributions || [];
+    $('#unm').hidden = !um.length;
+    if (um.length) $('#unm').innerHTML = '<b>' + um.length + ' owner contribution' + (um.length > 1 ? 's' : '') + ' in the last 30 days could not be matched to an owner on this page (' + money(um.reduce((t, c) => t + c.amount, 0)) + '):</b> ' + um.map((c) => esc(mdy(c.date)) + ' ' + money(c.amount) + ' ' + esc(c.desc)).join(' &middot; ');
     render();
   } catch (e) { $('#sub').textContent = 'Could not load: ' + e.message; }
 }
@@ -95,12 +102,17 @@ function statusPill(o) {
   return '<span class="pill ' + (bad ? 'bad' : 'look') + '">Needs a look</span>';
 }
 function ownerTags(o) {
-  const c = o.tagCounts || {}, t = [];
-  if (o.neverPaid) t.push('<span class="pill tag first">First payout</span>');
-  if (c.new_move_in) t.push('<span class="pill tag in">New move-in' + (c.new_move_in > 1 ? ' x' + c.new_move_in : '') + '</span>');
-  if (c.move_out_30) t.push('<span class="pill tag out">Moving out in 30 days' + (c.move_out_30 > 1 ? ' x' + c.move_out_30 : '') + '</span>');
-  if (c.move_out_month) t.push('<span class="pill tag">Out this month' + (c.move_out_month > 1 ? ' x' + c.move_out_month : '') + '</span>');
-  if (c.move_out_next) t.push('<span class="pill tag">Out next month' + (c.move_out_next > 1 ? ' x' + c.move_out_next : '') + '</span>');
+  const c = o.tagCounts || {}, t = [], x = (n) => (n > 1 ? ' x' + n : '');
+  if (o.newOwner) t.push('<span class="pill tag in">New owner</span>');
+  else if (c.new_property) t.push('<span class="pill tag in">New property' + x(c.new_property) + '</span>');
+  if (c.vacant) t.push('<span class="pill tag out">Vacant home' + x(c.vacant) + '</span>');
+  if ((o.contributions || []).length) t.push('<span class="pill tag out">Owner contribution ' + money(o.contribTotal) + '</span>');
+  if (o.neverPaid) t.push('<span class="pill tag first">No payout in 3 months</span>');
+  if (c.new_move_in) t.push('<span class="pill tag in">New move-in' + x(c.new_move_in) + '</span>');
+  if (c.move_out_30) t.push('<span class="pill tag out">Moving out in 30 days' + x(c.move_out_30) + '</span>');
+  if (c.move_out_month) t.push('<span class="pill tag">Out this month' + x(c.move_out_month) + '</span>');
+  if (c.move_out_next) t.push('<span class="pill tag">Out next month' + x(c.move_out_next) + '</span>');
+  if (c.no_fee) t.push('<span class="pill tag">No mgmt fee' + x(c.no_fee) + '</span>');
   return t.join('');
 }
 function sortVal(o, k) {
@@ -118,6 +130,11 @@ function render() {
     if (paid === 'never' && !o.neverPaid) return false;
     if (paid === 'has' && o.neverPaid) return false;
     if (ten !== 'all' && !((o.tagCounts || {})[ten] > 0)) return false;
+    if (alertSel === 'vacant' && !((o.tagCounts || {}).vacant > 0)) return false;
+    if (alertSel === 'contrib' && !(o.contributions || []).length) return false;
+    if (alertSel === 'new_owner' && !o.newOwner) return false;
+    if (alertSel === 'new_property' && !((o.tagCounts || {}).new_property > 0)) return false;
+    if (alertSel === 'no_fee' && !((o.tagCounts || {}).no_fee > 0)) return false;
     if (!q) return true;
     return o.name.toLowerCase().includes(q) || o.properties.some((p) => p.address.toLowerCase().includes(q));
   });
@@ -126,7 +143,7 @@ function render() {
     const d = data.decisions[o.ownerID];
     const main = '<tr class="owner" data-id="' + esc(o.ownerID) + '"><td>' + esc(o.name) + ' <span class="muted tiny">(' + o.properties.length + ')</span>' + (d ? ' <span class="pill ok">' + esc(d.action.replace('_', ' ')) + '</span>' : '') + '<div>' + ownerTags(o) + '</div></td>' +
       '<td>' + money(o.settledIn) + '</td><td>' + money(o.fees) + '</td><td>' + money(o.unpaidBills) + '</td><td>' + money(o.recurringTotal) + '</td><td>' + money(o.reserve) + '</td>' +
-      '<td class="' + (o.amountToPay < 0 ? 'neg' : '') + '"><b>' + money(o.amountToPay) + '</b></td><td>' + (o.lastPayout == null ? '<span class="muted">none seen</span>' : money(o.lastPayout) + '<div class="muted tiny">' + esc(mdy(o.lastPayoutDate)) + '</div>') + '</td><td class="l">' + statusPill(o) + '</td></tr>';
+      '<td class="' + (o.amountToPay < 0 ? 'neg' : '') + '"><b>' + money(o.amountToPay) + '</b></td><td>' + (o.lastPayout == null ? '<span class="muted">none in 3 months</span>' : money(o.lastPayout) + '<div class="muted tiny">' + esc(mdy(o.lastPayoutDate)) + '</div>') + '</td><td class="l">' + statusPill(o) + '</td></tr>';
     return main + (open.has(String(o.ownerID)) ? detail(o, d) : '');
   }).join('') || '<tr><td colspan="9" class="l muted">' + (data.owners.length ? 'Nothing matches these filters or search.' : 'Rentvine returned no owners. See the counts above.') + '</td></tr>';
 }
@@ -139,10 +156,11 @@ function billTable(p) {
       '<td>' + money(b.amount) + '</td><td class="l g">' + (b.paid ? 'Paid' : 'Unpaid ' + money(b.unpaid)) + '</td><td class="l">' + (b.counted ? 'Counted' : 'Already paid out') + '</td><td class="l">' + (b.dup ? '<span class="mark">&#9873; looks like a duplicate</span>' : '') + '</td></tr>').join('') + '</tbody></table>';
 }
 function propTags(p) {
-  return (p.tags || []).map((t) => '<span class="pill tag ' + (t.key === 'new_move_in' ? 'in' : t.key === 'move_out_30' ? 'out' : '') + '">' + esc(t.text) + '</span>').join('');
+  return (p.tags || []).map((t) => '<span class="pill tag ' + (t.key === 'new_move_in' || t.key === 'new_property' ? 'in' : t.key === 'move_out_30' || t.key === 'vacant' ? 'out' : '') + '">' + esc(t.text) + '</span>').join('');
 }
 function detail(o, d) {
   const flags = o.flags.map((f) => '<li class="' + (f === 'below_zero' ? 'neg' : 'mark') + '">&bull; ' + esc(data.flagText[f] || f) + '</li>').join('');
+  const contrib = (o.contributions || []).length ? '<div class="prop"><div class="ph"><div><span class="addr">Owner contributions in the last 30 days</span><div class="muted tiny">Make sure this money is not sent back to the owner in the payout.</div></div><div class="nums"><span>Total <b>' + money(o.contribTotal) + '</b></span></div></div><table><thead><tr><th class="l">Date</th><th>Amount</th><th class="l g">Note</th></tr></thead><tbody>' + o.contributions.map((c) => '<tr class="dup"><td class="l">' + esc(mdy(c.date)) + '</td><td>' + money(c.amount) + '</td><td class="l g">' + esc(c.desc) + '</td></tr>').join('') + '</tbody></table></div>' : '';
   const props = o.properties.map((p) => {
     const rec = p.recurring.map((r) => esc(r.label) + ' ' + (r.amount ? money(r.amount) : '<span class="mark">amount?</span>')).join(', ');
     return '<div class="prop"><div class="ph"><div><span class="addr">' + esc(p.address) + '</span>' + (p.billExpected ? ' <span class="mark" title="Open work order, bill expected">&#9873; bill expected</span>' : '') +
@@ -151,7 +169,7 @@ function detail(o, d) {
       billTable(p) + '</div>';
   }).join('');
   return '<tr class="detail"><td colspan="9"><div class="inner">' +
-    (flags ? '<ul class="flags">' + flags + '</ul>' : '') + props +
+    (flags ? '<ul class="flags">' + flags + '</ul>' : '') + contrib + props +
     '<div class="dec" data-id="' + esc(o.ownerID) + '"><button data-a="approve">Approve</button><button data-a="hold">Hold</button><button data-a="ask_owner">Ask owner</button>' +
     '<input type="text" maxlength="500" placeholder="Note (optional)" value="' + esc(d ? d.note : '') + '"></div></div></td></tr>';
 }
@@ -170,6 +188,7 @@ $('#body').addEventListener('click', async (e) => {
 });
 $('#q').addEventListener('input', () => data && render());
 $('#selPaid').addEventListener('change', (e) => { paid = e.target.value; if (data) render(); });
+$('#selAlert').addEventListener('change', (e) => { alertSel = e.target.value; if (data) render(); });
 $('#selTen').addEventListener('change', (e) => { ten = e.target.value; if (data) render(); });
 for (const [id, f] of [['fAll', 'all'], ['fLook', 'look'], ['fOk', 'ok']]) $('#' + id).addEventListener('click', () => { filter = f; for (const x of ['fAll', 'fLook', 'fOk']) $('#' + x).classList.toggle('on', x === id); if (data) render(); });
 $('#refresh').addEventListener('click', () => load(true));

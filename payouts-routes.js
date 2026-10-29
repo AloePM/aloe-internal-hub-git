@@ -55,7 +55,9 @@ export async function allPages(rvFetch, route, report, { max = 25, fields = null
   return out;
 }
 
-const PROP_COLS = ['propertyID', 'propertyAddress', 'propertyCity', 'portfolioID', 'portfolioName', 'portfolioOwnerIDs', 'managementFeeSettingID', 'managementFeeSettingName', 'isActive', 'property_text_61', 'property_text_62', 'property_text_63'];
+const PROP_COLS = ['propertyID', 'propertyAddress', 'propertyCity', 'portfolioID', 'portfolioName', 'portfolioOwnerIDs', 'managementFeeSettingID', 'managementFeeSettingName', 'isActive', 'dateContractBegins', 'dateTimeCreated', 'property_text_61', 'property_text_62', 'property_text_63'];
+const CHECK_COLS = ['datePosted', 'contactID', 'contactName', 'payoutTypeID', 'memo', 'payoutAmount', 'isVoided', 'isPayoutReturned', 'bankAccountID'];
+const OWNERPAY_COLS = ['datePosted', 'portfolioID', 'portfolioName', 'contactName', 'offsetAccountName', 'amount', 'isVoided', 'isReturned', 'description'];
 const SETTLE_COLS = ['settlementDate', 'datePosted', 'propertyID', 'unitID', 'amount', 'contactID', 'payoutTypeID', 'bankAccountID'];
 const LEASE_COLS = ['leaseID', 'propertyID', 'rentAmount', 'primaryLeaseStatusID', 'leaseStatusName', 'moveInDate', 'expectedMoveOutDate', 'noticeDate', 'isMovingOut'];
 const BILL_COLS = ['transactionID', 'billID', 'propertyID', 'portfolioID', 'chargeAccountID', 'chargeAccountName', 'datePosted', 'dateDue', 'amount', 'amountUnpaid', 'isPaid', 'isVoided', 'isSuppressed', 'description', 'contactName'];
@@ -71,6 +73,7 @@ async function loadBills(rvFetch, from) {
 }
 
 export const MGMT_FEE_ACCOUNT_ID = 93;
+export const OWNER_CONTRIBUTION_ACCOUNT_ID = 7;   // 3150 - Owner Contribution
 export const RECURRING_ACCOUNTS = { landscaping: 79, pest: 77, pool: 83 };
 export const toISO = (v) => { if (!v) return ''; if (/^\d{4}-\d{2}-\d{2}/.test(String(v))) return String(v).slice(0, 10); const t = Date.parse(String(v).length === 10 ? v + 'T12:00:00Z' : v + ' 12:00 UTC'); return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : ''; };
 const truthy = (v) => v === true || v === 1 || v === '1' || String(v).toLowerCase() === 'true';
@@ -79,20 +82,42 @@ const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/
 const daysAgo = (n) => { const d = new Date(Date.now() - n * 864e5); return d.toLocaleDateString('en-CA', { timeZone: 'America/Phoenix' }); };
 
 // Pull everything for the trust account and shape owners -> properties.
-export async function loadPayoutData(rvFetch, { sinceDays = 45, typical = {}, reserve = 0 } = {}) {
-  const from = daysAgo(sinceDays), to = today();
+export const PAYOUT_DAYS = 92, BILL_DAYS = 45, CONTRIB_DAYS = 30, NEW_DAYS = 60;
+export async function loadPayoutData(rvFetch, { sinceDays = BILL_DAYS, payoutDays = PAYOUT_DAYS, typical = {}, reserve = 0 } = {}) {
+  const from = daysAgo(sinceDays), to = today(), payFrom = daysAgo(payoutDays);
   const t0 = Date.now(), lap = (n) => console.log('payouts load', n, Date.now() - t0, 'ms', process.memoryUsage().rss >> 20, 'MB rss');
   const props = await allPages(rvFetch, 'property', { displayColumns: PROP_COLS, filters: [] }, { fields: PROP_COLS, max: 10 }); lap('properties ' + props.length);
-  const settle = await allPages(rvFetch, 'settlement-detail', { displayColumns: SETTLE_COLS, filters: [{ name: 'settlementDate', comparator: 'betweenDate', startDate: from, endDate: to }] }, { fields: SETTLE_COLS, max: 30 }); lap('settlements ' + settle.length);
+  const settle = await allPages(rvFetch, 'settlement-detail', { displayColumns: SETTLE_COLS, filters: [{ name: 'settlementDate', comparator: 'betweenDate', startDate: payFrom, endDate: to }] }, { fields: SETTLE_COLS, max: 40 }); lap('settlements ' + settle.length);
   const bills = await loadBills(rvFetch, from); lap('bills ' + bills.length);
+  // owner distributions (Check Register - covers ACH and checks, including ones that have not settled yet)
+  const checks = await allPages(rvFetch, 'check-register', { displayColumns: CHECK_COLS, filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: payFrom, endDate: to }] }, { fields: CHECK_COLS, max: 30 }); lap('checks ' + checks.length);
+  // vacant homes (Vacancy report) and owner contributions (Owner Payments report, offset account 3150) - both small
+  const vacancy = await allPages(rvFetch, 'vacancy', { displayColumns: ['propertyID', 'propertyAddress', 'daysVacant'], filters: [] }, { fields: ['propertyID', 'propertyAddress', 'daysVacant'], max: 10 }); lap('vacancy ' + vacancy.length);
+  const contribRows = await allPages(rvFetch, 'owner-payments', { displayColumns: OWNERPAY_COLS, filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: daysAgo(CONTRIB_DAYS), endDate: to }] }, { fields: OWNERPAY_COLS, max: 10 }); lap('contributions ' + contribRows.length);
   // active filter is done here, not in the report call (server-side filters are unreliable); a missing isActive field counts as active
   const active = props.filter((p) => p.isActive === undefined || p.isActive === '' || truthy(p.isActive));
-  return { props: active, settle, bills, from, to, typical, reserve };
+  return { props: active, settle, checks, bills, vacancy, contribRows, from, to, typical, reserve };
+}
+
+// Owner contributions: credits to account 3150 in the last 30 days, not voided. Owner is found from the portfolio id or the ledger / portfolio name.
+const normName = (v) => String(v && typeof v === 'object' ? (v.name || v.label || '') : (v ?? '')).toLowerCase().replace(/[^a-z0-9]/g, '');
+export function parseContributions(rowsIn, todayISO = today()) {
+  const out = [];
+  for (const r of rowsIn || []) {
+    if (truthy(r.isVoided) || truthy(r.isReturned)) continue;
+    if (r.offsetAccountName && !/contribution/i.test(String(r.offsetAccountName))) continue;
+    const amount = Math.round((r.amount !== undefined ? num(r.amount) : num(r.credit) - num(r.debit)) * 100) / 100;
+    if (amount <= 0) continue;
+    const date = toISO(r.datePosted);
+    if (date && dayDiff(todayISO, date) > CONTRIB_DAYS) continue;
+    out.push({ date, amount, desc: String(r.description || ''), type: 'Owner contribution', portfolioID: r.portfolioID ? String(r.portfolioID) : '', names: [r.portfolioName, r.contactName].map(normName).filter(Boolean) });
+  }
+  return out.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0));
 }
 
 // Turn raw report rows into the owner list the math module expects. `rents` = { propertyID: monthlyRent }.
 // Owners are grouped by PORTFOLIO. A portfolio can have several owner contacts; a payout to any of them counts as that portfolio's payout.
-export function shapeOwners({ props, settle, bills, typical = {}, reserve = 0 }, rents = {}, expectedBill = new Set(), leaseInfo = {}, todayISO = today()) {
+export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], contribRows = [], typical = {}, reserve = 0 }, rents = {}, expectedBill = new Set(), leaseInfo = {}, todayISO = today()) {
   const trust = settle.filter((r) => r.bankAccountID === undefined || num(r.bankAccountID) === TRUST_BANK_ACCOUNT_ID);
   const payoutsByContact = {};
   for (const r of trust) {
@@ -100,6 +125,13 @@ export function shapeOwners({ props, settle, bills, typical = {}, reserve = 0 },
       const k = String(r.contactID), d = toISO(r.settlementDate);
       if (!payoutsByContact[k] || d > payoutsByContact[k].date) payoutsByContact[k] = { date: d, amount: Math.abs(num(r.amount)) };
     }
+  }
+  // owner distributions from the Check Register win ties with Money Out rows (same payout seen twice)
+  for (const r of checks) {
+    if (num(r.payoutTypeID) !== 4 || truthy(r.isVoided) || truthy(r.isPayoutReturned)) continue;
+    if (r.bankAccountID !== undefined && r.bankAccountID !== '' && num(r.bankAccountID) !== TRUST_BANK_ACCOUNT_ID) continue;
+    const k = String(r.contactID), d = toISO(r.datePosted), amt = Math.abs(num(r.payoutAmount));
+    if (!payoutsByContact[k] || d >= payoutsByContact[k].date) payoutsByContact[k] = { date: d, amount: amt };
   }
   const byPortfolio = new Map();
   for (const p of props) {
@@ -114,8 +146,13 @@ export function shapeOwners({ props, settle, bills, typical = {}, reserve = 0 },
     if (truthy(b.isVoided) || truthy(b.isSuppressed)) continue;
     (billsBy[String(b.propertyID)] ||= []).push(b);
   }
+  const vacantDays = {};
+  for (const v of vacancy) if (v.propertyID !== undefined && v.propertyID !== '') vacantDays[String(v.propertyID)] = num(v.daysVacant);
+  const contribs = parseContributions(contribRows, todayISO), matchedC = new Set();
   const owners = [];
   for (const o of byPortfolio.values()) {
+    const myNames = new Set([normName(o.name)].filter(Boolean));
+    const mine = contribs.filter((c) => { const hit = (c.portfolioID && c.portfolioID === o.id) || c.names.some((n) => myNames.has(n)); if (hit) matchedC.add(c); return hit; });
     let lp = null;
     for (const id of o.ids) { const x = payoutsByContact[id]; if (x && (!lp || x.date > lp.date)) lp = x; }
     const since = lp ? lp.date : '0000-00-00';
@@ -134,12 +171,21 @@ export function shapeOwners({ props, settle, bills, typical = {}, reserve = 0 },
         desc: (b.description || b.chargeAccountName || 'Bill') + (truthy(b.isPaid) ? ' (paid ' + toISO(b.datePosted) + ')' : ' (unpaid)'), billID: b.billID, vendor: b.contactName,
       }));
       const lt = leaseTags(leaseInfo[id], lp ? lp.date : '', todayISO);
+      const startISO = toISO(p.dateContractBegins) || toISO(p.dateTimeCreated);
+      const isNewProperty = !!startISO && dayDiff(todayISO, startISO) >= 0 && dayDiff(todayISO, startISO) <= NEW_DAYS;
+      if (isNewProperty) lt.tags.push({ key: 'new_property', text: 'New property ' + md(startISO) });
+      const li = leaseInfo[id];
+      const vacated = !!(li && /vacat/i.test(String(li.status || '')));
+      const inVacancy = Object.prototype.hasOwnProperty.call(vacantDays, id) && (!li || vacated || !rents[id]);
+      const vacant = vacated || inVacancy;
+      if (vacant) lt.tags.push({ key: 'vacant', text: vacated && !inVacancy ? 'Tenant vacated' : 'Vacant' + (vacantDays[id] ? ' ' + vacantDays[id] + ' days' : '') });
+      if (plan.known && plan.fee === 0 && /^\s*0\b/.test(String(p.managementFeeSettingName || ''))) lt.tags.push({ key: 'no_fee', text: 'No management fee' });
       const billHistory = markDuplicates((billsBy[id] || []).map((b) => ({
         billID: b.billID, date: toISO(b.datePosted), accountID: num(b.chargeAccountID), account: b.chargeAccountName || '', vendor: b.contactName || '', desc: b.description || '',
         amount: num(b.amount), unpaid: truthy(b.isPaid) ? 0 : num(b.amountUnpaid || b.amount), paid: truthy(b.isPaid), counted: counted.includes(b), dup: false,
       })).sort((x, y) => (y.date > x.date ? 1 : y.date < x.date ? -1 : 0)));
       return {
-        tags: lt.tags, moveOutSoon: lt.moveOutSoon, lease: leaseInfo[id] || null, billHistory,
+        tags: lt.tags, isNewProperty, moveOutSoon: lt.moveOutSoon, vacant, vacantDays: vacantDays[id] ?? null, lease: leaseInfo[id] || null, billHistory,
         propertyID: id, address: [p.propertyAddress, p.propertyCity].filter(Boolean).join(', '),
         rent, fee, feeKnown: feeBills.length ? true : plan.known, feePlan: (p.managementFeeSettingName || '') + (feeBills.length ? ' (posted)' : ' (expected)'),
         settledIn: inn, bills: expense,
@@ -148,8 +194,9 @@ export function shapeOwners({ props, settle, bills, typical = {}, reserve = 0 },
         billExpected: expectedBill.has(id),
       };
     });
-    owners.push({ ownerID: o.id, name: o.name, properties, lastPayout: lp ? lp.amount : null, lastPayoutDate: lp ? lp.date : null, reserve });
+    owners.push({ ownerID: o.id, name: o.name, newOwner: properties.length > 0 && properties.every((x) => x.isNewProperty), properties, lastPayout: lp ? lp.amount : null, lastPayoutDate: lp ? lp.date : null, reserve, contributions: mine.map(({ date, amount, desc, type }) => ({ date, amount, desc, type })) });
   }
+  owners.unmatchedContributions = contribs.filter((c) => !matchedC.has(c)).map(({ date, amount, desc, type }) => ({ date, amount, desc, type }));
   return owners;
 }
 
@@ -228,7 +275,9 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       const out = {
         asOf: new Date().toISOString(), scope: 'Rental Trust (bank account ' + TRUST_BANK_ACCOUNT_ID + ')', reserve,
         decisionsSaved: !!decisions.persistent, flagText: FLAG_TEXT,
-        counts: { properties: raw.props.length, payments: raw.settle.length, bills: raw.bills.length, rents: Object.keys(rents).length },
+        counts: { properties: raw.props.length, payments: raw.settle.length, payouts: raw.checks.length, bills: raw.bills.length, rents: Object.keys(rents).length, vacant: raw.vacancy.length, contributions: raw.contribRows.length },
+        windows: { payoutDays: PAYOUT_DAYS, billDays: BILL_DAYS, contributionDays: CONTRIB_DAYS },
+        unmatchedContributions: owners.unmatchedContributions || [],
         owners: portfolio(owners, {}), decisions: await decisions.get(),
       };
       cache = { at: Date.now(), v: out };

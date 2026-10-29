@@ -35,7 +35,7 @@ export function propertyRow(p) {
     unpaidBills: dollars(billsC), bills,
     recurring: p.recurring || [], recurringTotal: dollars(recC),
     billExpected: !!p.billExpected,
-    billHistory: p.billHistory || [], lease: p.lease || null, tags: p.tags || [], moveOutSoon: !!p.moveOutSoon,
+    billHistory: p.billHistory || [], lease: p.lease || null, tags: p.tags || [], moveOutSoon: !!p.moveOutSoon, vacant: !!p.vacant, vacantDays: p.vacantDays ?? null,
     // settled money less the fee and the expenses for this property
     net: dollars(settled - fee - billsC - recC),
   };
@@ -58,6 +58,9 @@ export function ownerRow(o, opts = {}) {
   }
   if (rows.some((r) => r.billExpected)) flags.push('bill_expected');
   if (rows.some((r) => r.moveOutSoon)) flags.push('move_out_soon');
+  if (rows.some((r) => r.vacant)) flags.push('vacant');
+  if (o.newOwner) flags.push('new_owner');
+  if ((o.contributions || []).length) flags.push('owner_contribution');
   if (rows.some((r) => (r.recurring || []).some((x) => !x.amount))) flags.push('recurring_unknown');
   const needsLook = flags.some((f) => f !== 'bill_expected' || true) && flags.length > 0;
   return {
@@ -65,8 +68,8 @@ export function ownerRow(o, opts = {}) {
     settledIn: dollars(sum('settledIn')), fees: dollars(sum('fee')),
     unpaidBills: dollars(sum('unpaidBills')), recurringTotal: dollars(sum('recurringTotal')),
     reserve: dollars(reserve), expected: dollars(expected), amountToPay: dollars(amountToPay),
-    lastPayout: last == null ? null : dollars(last), lastPayoutDate: o.lastPayoutDate || null, neverPaid: last == null,
-    tagCounts: Object.fromEntries(['new_move_in', 'move_out_30', 'move_out_month', 'move_out_next'].map((k) => [k, rows.filter((r) => (r.tags || []).some((t) => t.key === k)).length])),
+    lastPayout: last == null ? null : dollars(last), lastPayoutDate: o.lastPayoutDate || null, neverPaid: last == null, newOwner: !!o.newOwner, contributions: o.contributions || [], contribTotal: dollars((o.contributions || []).reduce((t, c) => t + cents(c.amount), 0)),
+    tagCounts: Object.fromEntries(['new_move_in', 'move_out_30', 'move_out_month', 'move_out_next', 'vacant', 'no_fee', 'new_property'].map((k) => [k, rows.filter((r) => (r.tags || []).some((t) => t.key === k)).length])),
     flags, status: flags.length ? 'Needs a look' : 'Looks fine', needsLook,
   };
 }
@@ -83,5 +86,8 @@ export const FLAG_TEXT = {
   lower_than_last: 'Lower than last payout',
   bill_expected: 'Open work order, bill expected',
   move_out_soon: 'Tenant moving out within 30 days - consider holding funds',
+  new_owner: 'New owner (all homes started in the last 60 days) - check onboarding fees and contributions before paying',
+  vacant: 'A home is vacant - no rent is coming in, check before paying out',
+  owner_contribution: 'Owner contributed money in the last 30 days - make sure it is not sent back',
   recurring_unknown: 'Recurring bill has no typical amount yet',
 };
