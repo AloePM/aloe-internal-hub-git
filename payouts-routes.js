@@ -177,6 +177,53 @@ export function feeCheck(move, { feeBills = [], breakRows = [], brokenLeases = [
 }
 
 
+// ---- Prorated management fee ----
+// A move-in on or after the 15th gets half the monthly fee; a move-out on or after the 20th gets half; otherwise the full fee.
+// Compares what should be billed for that month with the management fee bill (account 93) actually posted for it.
+export const PRORATE_MOVE_IN_DAY = 15, PRORATE_MOVE_OUT_DAY = 20;
+const mkey = (iso) => String(iso).slice(0, 7);
+const mlabel = (k) => Number(k.slice(5, 7)) + '/' + k.slice(0, 4);
+const prevMonthKey = (iso) => { let y = Number(iso.slice(0, 4)), m = Number(iso.slice(5, 7)) - 1; if (m < 1) { m = 12; y--; } return y + '-' + String(m).padStart(2, '0'); };
+const nextMonthK = (iso) => { let y = Number(iso.slice(0, 4)), m = Number(iso.slice(5, 7)) + 1; if (m > 12) { m = 1; y++; } return y + '-' + String(m).padStart(2, '0'); };
+const mdd = (iso) => Number(iso.slice(5, 7)) + '/' + Number(iso.slice(8, 10));
+const usd = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// feeBills: [{ date, amount, desc }] management fee bills (account 93), not voided. A bill belongs to the month in its description ("for 10/2026"), else its posted month.
+export function prorateFeeCheck({ planFee = 0, planKnown = false, moveIns = [], moveOuts = [], feeBills = [] } = {}, todayISO = today()) {
+  const out = [];
+  if (!planKnown || !(planFee > 0)) return out;
+  const half = Math.round(planFee * 50) / 100;
+  const ev = {};
+  for (const d of moveIns) if (d) (ev[mkey(d)] ||= {}).in = d;
+  for (const d of moveOuts) if (d) (ev[mkey(d)] ||= {}).out = d;
+  const lo = prevMonthKey(todayISO), cur = mkey(todayISO), hi = nextMonthK(todayISO);
+  const billedFor = (k) => {
+    let n = 0, sum = 0;
+    for (const b of feeBills) {
+      const m = String(b.desc || '').match(/(\d{1,2})\/(\d{4})/);
+      const bk = m ? m[2] + '-' + String(m[1]).padStart(2, '0') : mkey(toISO(b.date) || '0000-00');
+      if (bk === k) { n++; sum += num(b.amount); }
+    }
+    return { n, sum: Math.round(sum * 100) / 100 };
+  };
+  for (const k of Object.keys(ev).sort()) {
+    if (k < lo || k > hi) continue;
+    const e = ev[k], why = [];
+    if (e.in) why.push('move-in ' + mdd(e.in));
+    if (e.out) why.push('move-out ' + mdd(e.out));
+    if (e.in && e.out) { out.push({ key: 'fee_prorate', month: k, text: 'Move-in and move-out in the same month ' + mlabel(k) + ' (' + why.join(', ') + ') - check the management fee by hand' }); continue; }
+    const isHalf = e.in ? Number(e.in.slice(8, 10)) >= PRORATE_MOVE_IN_DAY : Number(e.out.slice(8, 10)) >= PRORATE_MOVE_OUT_DAY;
+    const expected = isHalf ? half : planFee;
+    const rule = e.in ? (isHalf ? 'on or after the ' + PRORATE_MOVE_IN_DAY + 'th' : 'before the ' + PRORATE_MOVE_IN_DAY + 'th') : (isHalf ? 'on or after the ' + PRORATE_MOVE_OUT_DAY + 'th' : 'before the ' + PRORATE_MOVE_OUT_DAY + 'th');
+    const b = billedFor(k);
+    if (b.n) {
+      if (Math.abs(b.sum - expected) > 0.5) out.push({ key: 'fee_prorate', month: k, expected, billed: b.sum, text: 'Management fee for ' + mlabel(k) + ' should be ' + (isHalf ? 'HALF ' : 'the full ') + usd(expected) + ' (' + why.join(', ') + ', ' + rule + ') - ' + usd(b.sum) + ' billed' });
+    } else if (isHalf) {
+      out.push({ key: k <= cur ? 'fee_prorate' : 'fee_prorate_due', month: k, expected, billed: 0, text: 'Half management fee ' + usd(expected) + ' expected for ' + mlabel(k) + ' (' + why.join(', ') + ', ' + rule + ')' + (k <= cur ? ' - no fee billed yet, bill it at half' : ' - bill it at half') });
+    }
+  }
+  return out;
+}
+
 // ---- Late rent (rent applied to a due balance after the LATE_AFTER_DAY of the month) ----
 export const LATE_AFTER_DAY = 12;
 // Only money paid toward these charges counts: Rent Income (10), Section 8 Rent (32), Pet Rent (39), HOA Violation Fine (150).
@@ -320,6 +367,9 @@ export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], c
       const feeChecks = (feeData.moves || []).filter((m) => String(m.propertyID) === id && !/^closed/i.test(String(m.leaseStatusName || '')) && toISO(m.moveInDate))
         .map((m) => feeCheck(m, { feeBills: feeData.feeBills || [], breakRows: feeData.breakRows || [], brokenLeases: feeData.brokenLeases || [], startISO }, todayISO)).filter((f) => f.key);
       for (const f of feeChecks) lt.tags.push({ key: f.key, text: f.text });
+      const pro = prorateFeeCheck({ planFee: plan.fee, planKnown: plan.known, moveIns: (feeData.moves || []).filter((m) => String(m.propertyID) === id && !/^closed/i.test(String(m.leaseStatusName || ''))).map((m) => toISO(m.moveInDate)), moveOuts: leaseInfo[id] && leaseInfo[id].moveOut ? [leaseInfo[id].moveOut] : [],
+        feeBills: (billsBy[id] || []).filter((b) => num(b.chargeAccountID) === MGMT_FEE_ACCOUNT_ID).map((b) => ({ date: toISO(b.datePosted), amount: num(b.amount), desc: b.description || '' })) }, todayISO);
+      for (const f of pro) lt.tags.push({ key: f.key, text: f.text });
       const lateRent = lateRentFor(id, lateData.rows || [], since, todayISO, { paidByLease: lateData.rows && lateData.paidByLease ? lateData.paidByLease : null, feesAfterByLease: lateData.rows && lateData.feesAfterByLease ? lateData.feesAfterByLease : null, moveInByLease });
       const md3 = (iso) => Number(iso.slice(5, 7)) + '/' + Number(iso.slice(8, 10));
       const mny = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });

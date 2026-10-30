@@ -55,7 +55,7 @@ tr.dup td{background:var(--amberbg)}tr.old td{color:var(--mute)}
       <option value="all">Tenants: any</option><option value="new_move_in">New move-in</option><option value="move_out_30">Moving out within 30 days</option><option value="move_out_month">Moving out this month</option><option value="move_out_next">Moving out next month</option>
     </select>
     <select id="selAlert" title="Alerts">
-      <option value="all">Alerts: any</option><option value="vacant">Vacant home</option><option value="contrib">Owner contribution (30 days)</option><option value="new_owner">New owner (60 days)</option><option value="new_property">New property (60 days)</option><option value="no_fee">No management fee</option><option value="fee_missing">Placement fee NOT billed</option><option value="fee_check">Placement fee - check amount</option><option value="late_pending">Late rent pending (not cleared)</option><option value="fee_skip">Do not charge placement fee (lease break)</option>
+      <option value="all">Alerts: any</option><option value="vacant">Vacant home</option><option value="contrib">Owner contribution (30 days)</option><option value="new_owner">New owner (60 days)</option><option value="new_property">New property (60 days)</option><option value="no_fee">No management fee</option><option value="fee_missing">Placement fee NOT billed</option><option value="fee_check">Placement fee - check amount</option><option value="late_pending">Late rent pending (not cleared)</option><option value="fee_prorate">Management fee - prorate / check</option><option value="fee_skip">Do not charge placement fee (lease break)</option>
     </select>
     <button id="refresh">Refresh</button>
   </div>
@@ -65,7 +65,7 @@ tr.dup td{background:var(--amberbg)}tr.old td{color:var(--mute)}
       <div><b>*</b> = new owner or new home (started in the last 60 days). Give extra attention and pay as soon as funds clear.</div>
       <div><b>1ST PAYOUT *</b> new owner or home with no payout yet &nbsp;&middot;&nbsp; <b>NO PAYOUT 3 MO</b> established owner with no payout in 3 months</div>
       <div><b>PAY NOW</b> late rent has cleared since the last payout &nbsp;&middot;&nbsp; <b>LATE RENT PENDING</b> late rent received, not cleared yet &nbsp;&middot;&nbsp; <b>MOVE-IN FUNDS CLEARED</b> move-in money settled (not late rent)</div>
-      <div><b>FEE NOT BILLED</b> placement fee missing on a new move-in &nbsp;&middot;&nbsp; <b>FEE CHECK</b> amount needs a person &nbsp;&middot;&nbsp; <b>NO FEE (LEASE BREAK)</b> do not charge</div>
+      <div><b>FEE PRORATE</b> management fee should be half (move-in on or after the 15th, move-out on or after the 20th) or does not match the bill &nbsp;&middot;&nbsp; <b>HALF FEE NEXT MO</b> a move next month will need a half fee &nbsp;&middot;&nbsp; <b>FEE NOT BILLED</b> placement fee missing on a new move-in &nbsp;&middot;&nbsp; <b>FEE CHECK</b> amount needs a person &nbsp;&middot;&nbsp; <b>NO FEE (LEASE BREAK)</b> do not charge</div>
       <div><b>VACANT</b> no rent coming in &nbsp;&middot;&nbsp; <b>CONTRIBUTION</b> owner added money in 30 days, do not send back &nbsp;&middot;&nbsp; <b>MOVE-OUT 30D</b> tenant leaving soon, consider holding funds &nbsp;&middot;&nbsp; <b>NEW MOVE-IN</b> lease started recently &nbsp;&middot;&nbsp; <b>+N</b> more tags (hover)</div>
     </div></details>
   <div class="note" id="unm" hidden></div>
@@ -122,6 +122,7 @@ function ownerItems(o) {
   if ((o.contributions || []).length) add('red', 'CONTRIBUTION ' + money(o.contribTotal), 'Owner contributed money in the last 30 days - do not send it back');
   if (c.vacant) add('red', 'VACANT' + x(c.vacant), 'A home is vacant - no rent coming in');
   if (c.fee_check) add('amber', 'FEE CHECK' + x(c.fee_check), 'Placement fee amount needs a person to look');
+  if (c.fee_prorate) add('amber', 'FEE PRORATE' + x(c.fee_prorate), 'Management fee should be prorated (half fee) or does not match what was billed - check the fee bill');
   if (c.late_pending) add('amber', 'LATE RENT PENDING' + x(c.late_pending), 'Late rent received but not cleared yet');
   if (c.move_out_30) add('amber', 'MOVE-OUT 30D' + x(c.move_out_30), 'Tenant moving out within 30 days - consider holding funds');
   if (c.late_cleared) add('teal', 'PAY NOW' + x(c.late_cleared), 'Late rent has cleared since the last payout');
@@ -131,6 +132,7 @@ function ownerItems(o) {
   if (c.movein_cleared) add('teal', 'MOVE-IN FUNDS CLEARED', 'Move-in funds have settled');
   if (c.new_move_in) add('gray', 'NEW MOVE-IN' + x(c.new_move_in));
   if (o.neverPaid && !isNewish(o)) add('gray', 'NO PAYOUT 3 MO', 'No owner payout in the last 3 months');
+  if (c.fee_prorate_due) add('gray', 'HALF FEE NEXT MO' + x(c.fee_prorate_due), 'A move next month means a half management fee when it is billed');
   if (c.fee_skip) add('gray', 'NO FEE (LEASE BREAK)', 'Do not charge placement fee - prior tenant broke the lease');
   return it; // move-out this/next month, no mgmt fee and "fee to bill" are shown inside the owner only
 }
@@ -168,7 +170,7 @@ function render() {
     if (alertSel === 'new_owner' && !o.newOwner) return false;
     if (alertSel === 'new_property' && !((o.tagCounts || {}).new_property > 0)) return false;
     if (alertSel === 'no_fee' && !((o.tagCounts || {}).no_fee > 0)) return false;
-    if (['fee_missing', 'fee_check', 'fee_skip', 'late_pending'].includes(alertSel) && !((o.tagCounts || {})[alertSel] > 0)) return false;
+    if (['fee_missing', 'fee_check', 'fee_skip', 'late_pending', 'fee_prorate'].includes(alertSel) && !((o.tagCounts || {})[alertSel] > 0)) return false;
     if (!q) return true;
     return o.name.toLowerCase().includes(q) || o.properties.some((p) => p.address.toLowerCase().includes(q));
   });
@@ -197,7 +199,7 @@ function feeTable(p) {
     (x.billed.length ? x.billed.map((b) => esc(mdy(b.date)) + ' ' + money(b.amount)).join(', ') + (x.startupCredit ? ' <span class="muted tiny">(includes an earlier partial fee billed within 90 days before move-in)</span>' : '') : '<span class="muted">none</span>') + '</td><td class="l">' + esc(x.text) + '</td></tr>').join('') + '</tbody></table>';
 }
 function propTags(p) {
-  return (p.tags || []).map((t) => '<span class="pill tag ' + (t.key === 'new_move_in' || t.key === 'new_property' || t.key === 'late_cleared' || t.key === 'movein_cleared' ? 'in' : t.key === 'move_out_30' || t.key === 'vacant' || t.key === 'fee_missing' || t.key === 'fee_check' ? 'out' : '') + '">' + esc(t.text) + '</span>').join('');
+  return (p.tags || []).map((t) => '<span class="pill tag ' + (t.key === 'new_move_in' || t.key === 'new_property' || t.key === 'late_cleared' || t.key === 'movein_cleared' ? 'in' : t.key === 'move_out_30' || t.key === 'vacant' || t.key === 'fee_missing' || t.key === 'fee_check' || t.key === 'fee_prorate' ? 'out' : '') + '">' + esc(t.text) + '</span>').join('');
 }
 function detail(o, d) {
   const flags = o.flags.map((f) => '<li class="' + (f === 'below_zero' ? 'neg' : 'mark') + '">&bull; ' + esc(data.flagText[f] || f) + '</li>').join('');

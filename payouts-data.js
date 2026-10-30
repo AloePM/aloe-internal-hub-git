@@ -63,6 +63,7 @@ export function ownerRow(o, opts = {}) {
   if ((o.contributions || []).length) flags.push('owner_contribution');
   if (rows.some((r) => (r.tags || []).some((t) => t.key === 'late_cleared'))) flags.push('late_rent_ready');
   if (rows.some((r) => (r.tags || []).some((t) => t.key === 'fee_missing' || t.key === 'fee_check'))) flags.push('placement_fee');
+  if (rows.some((r) => (r.tags || []).some((t) => t.key === 'fee_prorate'))) flags.push('fee_prorate');
   if (rows.some((r) => (r.recurring || []).some((x) => !x.amount))) flags.push('recurring_unknown');
   const needsLook = flags.some((f) => f !== 'bill_expected' || true) && flags.length > 0;
   return {
@@ -71,7 +72,7 @@ export function ownerRow(o, opts = {}) {
     unpaidBills: dollars(sum('unpaidBills')), recurringTotal: dollars(sum('recurringTotal')),
     reserve: dollars(reserve), expected: dollars(expected), amountToPay: dollars(amountToPay),
     lastPayout: last == null ? null : dollars(last), lastPayoutDate: o.lastPayoutDate || null, neverPaid: last == null, newOwner: !!o.newOwner, contributions: o.contributions || [], contribTotal: dollars((o.contributions || []).reduce((t, c) => t + cents(c.amount), 0)),
-    tagCounts: Object.fromEntries(['new_move_in', 'move_out_30', 'move_out_month', 'move_out_next', 'vacant', 'no_fee', 'new_property', 'fee_missing', 'fee_check', 'fee_ok', 'fee_due', 'fee_skip', 'late_cleared', 'late_pending', 'movein_cleared', 'movein_pending'].map((k) => [k, rows.filter((r) => (r.tags || []).some((t) => t.key === k)).length])),
+    tagCounts: Object.fromEntries(['new_move_in', 'move_out_30', 'move_out_month', 'move_out_next', 'vacant', 'no_fee', 'new_property', 'fee_missing', 'fee_check', 'fee_ok', 'fee_due', 'fee_skip', 'late_cleared', 'late_pending', 'movein_cleared', 'movein_pending', 'fee_prorate', 'fee_prorate_due'].map((k) => [k, rows.filter((r) => (r.tags || []).some((t) => t.key === k)).length])),
     flags, status: flags.length ? 'Needs a look' : 'Looks fine', needsLook,
   };
 }
@@ -91,6 +92,7 @@ export const FLAG_TEXT = {
   new_owner: 'New owner (all homes started in the last 60 days) - check onboarding fees and contributions before paying',
   vacant: 'A home is vacant - no rent is coming in, check before paying out',
   placement_fee: 'A new move-in has no placement fee billed, or the amount needs a person to look - check Commissions/Placement Fees',
+  fee_prorate: 'Management fee does not match the prorated rule (half fee for a move-in on or after the 15th or a move-out on or after the 20th) - check the fee bill',
   late_rent_ready: 'Late rent has cleared since the last payout - this owner can be paid now',
   owner_contribution: 'Owner contributed money in the last 30 days - make sure it is not sent back',
   recurring_unknown: 'Recurring bill has no typical amount yet',
