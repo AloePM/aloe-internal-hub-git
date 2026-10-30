@@ -94,10 +94,11 @@ export async function loadPayoutData(rvFetch, { sinceDays = BILL_DAYS, payoutDay
   // vacant homes (Vacancy report) and owner contributions (Owner Payments report, offset account 3150) - both small
   const vacancy = await allPages(rvFetch, 'vacancy', { displayColumns: ['propertyID', 'propertyAddress', 'daysVacant'], filters: [] }, { fields: ['propertyID', 'propertyAddress', 'daysVacant'], max: 10 }); lap('vacancy ' + vacancy.length);
   const contribRows = await allPages(rvFetch, 'owner-payments', { displayColumns: OWNERPAY_COLS, filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: daysAgo(CONTRIB_DAYS), endDate: to }] }, { fields: OWNERPAY_COLS, max: 10 }); lap('contributions ' + contribRows.length);
+  const late = await loadLateRent(rvFetch, to); lap('late rent ' + late.rows.length);
   const fee = await loadFeeData(rvFetch, to); lap('fee check ' + fee.moves.length + ' move-ins, ' + fee.feeBills.length + ' fee bills');
   // active filter is done here, not in the report call (server-side filters are unreliable); a missing isActive field counts as active
   const active = props.filter((p) => p.isActive === undefined || p.isActive === '' || truthy(p.isActive));
-  return { props: active, settle, checks, bills, vacancy, contribRows, fee, from, to, typical, reserve };
+  return { props: active, settle, checks, bills, vacancy, contribRows, fee, late, from, to, typical, reserve };
 }
 
 
@@ -175,6 +176,38 @@ export function feeCheck(move, { feeBills = [], breakRows = [], brokenLeases = [
   return { ...base, status: 'missing', key: 'fee_missing', text: 'PLACEMENT FEE NOT BILLED: expect ' + money(plan.fee) + ' (move-in ' + md2 + ')' };
 }
 
+
+// ---- Late rent (rent applied to a due balance after the LATE_AFTER_DAY of the month) ----
+export const LATE_AFTER_DAY = 12;
+const LATE_COLS = ['datePosted', 'propertyID', 'leaseID', 'amount', 'amountAllocated', 'isDepositedSettled', 'settlementDate', 'isVoided', 'isReturned'];
+// Tenant Receipts report: payments posted from the 13th of this month. Small, loaded after the other reports. A failure never stops the page.
+export async function loadLateRent(rvFetch, todayISO = today()) {
+  const out = { rows: [], error: '' };
+  const from = todayISO.slice(0, 7) + '-' + String(LATE_AFTER_DAY + 1).padStart(2, '0');
+  if (todayISO < from) return out;
+  try {
+    out.rows = await allPages(rvFetch, 'lease-payments', { displayColumns: LATE_COLS, filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: from, endDate: todayISO }] }, { fields: LATE_COLS, max: 10 });
+  } catch (e) { console.error('late rent load', e); out.error = String(e.message || e); }
+  return out;
+}
+
+// Late rent for one property. Only the part applied to a charge counts (prepaid / unallocated money is ignored), voided and returned payments are ignored.
+// cleared = settled after the owner's last payout (ready to pay); pending = received but not cleared yet.
+export function lateRentFor(propertyID, rowsIn, since, todayISO = today()) {
+  const out = { cleared: 0, pending: 0, clearedRows: [], pendingRows: [] };
+  for (const r of rowsIn || []) {
+    if (String(r.propertyID) !== String(propertyID) || truthy(r.isVoided) || truthy(r.isReturned)) continue;
+    const posted = toISO(r.datePosted); if (!posted || posted.slice(8, 10) <= String(LATE_AFTER_DAY).padStart(2, '0') && posted.slice(0, 7) === todayISO.slice(0, 7)) continue;
+    const amt = num(r.amountAllocated); if (amt <= 0) continue;
+    if (truthy(r.isDepositedSettled)) {
+      const settled = toISO(r.settlementDate) || posted;
+      if (settled > since) { out.cleared += amt; out.clearedRows.push({ posted, settled, amount: amt }); }
+    } else { out.pending += amt; out.pendingRows.push({ posted, amount: amt }); }
+  }
+  out.cleared = Math.round(out.cleared * 100) / 100; out.pending = Math.round(out.pending * 100) / 100;
+  return out;
+}
+
 // Owner contributions: credits to account 3150 in the last 30 days, not voided. Owner is found from the portfolio id or the ledger / portfolio name.
 const normName = (v) => String(v && typeof v === 'object' ? (v.name || v.label || '') : (v ?? '')).toLowerCase().replace(/[^a-z0-9]/g, '');
 export function parseContributions(rowsIn, todayISO = today()) {
@@ -193,7 +226,7 @@ export function parseContributions(rowsIn, todayISO = today()) {
 
 // Turn raw report rows into the owner list the math module expects. `rents` = { propertyID: monthlyRent }.
 // Owners are grouped by PORTFOLIO. A portfolio can have several owner contacts; a payout to any of them counts as that portfolio's payout.
-export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], contribRows = [], fee: feeData = {}, typical = {}, reserve = 0 }, rents = {}, expectedBill = new Set(), leaseInfo = {}, todayISO = today()) {
+export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], contribRows = [], fee: feeData = {}, late: lateData = {}, typical = {}, reserve = 0 }, rents = {}, expectedBill = new Set(), leaseInfo = {}, todayISO = today()) {
   const trust = settle.filter((r) => r.bankAccountID === undefined || num(r.bankAccountID) === TRUST_BANK_ACCOUNT_ID);
   const payoutsByContact = {};
   for (const r of trust) {
@@ -253,6 +286,11 @@ export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], c
       const feeChecks = (feeData.moves || []).filter((m) => String(m.propertyID) === id && !/^closed/i.test(String(m.leaseStatusName || '')) && toISO(m.moveInDate))
         .map((m) => feeCheck(m, { feeBills: feeData.feeBills || [], breakRows: feeData.breakRows || [], brokenLeases: feeData.brokenLeases || [], startISO }, todayISO)).filter((f) => f.key);
       for (const f of feeChecks) lt.tags.push({ key: f.key, text: f.text });
+      const lateRent = lateRentFor(id, lateData.rows || [], since, todayISO);
+      const md3 = (iso) => Number(iso.slice(5, 7)) + '/' + Number(iso.slice(8, 10));
+      const mny = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
+      if (lateRent.cleared > 0) lt.tags.push({ key: 'late_cleared', text: 'Late rent CLEARED ' + mny(lateRent.cleared) + ' (settled ' + md3(lateRent.clearedRows.map((x) => x.settled).sort().pop()) + ') - ready to pay' });
+      if (lateRent.pending > 0) lt.tags.push({ key: 'late_pending', text: 'Late rent pending ' + mny(lateRent.pending) + ' (paid ' + md3(lateRent.pendingRows.map((x) => x.posted).sort().pop()) + ', not cleared yet)' });
       const li = leaseInfo[id];
       const vacated = !!(li && /vacat/i.test(String(li.status || '')));
       const inVacancy = Object.prototype.hasOwnProperty.call(vacantDays, id) && (!li || vacated || !rents[id]);
@@ -264,7 +302,7 @@ export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], c
         amount: num(b.amount), unpaid: truthy(b.isPaid) ? 0 : num(b.amountUnpaid || b.amount), paid: truthy(b.isPaid), counted: counted.includes(b), dup: false,
       })).sort((x, y) => (y.date > x.date ? 1 : y.date < x.date ? -1 : 0)));
       return {
-        tags: lt.tags, feeChecks, isNewProperty, moveOutSoon: lt.moveOutSoon, vacant, vacantDays: vacantDays[id] ?? null, lease: leaseInfo[id] || null, billHistory,
+        tags: lt.tags, feeChecks, lateRent, isNewProperty, moveOutSoon: lt.moveOutSoon, vacant, vacantDays: vacantDays[id] ?? null, lease: leaseInfo[id] || null, billHistory,
         propertyID: id, address: [p.propertyAddress, p.propertyCity].filter(Boolean).join(', '),
         rent, fee, feeKnown: feeBills.length ? true : plan.known, feePlan: (p.managementFeeSettingName || '') + (feeBills.length ? ' (posted)' : ' (expected)'),
         settledIn: inn, bills: expense,
@@ -354,8 +392,8 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       const out = {
         asOf: new Date().toISOString(), scope: 'Rental Trust (bank account ' + TRUST_BANK_ACCOUNT_ID + ')', reserve,
         decisionsSaved: !!decisions.persistent, flagText: FLAG_TEXT,
-        counts: { properties: raw.props.length, payments: raw.settle.length, payouts: raw.checks.length, bills: raw.bills.length, rents: Object.keys(rents).length, vacant: raw.vacancy.length, contributions: raw.contribRows.length, moveIns: (raw.fee.moves || []).length, feeBills: (raw.fee.feeBills || []).length },
-        feeCheckError: raw.fee.error || '',
+        counts: { properties: raw.props.length, payments: raw.settle.length, payouts: raw.checks.length, bills: raw.bills.length, rents: Object.keys(rents).length, vacant: raw.vacancy.length, contributions: raw.contribRows.length, moveIns: (raw.fee.moves || []).length, feeBills: (raw.fee.feeBills || []).length, latePayments: (raw.late.rows || []).length },
+        feeCheckError: raw.fee.error || '', lateRentError: raw.late.error || '',
         windows: { payoutDays: PAYOUT_DAYS, billDays: BILL_DAYS, contributionDays: CONTRIB_DAYS },
         unmatchedContributions: owners.unmatchedContributions || [],
         owners: portfolio(owners, {}), decisions: await decisions.get(),
