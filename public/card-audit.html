@@ -6,108 +6,109 @@
 <title>Aloe PM · Card audit</title>
 <style>
   :root { --teal:#3CC3E1; --teal-d:#1f8fa8; --ink:#0f2a33; --muted:#5b6b70; --line:#e2e8ea; --bg:#F8FAFC;
-          --g:#16a34a; --g-bg:#e8f7ee; --o:#d97706; --o-bg:#fff4e0; --r:#dc2626; --r-bg:#fdecec; --n:#8a979b; --n-bg:#f1f4f5; }
+          --g:#16a34a; --g-bg:#e8f7ee; --o:#d97706; --o-bg:#fff4e0; --r:#dc2626; --r-bg:#fdecec; --n:#8a979b; --n-bg:#f1f4f5; --s-bg:#fff1c2; --s:#7a5300; }
   * { box-sizing: border-box; }
   body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--ink); font-size:14px; }
-  .wrap { max-width:1280px; margin:0 auto; padding:22px 20px 60px; }
-  header { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:16px; }
-  h1 { font-size:22px; margin:0; } .sub { color:var(--muted); margin-top:4px; }
-  .conn { display:flex; align-items:center; gap:10px; background:#fff; border:1px solid var(--line); border-radius:10px; padding:8px 12px; }
-  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex:none; }
+  .wrap { max-width:1100px; margin:0 auto; padding:22px 20px 60px; }
+  header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+  h1 { font-size:22px; margin:0; }
+  .conn { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px; }
+  .dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; }
   button, select, input { font:inherit; }
-  .btn { border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 12px; cursor:pointer; }
+  .btn { border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 11px; cursor:pointer; color:var(--ink); }
+  .btn:hover { border-color:#c5d0d3; }
   .btn.primary { background:var(--teal); border-color:var(--teal); color:#06303a; font-weight:600; }
-  .chips { display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 14px; }
-  .chip { display:flex; align-items:center; gap:8px; padding:8px 14px; border-radius:999px; border:1px solid var(--line); background:#fff; cursor:pointer; }
-  .chip b { font-size:16px; } .chip.on { outline:2px solid var(--teal); }
+  .btn.sm { padding:4px 9px; font-size:13px; }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:14px; }
+  .tab { padding:9px 14px; border:0; background:none; cursor:pointer; color:var(--muted); font-weight:600; border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tab.on { color:var(--ink); border-bottom-color:var(--teal); }
+  .tab .n { background:var(--r-bg); color:#991b1b; border-radius:999px; padding:1px 8px; font-size:12px; margin-left:6px; }
   .tools { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; align-items:center; }
-  .tools input[type=search] { flex:1; min-width:200px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; }
-  .tools select { padding:7px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; }
-  table { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
-  th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); background:#fbfcfd; padding:9px 10px; border-bottom:1px solid var(--line); cursor:pointer; user-select:none; white-space:nowrap; }
-  td { padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
-  tr:last-child td { border-bottom:0; }
-  tr.green td:first-child { box-shadow: inset 4px 0 var(--g); } tr.orange td:first-child { box-shadow: inset 4px 0 var(--o); }
-  tr.red td:first-child { box-shadow: inset 4px 0 var(--r); } tr.grey td:first-child { box-shadow: inset 4px 0 var(--n); }
-  .amt { text-align:right; font-variant-numeric: tabular-nums; white-space:nowrap; }
-  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
-  .pill.green { background:var(--g-bg); color:#166534; } .pill.orange { background:var(--o-bg); color:#92400e; }
-  .hint { font-size:12px; color:#0f5f73; background:#eaf8fc; border-radius:6px; padding:4px 6px; margin-top:4px; }
-  .pill.star, .chip.star { background:#fff1c2; color:#7a5300; border-color:#f2d27a; }
-  .pill.red { background:var(--r-bg); color:#991b1b; } .pill.grey { background:var(--n-bg); color:#4b5a5e; }
-  .why { color:var(--muted); font-size:13px; margin-top:3px; }
-  .bill { margin-bottom:4px; } .bill a { color:var(--teal-d); font-weight:600; text-decoration:none; } .bill a:hover { text-decoration:underline; }
-  .addr { color:var(--muted); font-size:12px; }
-  .gap { font-size:12px; font-weight:600; } .gap.up { color:#166534; } .gap.down { color:#991b1b; }
-  .mark select { padding:4px 6px; border:1px solid var(--line); border-radius:6px; background:#fff; max-width:150px; }
-  .mark input { margin-top:4px; width:150px; padding:4px 6px; border:1px solid var(--line); border-radius:6px; font-size:12px; }
-  .marked { font-size:12px; color:var(--muted); margin-top:3px; }
-  .note { background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:14px; }
+  .tools input[type=search] { flex:1; min-width:180px; padding:7px 10px; border:1px solid var(--line); border-radius:8px; }
+  .tools select, .tools input { padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  .note { background:#fff; border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:14px; }
   .note.warn { border-color:#f3c98b; background:#fffaf0; }
-  h2 { font-size:16px; margin:26px 0 8px; }
-  .scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:10px; }
-  .scroll table { min-width:900px; }
-  .empty { padding:30px; text-align:center; color:var(--muted); }
-  .key { display:flex; flex-wrap:wrap; gap:14px; color:var(--muted); font-size:12px; margin-top:10px; }
-  @media (max-width: 760px) { .hide-sm { display:none; } td, th { padding:8px 6px; } }
+  /* To do list */
+  .group { margin-bottom:18px; }
+  .group h3 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0 0 6px; display:flex; align-items:center; gap:8px; }
+  .item { background:#fff; border:1px solid var(--line); border-left:4px solid var(--r); border-radius:8px; padding:9px 12px; margin-bottom:6px; }
+  .item.orange { border-left-color:var(--o); } .item.star { border-left-color:#e0a800; }
+  .line { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .line .d { color:var(--muted); width:84px; flex:none; font-variant-numeric:tabular-nums; }
+  .line .m { font-weight:600; min-width:150px; flex:1 1 200px; }
+  .line .a { font-variant-numeric:tabular-nums; width:90px; text-align:right; flex:none; font-weight:600; }
+  .line .what { flex:2 1 260px; color:var(--ink); }
+  .line .acts { display:flex; gap:6px; flex:none; }
+  .more { display:none; margin:8px 0 2px 96px; color:var(--muted); font-size:13px; }
+  .open .more { display:block; }
+  .more div { margin-bottom:4px; }
+  .link { color:var(--teal-d); font-weight:600; text-decoration:none; } .link:hover { text-decoration:underline; }
+  .tog { background:none; border:0; color:var(--muted); cursor:pointer; padding:2px 4px; font-size:13px; }
+  .empty { padding:28px; text-align:center; color:var(--muted); background:#fff; border:1px dashed var(--line); border-radius:10px; }
+  /* All charges table */
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { display:flex; align-items:center; gap:6px; padding:5px 11px; border-radius:999px; border:1px solid var(--line); background:#fff; cursor:pointer; font-size:13px; }
+  .chip.on { outline:2px solid var(--teal); }
+  .scroll { overflow-x:auto; border-radius:10px; }
+  table { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border:1px solid var(--line); border-radius:10px; min-width:640px; }
+  th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); background:#fbfcfd; padding:8px 10px; border-bottom:1px solid var(--line); cursor:pointer; user-select:none; white-space:nowrap; }
+  td { padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  tr.row { cursor:pointer; } tr.row:hover td { background:#fafcfd; }
+  tr.detail td { background:#fbfcfd; color:var(--muted); font-size:13px; padding:10px 14px 12px; }
+  .amt { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; white-space:nowrap; }
+  .pill.green { background:var(--g-bg); color:#166534; } .pill.orange { background:var(--o-bg); color:#92400e; }
+  .pill.red { background:var(--r-bg); color:#991b1b; } .pill.grey { background:var(--n-bg); color:#4b5a5e; } .pill.star { background:var(--s-bg); color:var(--s); }
+  .markbox { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:6px; }
+  .markbox select, .markbox input { padding:4px 6px; border:1px solid var(--line); border-radius:6px; background:#fff; font-size:13px; }
+  .markbox input { width:220px; }
+  @media (max-width: 700px) { .line .d { width:auto; } .more { margin-left:0; } .line .a { width:auto; } }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div>
-      <h1>Card audit</h1>
-      <div class="sub">Chase card charges checked against Rentvine reimbursement bills (Reimbursements and Aloe PM-Vendor).</div>
-    </div>
-    <div class="conn" id="conn"><span class="dot" style="background:var(--n)"></span><span>Checking Chase connection…</span></div>
+    <h1>Card audit</h1>
+    <div class="conn" id="conn"><span class="dot" style="background:var(--n)"></span><span>Checking Chase…</span></div>
   </header>
-
   <div id="setup"></div>
 
-  <div class="chips" id="chips"></div>
+  <div class="tabs">
+    <button class="tab on" data-t="todo">To do<span class="n" id="todoN">0</span></button>
+    <button class="tab" data-t="all">All charges</button>
+  </div>
+
   <div class="tools">
-    <input type="search" id="q" placeholder="Search merchant, address, bill ID, amount…">
-    <select id="days" title="How far back">
-      <option value="60">Last 60 days</option><option value="120" selected>Last 120 days</option><option value="365">Last 12 months</option>
-    </select>
-    <input id="me" placeholder="Your name (for notes)" style="width:170px;padding:7px 10px;border:1px solid var(--line);border-radius:8px">
+    <input type="search" id="q" placeholder="Search merchant, home, bill #, amount…">
+    <select id="days" title="How far back"><option value="60">Last 60 days</option><option value="120" selected>Last 120 days</option><option value="365">Last 12 months</option></select>
+    <input id="me" placeholder="Your name" style="width:130px">
     <button class="btn" id="reload">Refresh</button>
-    <button class="btn" id="logout" title="Sign out of the accounting pages">Sign out</button>
+    <button class="btn" id="logout">Sign out</button>
   </div>
 
-  <div class="scroll"><table>
-    <thead><tr>
-      <th data-k="date">Date</th><th data-k="description">Charge</th><th class="hide-sm" data-k="card">Card</th>
-      <th class="amt" data-k="amount">Amount</th><th data-k="color">Status</th><th>Rentvine bill</th><th>Mark</th>
-    </tr></thead>
-    <tbody id="rows"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
-  </table></div>
-  <div class="key">
-    <span><span class="dot" style="background:var(--g)"></span> Matched — exact, several bills that add up, or bill up to $300 higher (markup or labor)</span>
-    <span><span class="dot" style="background:var(--o)"></span> Check — bill lower, more than $300 higher, unclear, or billed over 30 days late</span>
-    <span><span class="dot" style="background:var(--r)"></span> Needs attention — no bill after 7 days, or a possible double bill</span>
-    <span><span class="dot" style="background:var(--n)"></span> Other — pending, refunded, new, or marked by someone</span>
-    <span>★ Change to reimbursement? — the bill is payable to the vendor, not Reimbursements</span>
+  <div id="todo"></div>
+  <div id="all" style="display:none">
+    <div class="chips" id="chips" style="margin-bottom:10px"></div>
+    <div class="scroll"><table>
+      <thead><tr><th data-k="date">Date</th><th data-k="description">Charge</th><th class="amt" data-k="amount">Amount</th><th data-k="color">Status</th><th>Rentvine bill</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+    </table></div>
   </div>
-
-  <h2>Bills to double-check</h2>
-  <div class="sub" style="margin-bottom:8px">Two bills on the same home with the same amount or the same reference within 30 days.</div>
-  <div class="scroll"><table><thead><tr><th>Home</th><th>Why</th><th>Bill A</th><th>Bill B</th></tr></thead><tbody id="alerts"><tr><td colspan="4" class="empty">—</td></tr></tbody></table></div>
 </div>
 
 <script>
 (function () {
   var RV = 'https://aloepm.rentvine.com/accounting/payables/bills/';
   var LABEL = { green: 'Matched', orange: 'Check', red: 'Needs attention', grey: 'Other' };
-  var MARKS = { '': 'No mark', billing: 'Being billed now', reimbursed: 'Reimbursed another way', company: 'Company cost (not billed)', ignore: 'Ignore' };
-  var state = { data: null, show: { red: true, orange: true, green: false, grey: false }, sort: { k: 'date', dir: -1 } };
+  var MARKS = { '': 'No mark', billing: 'Being billed', reimbursed: 'Reimbursed another way', company: 'Company cost', ignore: 'Ignore' };
+  var state = { data: null, tab: 'todo', show: { red: true, orange: true, green: true, grey: false }, sort: { k: 'date', dir: -1 }, open: {} };
   var $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
   var fmt = function (c) { var n = Math.abs(c) / 100; return (c < 0 ? '-' : '') + '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
   var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  var shortDate = function (d) { var p = String(d).split('-'); return p.length === 3 ? +p[1] + '/' + +p[2] + '/' + p[0].slice(2) : d; };
   $('me').value = store.get('cardAuditName') || '';
   $('me').addEventListener('change', function () { store.set('cardAuditName', $('me').value.trim()); });
-  try { var saved = JSON.parse(store.get('cardAuditShow') || 'null'); if (saved) state.show = saved; } catch (e) {}
 
   function api(path, opts) {
     return fetch(path, opts).then(function (r) {
@@ -116,121 +117,143 @@
     });
   }
 
+  // ── Chase connection ──
   function loadStatus() {
     return api('/api/card-audit/status').then(function (s) {
       var c = $('conn'), set = $('setup');
-      if (!s.keys) {
-        c.innerHTML = '<span class="dot" style="background:var(--o)"></span><span>Plaid keys not set up</span>';
-        set.innerHTML = '<div class="note warn"><b>Plaid keys are not set up yet.</b> They go in Google Secret Manager as <code>plaid-client-id</code> and <code>plaid-secret</code>. Once they are there, a <b>Connect Chase</b> button appears here.</div>';
-        return s;
-      }
+      if (!s.keys) { c.innerHTML = '<span class="dot" style="background:var(--o)"></span>Plaid keys not set up'; set.innerHTML = '<div class="note warn">Plaid keys are not set up yet (Secret Manager: plaid-client-id, plaid-secret).</div>'; return; }
       if (!s.connected) {
-        c.innerHTML = '<span class="dot" style="background:var(--o)"></span><span>Chase not connected</span> <button class="btn primary" id="connect">Connect Chase</button>';
-        set.innerHTML = s.error ? '<div class="note warn">' + esc(s.error) + ' <button class="btn primary" id="connect2">Reconnect Chase</button></div>' : '<div class="note">Connect the Chase business card account once. You sign in to Chase in Plaid\'s own window; this page never sees your Chase password.</div>';
-        [$('connect'), $('connect2')].forEach(function (b) { if (b) b.onclick = connect; });
-        return s;
+        c.innerHTML = '<span class="dot" style="background:var(--o)"></span>Chase not connected';
+        set.innerHTML = '<div class="note' + (s.error ? ' warn' : '') + '">' + (s.error ? esc(s.error) + ' ' : 'Connect the Chase business card account once — you sign in to Chase in Plaid\'s window. ') + '<button class="btn primary" id="connect">Connect Chase</button></div>';
+        $('connect').onclick = connect; return;
       }
-      var acc = s.accounts.map(function (a) { return esc(a.name) + (a.mask ? ' ••' + esc(a.mask) : ''); }).join(', ');
-      c.innerHTML = '<span class="dot" style="background:var(--g)"></span><span>Chase connected: ' + acc + '</span>';
+      c.innerHTML = '<span class="dot" style="background:var(--g)"></span>Chase connected · ' + s.accounts.map(function (a) { return esc(a.name) + (a.mask ? ' ••' + esc(a.mask) : ''); }).join(', ');
       set.innerHTML = '';
-      return s;
-    }).catch(function (e) { if (e.message !== 'login') $('conn').innerHTML = '<span class="dot" style="background:var(--r)"></span><span>' + esc(e.message) + '</span>'; });
+    }).catch(function (e) { if (e.message !== 'login') $('conn').innerHTML = '<span class="dot" style="background:var(--r)"></span>' + esc(e.message); });
   }
-
   function connect() {
     var go = function () {
       api('/api/card-audit/plaid/link-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(function (j) {
-        var h = Plaid.create({ token: j.link_token, onSuccess: function (public_token) {
-          api('/api/card-audit/plaid/exchange', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ public_token: public_token }) })
+        Plaid.create({ token: j.link_token, onSuccess: function (pt) {
+          api('/api/card-audit/plaid/exchange', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ public_token: pt }) })
             .then(function () { loadStatus(); setTimeout(loadData, 1500); }).catch(function (e) { alert('Could not save the Chase connection: ' + e.message); });
-        } });
-        h.open();
+        } }).open();
       }).catch(function (e) { alert(e.message); });
     };
     if (window.Plaid) return go();
     var s = document.createElement('script'); s.src = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js'; s.onload = go; document.head.appendChild(s);
   }
 
+  // ── Data ──
   function loadData() {
-    $('rows').innerHTML = '<tr><td colspan="7" class="empty">Loading charges and bills…</td></tr>';
+    $('todo').innerHTML = '<div class="empty">Loading charges and bills…</div>';
     return api('/api/card-audit/data?days=' + $('days').value).then(function (d) {
       state.data = d;
-      if (!d.connected) { $('rows').innerHTML = '<tr><td colspan="7" class="empty">Connect Chase to see charges. (' + (d.bills || 0) + ' Rentvine bills ready to match.)</td></tr>'; $('chips').innerHTML = ''; return; }
+      if (!d.connected) { $('todo').innerHTML = '<div class="empty">Connect Chase to see charges.</div>'; $('rows').innerHTML = ''; return; }
       render();
-    }).catch(function (e) { if (e.message !== 'login') $('rows').innerHTML = '<tr><td colspan="7" class="empty">' + esc(e.message) + '</td></tr>'; });
+    }).catch(function (e) { if (e.message !== 'login') $('todo').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; });
+  }
+
+  // One short sentence saying what to do about a charge.
+  function action(c) {
+    var r = c.reasons.join(' ');
+    if (c.fixPayee) return 'Bill ' + billLink(c.bills[0]) + ' is payable to the vendor — change it to a reimbursement';
+    if (/double bill/.test(r)) { var m = r.match(/bills (\S+) and (\S+)\)/); return 'Possible double bill' + (m ? ': ' + billLink({ billID: m[1] }) + ' and ' + billLink({ billID: m[2].replace(/\)$/, '') }) : ''); }
+    if (/no bill found/.test(r)) {
+      var h = c.likelyHomes && c.likelyHomes.count ? c.likelyHomes.homes[0] : null;
+      return 'No bill yet' + (h ? ' — likely ' + esc(h.address) : '');
+    }
+    var less = r.match(/billed (\$[\d,.]+) less/); if (less) return 'Billed ' + less[1] + ' short on ' + billLink(c.bills[0]);
+    var more = r.match(/bill is (\$[\d,.]+) higher than the charge — more than/); if (more) return 'Billed ' + more[1] + ' more than the charge on ' + billLink(c.bills[0]);
+    var late = r.match(/billed (\d+) days after/); if (late) return 'Billed ' + late[1] + ' days late on ' + billLink(c.bills[0]);
+    return esc(c.reasons[0] || '');
+  }
+  function billLink(b) { return b ? '<a class="link" href="' + RV + encodeURIComponent(b.billID) + '" target="_blank" rel="noopener">#' + esc(b.billID) + '</a>' : ''; }
+  function details(c) {
+    var out = [];
+    out.push('<div>' + esc(c.reasons.join('; ')) + (c.card ? ' · Card: ' + esc(c.card) : '') + '</div>');
+    c.bills.forEach(function (b) { out.push('<div>' + billLink(b) + ' ' + fmt(b.amount) + ' · ' + esc(shortDate(b.date)) + ' · ' + esc(b.address || '') + (b.payee && b.vendorBill ? ' · payable to ' + esc(b.payee) : '') + '</div>'); });
+    var lh = c.likelyHomes;
+    if (lh && lh.count) out.push('<div>Rentvine lists this vendor at: ' + lh.homes.map(function (h) { return esc(h.address) + ' (' + esc(h.field) + ')'; }).join('; ') + (lh.count > 5 ? ' and ' + (lh.count - 5) + ' more' : '') + '</div>');
+    if (c.possible) out.push('<div>Not linked: ' + billLink(c.possible) + ' ' + fmt(c.possible.amount) + ' at ' + esc(c.possible.address || 'unknown home') + ' has the same amount but doesn\'t name this vendor.</div>');
+    var m = c.mark || {};
+    out.push('<div class="markbox"><select data-id="' + esc(c.id) + '">' + Object.keys(MARKS).map(function (k) { return '<option value="' + k + '"' + ((m.status || '') === k ? ' selected' : '') + '>' + MARKS[k] + '</option>'; }).join('') + '</select>' +
+      '<input data-id="' + esc(c.id) + '" placeholder="Note" value="' + esc(m.note || '') + '">' + (c.mark ? '<span>' + esc([m.by, (m.at || '').slice(0, 10)].filter(Boolean).join(' · ')) + '</span>' : '') + '</div>');
+    return out.join('');
+  }
+  function matchesSearch(c) {
+    var q = $('q').value.trim().toLowerCase(); if (!q) return true;
+    var hay = [c.date, c.description, c.card, fmt(c.amount), (c.amount / 100).toFixed(2), c.mark && c.mark.note].concat(c.bills.map(function (b) { return b.billID + ' ' + b.address; })).join(' ').toLowerCase();
+    return hay.indexOf(q) >= 0;
   }
 
   function render() {
     var d = state.data; if (!d || !d.charges) return;
+    // To do: unmarked charges that need action.
+    var list = d.charges.filter(function (c) { return !c.mark && (c.color === 'red' || c.color === 'orange' || c.fixPayee); });
+    $('todoN').textContent = list.length;
+    var groups = [
+      ['star', '★ Change to reimbursement', list.filter(function (c) { return c.fixPayee; })],
+      ['red', 'No bill / double bill', list.filter(function (c) { return !c.fixPayee && c.color === 'red'; })],
+      ['orange', 'Amount or timing to check', list.filter(function (c) { return !c.fixPayee && c.color === 'orange'; })],
+    ];
+    var html = groups.map(function (g) {
+      var items = g[2].filter(matchesSearch); if (!items.length) return '';
+      return '<div class="group"><h3>' + g[1] + ' <span>(' + items.length + ')</span></h3>' + items.map(function (c) {
+        return '<div class="item ' + g[0] + (state.open[c.id] ? ' open' : '') + '" data-id="' + esc(c.id) + '"><div class="line">' +
+          '<span class="d">' + esc(shortDate(c.date)) + '</span><span class="m">' + esc(c.description) + '</span><span class="a">' + fmt(c.amount) + '</span>' +
+          '<span class="what">' + action(c) + '</span>' +
+          '<span class="acts"><button class="btn sm" data-mark="billing" title="A bill is being made">Billed</button><button class="btn sm" data-mark="company" title="Not reimbursable">Company cost</button><button class="btn sm" data-mark="ignore">Ignore</button><button class="tog" title="Details">' + (state.open[c.id] ? '▴' : '▾') + '</button></span>' +
+          '</div><div class="more">' + details(c) + '</div></div>';
+      }).join('') + '</div>';
+    }).join('');
+    $('todo').innerHTML = html || '<div class="empty">Nothing to do — every charge has a bill. 🎉</div>';
+
+    // All charges.
     var counts = d.counts || {};
     $('chips').innerHTML = ['red', 'orange', 'green', 'grey'].map(function (k) {
-      return '<div class="chip ' + (state.show[k] ? 'on' : '') + '" data-c="' + k + '"><span class="dot" style="background:var(--' + (k === 'grey' ? 'n' : k[0]) + ')"></span>' + LABEL[k] + ' <b>' + (counts[k] || 0) + '</b></div>';
-    }).join('') + (function () { var n = d.charges.filter(function (c) { return c.fixPayee; }).length; return n ? '<div class="chip star ' + (state.onlyStar ? 'on' : '') + '" data-c="star">★ Change to reimbursement? <b>' + n + '</b></div>' : ''; })();
-    Array.prototype.forEach.call(document.querySelectorAll('.chip'), function (el) {
-      el.onclick = function () { if (el.dataset.c === 'star') { state.onlyStar = !state.onlyStar; render(); return; } state.show[el.dataset.c] = !state.show[el.dataset.c]; store.set('cardAuditShow', JSON.stringify(state.show)); render(); };
-    });
-    var q = $('q').value.trim().toLowerCase();
-    var list = d.charges.filter(function (c) {
-      if (state.onlyStar) { if (!c.fixPayee) return false; } else if (!state.show[c.color]) return false;
-      if (!q) return true;
-      var hay = [c.date, c.description, c.card, fmt(c.amount), (c.amount / 100).toFixed(2), c.reasons.join(' '), c.mark && c.mark.note].concat(c.bills.map(function (b) { return b.billID + ' ' + b.address + ' ' + b.description + ' ' + b.reference; })).join(' ').toLowerCase();
-      return hay.indexOf(q) >= 0;
-    });
-    var order = { red: 0, orange: 1, green: 2, grey: 3 }, s = state.sort;
-    list.sort(function (a, b) {
-      var x = s.k === 'color' ? order[a.color] : a[s.k], y = s.k === 'color' ? order[b.color] : b[s.k];
-      return (x < y ? -1 : x > y ? 1 : 0) * s.dir;
-    });
-    if (!list.length) { $('rows').innerHTML = '<tr><td colspan="7" class="empty">Nothing here with these filters.</td></tr>'; }
-    else $('rows').innerHTML = list.map(row).join('');
-    Array.prototype.forEach.call(document.querySelectorAll('.mark select'), function (sel) { sel.onchange = function () { saveMark(sel.dataset.id); }; });
-    Array.prototype.forEach.call(document.querySelectorAll('.mark input'), function (inp) { inp.onchange = function () { saveMark(inp.dataset.id); }; });
-    $('alerts').innerHTML = (d.billAlerts || []).length ? d.billAlerts.map(function (a) {
-      return '<tr><td>' + esc(a.a.address || ('Property ' + a.a.propertyID)) + '</td><td>' + esc(a.why) + '</td><td>' + billLink(a.a) + '</td><td>' + billLink(a.b) + '</td></tr>';
-    }).join('') : '<tr><td colspan="4" class="empty">None found.</td></tr>';
-  }
-
-  function billLink(b) {
-    return '<div class="bill"><a href="' + RV + encodeURIComponent(b.billID) + '" target="_blank" rel="noopener">#' + esc(b.billID) + '</a> ' + fmt(b.amount) + ' <span class="addr">' + esc(b.date) + '</span><div class="addr">' + esc((b.description || '').slice(0, 80)) + '</div></div>';
-  }
-
-  function row(c) {
-    var bills = c.bills.map(function (b) {
-      return '<div class="bill"><a href="' + RV + encodeURIComponent(b.billID) + '" target="_blank" rel="noopener" title="Open in Rentvine">#' + esc(b.billID) + '</a> ' + fmt(b.amount) +
-        ' <span class="addr">' + esc(b.date) + '</span><div class="addr">' + esc(b.address || '') + (b.reference ? ' · ' + esc(b.reference) : '') + '</div>' + (b.vendorBill ? '<div class="gap down">Payable to the vendor' + (b.payee ? ': ' + esc(b.payee) : '') + ', not Reimbursements</div>' : '') + '</div>';
+      return '<div class="chip ' + (state.show[k] ? 'on' : '') + '" data-c="' + k + '"><span class="dot" style="background:var(--' + (k === 'grey' ? 'n' : k[0]) + ')"></span>' + LABEL[k] + ' ' + (counts[k] || 0) + '</div>';
     }).join('');
-    if (c.possible) {
-      var pb = c.possible;
-      bills += '<div class="hint">Not linked: <a href="' + RV + encodeURIComponent(pb.billID) + '" target="_blank" rel="noopener">#' + esc(pb.billID) + '</a> ' + fmt(pb.amount) + ' at ' + esc(pb.address || 'unknown home') + ' has the same amount, but it doesn\'t name this vendor.</div>';
-    }
-    var lh = c.likelyHomes;
-    if (lh && lh.count && (!c.bills.length || c.color !== 'green')) {
-      bills += '<div class="hint">' + (lh.count > 5 ? 'Rentvine lists this vendor at ' + lh.count + ' homes, e.g.: ' : 'Rentvine lists this vendor at: ') +
-        lh.homes.map(function (h) { return esc(h.address) + ' <span class="addr">(' + esc(h.field) + ')</span>'; }).join('; ') + '</div>';
-    }
-    if (c.bills.length && c.billedTotal !== c.amount) {
-      var g = c.billedTotal - c.amount;
-      bills += '<div class="gap ' + (g > 0 ? 'up' : 'down') + '">' + (g > 0 ? '+' : '') + fmt(g) + (g > 0 ? ' billed above the charge' : ' not billed') + '</div>';
-    }
-    var m = c.mark || {}, opts = Object.keys(MARKS).map(function (k) { return '<option value="' + k + '"' + ((m.status || '') === k ? ' selected' : '') + '>' + MARKS[k] + '</option>'; }).join('');
-    var marked = c.mark ? '<div class="marked">' + esc([MARKS[m.status] || '', m.by, (m.at || '').slice(0, 10)].filter(Boolean).join(' · ')) + '</div>' : '';
-    var autoNote = c.mark && c.autoColor !== c.color ? ' <span class="pill ' + c.autoColor + '" title="What the matcher found">' + LABEL[c.autoColor] + '</span>' : '';
-    return '<tr class="' + c.color + '">' +
-      '<td style="white-space:nowrap">' + esc(c.date) + (c.pending ? '<div class="addr">pending</div>' : '') + '</td>' +
-      '<td>' + esc(c.description) + '</td>' +
-      '<td class="hide-sm">' + esc(c.card) + '</td>' +
-      '<td class="amt">' + fmt(c.amount) + '</td>' +
-      '<td><span class="pill ' + c.color + '">' + LABEL[c.color] + '</span>' + autoNote + (c.fixPayee ? ' <span class="pill star" title="Bill is payable to the vendor instead of Reimbursements">★ Change to reimbursement?</span>' : '') + '<div class="why">' + esc(c.reasons.join('; ')) + '</div></td>' +
-      '<td>' + (bills || '<span class="addr">—</span>') + '</td>' +
-      '<td class="mark"><select data-id="' + esc(c.id) + '">' + opts + '</select><input data-id="' + esc(c.id) + '" placeholder="Note" value="' + esc(m.note || '') + '">' + marked + '</td></tr>';
+    var order = { red: 0, orange: 1, green: 2, grey: 3 }, s = state.sort;
+    var rows = d.charges.filter(function (c) { return state.show[c.color] && matchesSearch(c); }).sort(function (a, b) {
+      var x = s.k === 'color' ? order[a.color] : a[s.k], y = s.k === 'color' ? order[b.color] : b[s.k]; return (x < y ? -1 : x > y ? 1 : 0) * s.dir;
+    });
+    $('rows').innerHTML = rows.length ? rows.map(function (c) {
+      var star = c.fixPayee ? ' <span class="pill star">★</span>' : '';
+      return '<tr class="row" data-id="' + esc(c.id) + '"><td style="white-space:nowrap">' + esc(shortDate(c.date)) + '</td><td>' + esc(c.description) + '</td><td class="amt">' + fmt(c.amount) + '</td>' +
+        '<td><span class="pill ' + c.color + '">' + (c.mark ? MARKS[c.mark.status] || 'Marked' : LABEL[c.color]) + '</span>' + star + '</td><td>' + (c.bills.map(billLink).join(' ') || '<span style="color:var(--muted)">—</span>') + '</td></tr>' +
+        (state.open[c.id] ? '<tr class="detail"><td colspan="5">' + details(c) + '</td></tr>' : '');
+    }).join('') : '<tr><td colspan="5" class="empty">Nothing here with these filters.</td></tr>';
+    wire();
   }
 
-  function saveMark(id) {
-    var sel = document.querySelector('.mark select[data-id="' + CSS.escape(id) + '"]'), inp = document.querySelector('.mark input[data-id="' + CSS.escape(id) + '"]');
-    api('/api/card-audit/mark', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, status: sel.value, note: inp.value, by: $('me').value.trim() }) })
-      .then(function (r) { loadData(); }).catch(function (e) { alert('Could not save: ' + e.message); });
+  function wire() {
+    Array.prototype.forEach.call(document.querySelectorAll('.item'), function (el) {
+      var id = el.dataset.id;
+      el.querySelector('.tog').onclick = function () { state.open[id] = !state.open[id]; render(); };
+      el.querySelector('.line .m').onclick = el.querySelector('.tog').onclick;
+      Array.prototype.forEach.call(el.querySelectorAll('[data-mark]'), function (b) { b.onclick = function () { saveMark(id, b.dataset.mark, ''); }; });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('tr.row'), function (tr) { tr.onclick = function (e) { if (e.target.closest('a')) return; state.open[tr.dataset.id] = !state.open[tr.dataset.id]; render(); }; });
+    Array.prototype.forEach.call(document.querySelectorAll('.chip'), function (el) { el.onclick = function () { state.show[el.dataset.c] = !state.show[el.dataset.c]; render(); }; });
+    Array.prototype.forEach.call(document.querySelectorAll('.markbox select, .markbox input'), function (inp) {
+      inp.onclick = function (e) { e.stopPropagation(); };
+      inp.onchange = function () { var box = inp.parentNode; saveMark(inp.dataset.id, box.querySelector('select').value, box.querySelector('input').value); };
+    });
   }
 
+  function saveMark(id, status, note) {
+    api('/api/card-audit/mark', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, status: status, note: note, by: $('me').value.trim() }) })
+      .then(function (r) {
+        var c = state.data.charges.find(function (x) { return x.id === id; });
+        if (c) { c.mark = r.mark; if (r.mark && r.mark.status) c.color = 'grey'; else c.color = c.autoColor; }
+        render();
+      }).catch(function (e) { alert('Could not save: ' + e.message); });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (t) {
+    t.onclick = function () { state.tab = t.dataset.t; Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (x) { x.classList.toggle('on', x === t); }); $('todo').style.display = state.tab === 'todo' ? '' : 'none'; $('all').style.display = state.tab === 'all' ? '' : 'none'; };
+  });
   Array.prototype.forEach.call(document.querySelectorAll('th[data-k]'), function (th) {
     th.onclick = function () { var k = th.dataset.k; state.sort = { k: k, dir: state.sort.k === k ? -state.sort.dir : (k === 'date' || k === 'amount' ? -1 : 1) }; render(); };
   });
