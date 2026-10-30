@@ -59,6 +59,15 @@ tr.dup td{background:var(--amberbg)}tr.old td{color:var(--mute)}
     </select>
     <button id="refresh">Refresh</button>
   </div>
+  <details class="note" id="keybox" style="background:#f4f8f9;border-color:#cfdde2;color:#2a3b42"><summary><b>Key</b> - what the dots, tags and * mean (hover any tag for details)</summary>
+    <div class="tiny" style="margin-top:6px;line-height:1.7">
+      <div><b>Dot:</b> <span class="dot red"></span>red = look before paying &nbsp; <span class="dot amber"></span>amber = check &nbsp; <span class="dot teal"></span>teal = good news / pay soon &nbsp; <span class="dot"></span>empty = nothing to note. A red amount means below $0.</div>
+      <div><b>*</b> = new owner or new home (started in the last 60 days). Give extra attention and pay as soon as funds clear.</div>
+      <div><b>1ST PAYOUT *</b> new owner or home with no payout yet &nbsp;&middot;&nbsp; <b>NO PAYOUT 3 MO</b> established owner with no payout in 3 months</div>
+      <div><b>PAY NOW</b> late rent has cleared since the last payout &nbsp;&middot;&nbsp; <b>LATE RENT PENDING</b> late rent received, not cleared yet &nbsp;&middot;&nbsp; <b>MOVE-IN FUNDS CLEARED</b> move-in money settled (not late rent)</div>
+      <div><b>FEE NOT BILLED</b> placement fee missing on a new move-in &nbsp;&middot;&nbsp; <b>FEE CHECK</b> amount needs a person &nbsp;&middot;&nbsp; <b>NO FEE (LEASE BREAK)</b> do not charge</div>
+      <div><b>VACANT</b> no rent coming in &nbsp;&middot;&nbsp; <b>CONTRIBUTION</b> owner added money in 30 days, do not send back &nbsp;&middot;&nbsp; <b>MOVE-OUT 30D</b> tenant leaving soon, consider holding funds &nbsp;&middot;&nbsp; <b>NEW MOVE-IN</b> lease started recently &nbsp;&middot;&nbsp; <b>+N</b> more tags (hover)</div>
+    </div></details>
   <div class="note" id="unm" hidden></div>
   <table id="t"><thead><tr id="head"></tr></thead><tbody id="body"></tbody></table>
 </main>
@@ -109,7 +118,6 @@ function statusPill(o) {
 function ownerItems(o) {
   const c = o.tagCounts || {}, it = [], x = (n) => (n > 1 ? ' x' + n : '');
   const add = (lvl, text, title) => it.push({ lvl, text, title: title || text });
-  if ((o.flags || []).includes('below_zero')) add('red', 'BELOW $0', 'Expenses are more than cleared money');
   if (c.fee_missing) add('red', 'FEE NOT BILLED' + x(c.fee_missing), 'Placement fee not billed on a new move-in');
   if ((o.contributions || []).length) add('red', 'CONTRIBUTION ' + money(o.contribTotal), 'Owner contributed money in the last 30 days - do not send it back');
   if (c.vacant) add('red', 'VACANT' + x(c.vacant), 'A home is vacant - no rent coming in');
@@ -117,17 +125,19 @@ function ownerItems(o) {
   if (c.late_pending) add('amber', 'LATE RENT PENDING' + x(c.late_pending), 'Late rent received but not cleared yet');
   if (c.move_out_30) add('amber', 'MOVE-OUT 30D' + x(c.move_out_30), 'Tenant moving out within 30 days - consider holding funds');
   if (c.late_cleared) add('teal', 'PAY NOW' + x(c.late_cleared), 'Late rent has cleared since the last payout');
-  if (o.newOwner) add('teal', 'NEW OWNER', 'New owner - pay as soon as funds clear');
-  else if (c.new_property) add('teal', 'NEW PROPERTY' + x(c.new_property), 'Home started with us in the last 60 days');
+  if (o.neverPaid && isNewish(o)) add('teal', '1ST PAYOUT *', 'First payout for a new owner or new home - give extra attention and pay as soon as funds clear');
+  else if (o.newOwner) add('teal', 'NEW OWNER *', 'New owner - pay as soon as funds clear');
+  else if (c.new_property) add('teal', 'NEW PROPERTY *' + x(c.new_property), 'Home started with us in the last 60 days');
   if (c.movein_cleared) add('teal', 'MOVE-IN FUNDS CLEARED', 'Move-in funds have settled');
   if (c.new_move_in) add('gray', 'NEW MOVE-IN' + x(c.new_move_in));
-  if (o.neverPaid) add('gray', 'NO PAYOUT 3 MO', 'No owner payout in the last 3 months');
+  if (o.neverPaid && !isNewish(o)) add('gray', 'NO PAYOUT 3 MO', 'No owner payout in the last 3 months');
   if (c.fee_skip) add('gray', 'NO FEE (LEASE BREAK)', 'Do not charge placement fee - prior tenant broke the lease');
   return it; // move-out this/next month, no mgmt fee and "fee to bill" are shown inside the owner only
 }
+const isNewish = (o) => !!o.newOwner || ((o.tagCounts || {}).new_property > 0);
 const LVL_ORDER = { red: 0, amber: 1, teal: 2, gray: 3 }, LVL_CLS = { red: 'out', amber: 'out', teal: 'in', gray: '' };
 function ownerDot(o) {
-  const it = ownerItems(o), w = it.length ? it.map((i) => i.lvl).sort((a, b) => LVL_ORDER[a] - LVL_ORDER[b])[0] : '';
+  const it = ownerItems(o), w = (o.flags || []).includes('below_zero') ? 'red' : it.length ? it.map((i) => i.lvl).sort((a, b) => LVL_ORDER[a] - LVL_ORDER[b])[0] : '';
   return '<span class="dot ' + (w === 'gray' ? '' : w) + '"></span>';
 }
 function ownerTags(o) {
@@ -167,7 +177,7 @@ function render() {
     const d = data.decisions[o.ownerID];
     const main = '<tr class="owner" data-id="' + esc(o.ownerID) + '"><td>' + ownerDot(o) + esc(o.name) + ' <span class="muted tiny">(' + o.properties.length + ')</span>' + (d ? ' <span class="pill ok">' + esc(d.action.replace('_', ' ')) + '</span>' : '') + '<div>' + ownerTags(o) + '</div></td>' +
       '<td>' + money(o.settledIn) + '</td><td>' + money(o.fees) + '</td><td>' + money(o.unpaidBills) + '</td><td>' + money(o.recurringTotal) + '</td><td>' + money(o.reserve) + '</td>' +
-      '<td class="' + (o.amountToPay < 0 ? 'neg' : '') + '"><b>' + money(o.amountToPay) + '</b></td><td>' + (o.lastPayout == null ? '<span class="muted">none in 3 months</span>' : money(o.lastPayout) + '<div class="muted tiny">' + esc(mdy(o.lastPayoutDate)) + '</div>') + '</td><td class="l">' + statusPill(o) + '</td></tr>';
+      '<td class="' + (o.amountToPay < 0 ? 'neg' : '') + '"' + (o.amountToPay < 0 ? ' title="Below $0 - expenses are more than cleared money"' : '') + '><b>' + money(o.amountToPay) + '</b></td><td>' + (o.lastPayout == null ? (isNewish(o) ? '<span class="muted">1st payout *</span>' : '<span class="muted">none in 3 months</span>') : money(o.lastPayout) + '<div class="muted tiny">' + esc(mdy(o.lastPayoutDate)) + '</div>') + '</td><td class="l">' + statusPill(o) + '</td></tr>';
     return main + (open.has(String(o.ownerID)) ? detail(o, d) : '');
   }).join('') || '<tr><td colspan="9" class="l muted">' + (data.owners.length ? 'Nothing matches these filters or search.' : 'Rentvine returned no owners. See the counts above.') + '</td></tr>';
 }
