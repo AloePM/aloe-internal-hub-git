@@ -179,32 +179,52 @@ export function feeCheck(move, { feeBills = [], breakRows = [], brokenLeases = [
 
 // ---- Late rent (rent applied to a due balance after the LATE_AFTER_DAY of the month) ----
 export const LATE_AFTER_DAY = 12;
+// Only money paid toward these charges counts: Rent Income (10), Section 8 Rent (32), Pet Rent (39), HOA Violation Fine (150).
+// Admin fees, Resident Benefit Package, renters insurance, maintenance charges etc. do not.
+export const LATE_RENT_ACCOUNTS = [10, 32, 39, 150];
 const LATE_COLS = ['datePosted', 'propertyID', 'leaseID', 'amount', 'amountAllocated', 'isDepositedSettled', 'settlementDate', 'isVoided', 'isReturned'];
-// Tenant Receipts report: payments posted from the 13th of this month. Small, loaded after the other reports. A failure never stops the page.
+const LCHARGE_COLS = ['leaseID', 'chargeAccountID', 'amountPaid', 'isVoided'];
+// Tenant Receipts report (payments posted from the 13th of this month) plus this month's rent/fine charges, to see what each payment paid.
+// Small reports, loaded after the others. A failure never stops the page.
 export async function loadLateRent(rvFetch, todayISO = today()) {
-  const out = { rows: [], error: '' };
+  const out = { rows: [], paidByLease: {}, error: '' };
   const from = todayISO.slice(0, 7) + '-' + String(LATE_AFTER_DAY + 1).padStart(2, '0');
   if (todayISO < from) return out;
   try {
     out.rows = await allPages(rvFetch, 'lease-payments', { displayColumns: LATE_COLS, filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: from, endDate: todayISO }] }, { fields: LATE_COLS, max: 10 });
-  } catch (e) { console.error('late rent load', e); out.error = String(e.message || e); }
+    const charges = await allPages(rvFetch, 'lease-charges', { displayColumns: LCHARGE_COLS, filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: todayISO.slice(0, 7) + '-01', endDate: todayISO }, { name: 'chargeAccountID', comparator: 'in', values: LATE_RENT_ACCOUNTS.map(String) }] }, { fields: LCHARGE_COLS, max: 12 });
+    for (const c of charges) {
+      if (truthy(c.isVoided) || !LATE_RENT_ACCOUNTS.includes(num(c.chargeAccountID)) || c.leaseID === undefined || c.leaseID === '') continue;
+      out.paidByLease[String(c.leaseID)] = (out.paidByLease[String(c.leaseID)] || 0) + num(c.amountPaid);
+    }
+  } catch (e) { console.error('late rent load', e); out.error = String(e.message || e); out.rows = []; }
   return out;
 }
 
-// Late rent for one property. Only the part applied to a charge counts (prepaid / unallocated money is ignored), voided and returned payments are ignored.
-// cleared = settled after the owner's last payout (ready to pay); pending = received but not cleared yet.
-export function lateRentFor(propertyID, rowsIn, since, todayISO = today()) {
-  const out = { cleared: 0, pending: 0, clearedRows: [], pendingRows: [] };
-  for (const r of rowsIn || []) {
-    if (String(r.propertyID) !== String(propertyID) || truthy(r.isVoided) || truthy(r.isReturned)) continue;
-    const posted = toISO(r.datePosted); if (!posted || posted.slice(8, 10) <= String(LATE_AFTER_DAY).padStart(2, '0') && posted.slice(0, 7) === todayISO.slice(0, 7)) continue;
-    const amt = num(r.amountAllocated); if (amt <= 0) continue;
-    if (truthy(r.isDepositedSettled)) {
-      const settled = toISO(r.settlementDate) || posted;
-      if (settled > since) { out.cleared += amt; out.clearedRows.push({ posted, settled, amount: amt }); }
-    } else { out.pending += amt; out.pendingRows.push({ posted, amount: amt }); }
+// Late rent for one property. A payment counts only for the part that paid rent / a fine (paidByLease caps it per lease), voided and returned
+// payments are ignored. Payments from a lease that is moving in (paid up to 7 days after move-in) are move-in funds, not late rent.
+// cleared = settled after the owner's last payout; pending = received but not cleared yet.
+export function lateRentFor(propertyID, rowsIn, since, todayISO = today(), { paidByLease = null, moveInByLease = {} } = {}) {
+  const out = { cleared: 0, pending: 0, moveinCleared: 0, moveinPending: 0, clearedRows: [], pendingRows: [], moveinClearedRows: [], moveinPendingRows: [] };
+  const remaining = {};
+  const mine = (rowsIn || []).filter((r) => String(r.propertyID) === String(propertyID) && !truthy(r.isVoided) && !truthy(r.isReturned)).map((r) => ({ r, posted: toISO(r.datePosted) })).filter((x) => x.posted).sort((a, b) => (a.posted < b.posted ? -1 : 1));
+  for (const { r, posted } of mine) {
+    const moveIn = moveInByLease[String(r.leaseID)];
+    const isMoveIn = !!moveIn && posted <= addDays(moveIn, 7);
+    if (!isMoveIn && posted.slice(0, 7) === todayISO.slice(0, 7) && posted.slice(8, 10) <= String(LATE_AFTER_DAY).padStart(2, '0')) continue;
+    let amt = num(r.amountAllocated); if (amt <= 0) continue;
+    if (paidByLease) {
+      const k = String(r.leaseID); if (remaining[k] === undefined) remaining[k] = num(paidByLease[k]);
+      amt = Math.min(amt, remaining[k]); if (amt <= 0) continue; remaining[k] -= amt;
+    }
+    const settledFlag = truthy(r.isDepositedSettled);
+    const settled = settledFlag ? (toISO(r.settlementDate) || posted) : '';
+    if (settledFlag && settled <= since) continue;
+    const kind = isMoveIn ? 'movein' : '';
+    if (settledFlag) { out[kind ? 'moveinCleared' : 'cleared'] += amt; out[kind ? 'moveinClearedRows' : 'clearedRows'].push({ posted, settled, amount: amt }); }
+    else { out[kind ? 'moveinPending' : 'pending'] += amt; out[kind ? 'moveinPendingRows' : 'pendingRows'].push({ posted, amount: amt }); }
   }
-  out.cleared = Math.round(out.cleared * 100) / 100; out.pending = Math.round(out.pending * 100) / 100;
+  for (const k of ['cleared', 'pending', 'moveinCleared', 'moveinPending']) out[k] = Math.round(out[k] * 100) / 100;
   return out;
 }
 
@@ -258,6 +278,8 @@ export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], c
   const vacantDays = {};
   for (const v of vacancy) if (v.propertyID !== undefined && v.propertyID !== '') vacantDays[String(v.propertyID)] = num(v.daysVacant);
   const contribs = parseContributions(contribRows, todayISO), matchedC = new Set();
+  const moveInByLease = {};
+  for (const m of feeData.moves || []) if (m.leaseID !== undefined && toISO(m.moveInDate)) moveInByLease[String(m.leaseID)] = toISO(m.moveInDate);
   const owners = [];
   for (const o of byPortfolio.values()) {
     const myNames = new Set([normName(o.name)].filter(Boolean));
@@ -286,11 +308,14 @@ export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], c
       const feeChecks = (feeData.moves || []).filter((m) => String(m.propertyID) === id && !/^closed/i.test(String(m.leaseStatusName || '')) && toISO(m.moveInDate))
         .map((m) => feeCheck(m, { feeBills: feeData.feeBills || [], breakRows: feeData.breakRows || [], brokenLeases: feeData.brokenLeases || [], startISO }, todayISO)).filter((f) => f.key);
       for (const f of feeChecks) lt.tags.push({ key: f.key, text: f.text });
-      const lateRent = lateRentFor(id, lateData.rows || [], since, todayISO);
+      const lateRent = lateRentFor(id, lateData.rows || [], since, todayISO, { paidByLease: lateData.rows && lateData.paidByLease ? lateData.paidByLease : null, moveInByLease });
       const md3 = (iso) => Number(iso.slice(5, 7)) + '/' + Number(iso.slice(8, 10));
       const mny = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
-      if (lateRent.cleared > 0) lt.tags.push({ key: 'late_cleared', text: 'Late rent CLEARED ' + mny(lateRent.cleared) + ' (settled ' + md3(lateRent.clearedRows.map((x) => x.settled).sort().pop()) + ') - ready to pay' });
-      if (lateRent.pending > 0) lt.tags.push({ key: 'late_pending', text: 'Late rent pending ' + mny(lateRent.pending) + ' (paid ' + md3(lateRent.pendingRows.map((x) => x.posted).sort().pop()) + ', not cleared yet)' });
+      const lastOf = (a, k) => a.map((x) => x[k]).sort().pop();
+      if (lateRent.cleared > 0) lt.tags.push({ key: 'late_cleared', text: 'Late rent CLEARED ' + mny(lateRent.cleared) + ' (settled ' + md3(lastOf(lateRent.clearedRows, 'settled')) + ') - ready to pay' });
+      if (lateRent.pending > 0) lt.tags.push({ key: 'late_pending', text: 'Late rent pending ' + mny(lateRent.pending) + ' (paid ' + md3(lastOf(lateRent.pendingRows, 'posted')) + ', not cleared yet)' });
+      if (lateRent.moveinCleared > 0) lt.tags.push({ key: 'movein_cleared', text: 'Move-in funds cleared ' + mny(lateRent.moveinCleared) + ' (settled ' + md3(lastOf(lateRent.moveinClearedRows, 'settled')) + ')' });
+      if (lateRent.moveinPending > 0) lt.tags.push({ key: 'movein_pending', text: 'Move-in funds pending ' + mny(lateRent.moveinPending) + ' (paid ' + md3(lastOf(lateRent.moveinPendingRows, 'posted')) + ', not cleared yet)' });
       const li = leaseInfo[id];
       const vacated = !!(li && /vacat/i.test(String(li.status || '')));
       const inVacancy = Object.prototype.hasOwnProperty.call(vacantDays, id) && (!li || vacated || !rents[id]);

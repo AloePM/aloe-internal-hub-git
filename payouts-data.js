@@ -71,7 +71,7 @@ export function ownerRow(o, opts = {}) {
     unpaidBills: dollars(sum('unpaidBills')), recurringTotal: dollars(sum('recurringTotal')),
     reserve: dollars(reserve), expected: dollars(expected), amountToPay: dollars(amountToPay),
     lastPayout: last == null ? null : dollars(last), lastPayoutDate: o.lastPayoutDate || null, neverPaid: last == null, newOwner: !!o.newOwner, contributions: o.contributions || [], contribTotal: dollars((o.contributions || []).reduce((t, c) => t + cents(c.amount), 0)),
-    tagCounts: Object.fromEntries(['new_move_in', 'move_out_30', 'move_out_month', 'move_out_next', 'vacant', 'no_fee', 'new_property', 'fee_missing', 'fee_check', 'fee_ok', 'fee_due', 'fee_skip', 'late_cleared', 'late_pending'].map((k) => [k, rows.filter((r) => (r.tags || []).some((t) => t.key === k)).length])),
+    tagCounts: Object.fromEntries(['new_move_in', 'move_out_30', 'move_out_month', 'move_out_next', 'vacant', 'no_fee', 'new_property', 'fee_missing', 'fee_check', 'fee_ok', 'fee_due', 'fee_skip', 'late_cleared', 'late_pending', 'movein_cleared', 'movein_pending'].map((k) => [k, rows.filter((r) => (r.tags || []).some((t) => t.key === k)).length])),
     flags, status: flags.length ? 'Needs a look' : 'Looks fine', needsLook,
   };
 }

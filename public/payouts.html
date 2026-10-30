@@ -116,6 +116,7 @@ function ownerTags(o) {
   if (c.move_out_next) t.push('<span class="pill tag">Out next month' + x(c.move_out_next) + '</span>');
   if (c.no_fee) t.push('<span class="pill tag">No mgmt fee' + x(c.no_fee) + '</span>');
   if (c.late_cleared) t.push('<span class="pill tag in">Late rent cleared - pay now' + x(c.late_cleared) + '</span>');
+  if (c.movein_cleared) t.push('<span class="pill tag in">Move-in funds cleared' + x(c.movein_cleared) + '</span>');
   if (c.late_pending) t.push('<span class="pill tag">Late rent pending' + x(c.late_pending) + '</span>');
   if (c.fee_missing) t.push('<span class="pill tag out">Placement fee NOT billed' + x(c.fee_missing) + '</span>');
   if (c.fee_check) t.push('<span class="pill tag out">Placement fee: check' + x(c.fee_check) + '</span>');
@@ -174,7 +175,7 @@ function feeTable(p) {
     (x.billed.length ? x.billed.map((b) => esc(mdy(b.date)) + ' ' + money(b.amount)).join(', ') + (x.startupCredit ? ' <span class="muted tiny">(includes an earlier partial fee billed within 90 days before move-in)</span>' : '') : '<span class="muted">none</span>') + '</td><td class="l">' + esc(x.text) + '</td></tr>').join('') + '</tbody></table>';
 }
 function propTags(p) {
-  return (p.tags || []).map((t) => '<span class="pill tag ' + (t.key === 'new_move_in' || t.key === 'new_property' || t.key === 'late_cleared' ? 'in' : t.key === 'move_out_30' || t.key === 'vacant' || t.key === 'fee_missing' || t.key === 'fee_check' ? 'out' : '') + '">' + esc(t.text) + '</span>').join('');
+  return (p.tags || []).map((t) => '<span class="pill tag ' + (t.key === 'new_move_in' || t.key === 'new_property' || t.key === 'late_cleared' || t.key === 'movein_cleared' ? 'in' : t.key === 'move_out_30' || t.key === 'vacant' || t.key === 'fee_missing' || t.key === 'fee_check' ? 'out' : '') + '">' + esc(t.text) + '</span>').join('');
 }
 function detail(o, d) {
   const flags = o.flags.map((f) => '<li class="' + (f === 'below_zero' ? 'neg' : 'mark') + '">&bull; ' + esc(data.flagText[f] || f) + '</li>').join('');
