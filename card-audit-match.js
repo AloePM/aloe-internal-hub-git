@@ -77,6 +77,7 @@ function textHit(hints, text) {
   return hints.some((h) => (h instanceof RegExp ? h.test(t) : h.length <= 3 ? new RegExp('(^|[^a-z0-9&])' + h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9])').test(t) : t.includes(h)));
 }
 
+const SUPPLY = /HOME ?DEPOT|HOMEDEPOT|LOWE'?S|AMAZON|AMZN|AO SMITH|FAN COMPAN|FAN MAN|HUNTER FAN|ACE HARDWARE|FERGUSON|SUPPLY|WALMART|TARGET|COSTCO/i;
 const isCardPayment = (c) => c.amount < 0 && /PAYMENT|AUTOPAY|THANK YOU/i.test(c.description);
 
 /**
@@ -87,8 +88,10 @@ const isCardPayment = (c) => c.amount < 0 && /PAYMENT|AUTOPAY|THANK YOU/i.test(c
 export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = {}) {
   const O = { ...DEFAULTS, ...opts };
   const todayN = dayNum(today) ?? Math.floor(Date.now() / DAY);
-  const charges = chargesIn.filter((c) => !isCardPayment(c)).map((c) => { const hints = hintsFor(c.description); return { ...c, d: dayNum(c.date), hints, strong: strongOf(hints), bills: [], color: null, reasons: [] }; });
-  const bills = billsIn.map((b) => ({ ...b, d: dayNum(b.date), text: `${b.description || ''} ${b.reference || ''} ${b.payee || ''}`, used: null }));
+  const charges = chargesIn.filter((c) => !isCardPayment(c)).map((c) => { const hints = hintsFor(c.description); return { ...c, d: dayNum(c.date), hints, strong: strongOf(hints), supply: SUPPLY.test(c.description || ''), bills: [], color: null, reasons: [] }; });
+  const all = billsIn.map((b) => ({ ...b, d: dayNum(b.date), text: `${b.description || ''} ${b.reference || ''} ${b.payee || ''}`, used: null }));
+  const bills = all.filter((b) => !b.vendorBill);            // reimbursement / Aloe PM-Vendor bills
+  const vendorBills = all.filter((b) => b.vendorBill);       // bills payable to the vendor itself
   const free = (b) => !b.used;
   const inWinNE = (c, b) => b.d != null && c.d != null && b.d - c.d >= -3 && b.d - c.d <= O.WIN_AFTER;
   const inWin = (c, b, long) => b.d != null && c.d != null && b.d - c.d >= -O.WIN_BEFORE && b.d - c.d <= (long ? O.LONG_WIN : O.WIN_AFTER);
@@ -157,8 +160,17 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = 
     }
   }
 
-  // 5. Bill higher than the charge (markup, or supplies billed with labor).
+  // 4b. The only bill is payable to the vendor itself, not to Reimbursements.
   for (const c of open()) {
+    const cands = vendorBills.filter((b) => free(b) && b.amount === c.amount && inWin(c, b));
+    if (!cands.length) continue;
+    const named = cands.filter((b) => textHit(c.hints, b.text));
+    const pick = named.length === 1 ? named[0] : (named.length === 0 && cands.length === 1 && c.amount % 500 !== 0 ? cands[0] : null);
+    if (pick) { assign(c, [pick], 'orange', `bill is payable to the vendor${pick.payee ? ' (' + pick.payee + ')' : ''} instead of Reimbursements, so the card is not reimbursed and the vendor could be paid twice`); c.fixPayee = true; }
+  }
+
+  // 5. Bill higher than the charge (markup, or supplies billed with labor).
+  for (const c of open().filter((c) => c.supply)) {
     const cands = bills.filter((b) => free(b) && b.amount > c.amount && b.amount <= c.amount * 3 + O.MARKUP_MAX * 100 && inWinNE(c, b) && textHit(c.strong, b.text)).sort((a, b) => (a.amount - b.amount) || (Math.abs(a.d - c.d) - Math.abs(b.d - c.d)));
     const b = cands[0];
     if (!b) continue;
@@ -175,7 +187,7 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = 
     for (const [, c, b] of pairs) if (!c.color && free(b)) assign(c, [b], 'orange', reason(c, b));
   };
   greedy((c, b) => b.amount < c.amount && b.amount >= c.amount * 0.75, (c, b) => `billed ${fmt(c.amount - b.amount)} less than the charge`, inWin);
-  greedy((c, b) => b.amount > c.amount + O.MARKUP_MAX * 100 && b.amount <= c.amount * 3 + O.MARKUP_MAX * 100, (c, b) => `bill is ${fmt(b.amount - c.amount)} higher than the charge — more than ${fmt(O.MARKUP_MAX * 100)}`, inWinNE);
+  greedy((c, b) => c.supply && b.amount > c.amount + O.MARKUP_MAX * 100 && b.amount <= c.amount * 3 + O.MARKUP_MAX * 100, (c, b) => `bill is ${fmt(b.amount - c.amount)} higher than the charge — more than ${fmt(O.MARKUP_MAX * 100)}`, inWinNE);
 
   // 7. Nothing found.
   for (const c of open()) {
@@ -211,9 +223,9 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = 
   // Person marks override the colour but keep the reasons.
   for (const c of charges) { const m = marks[c.id]; if (m && m.status) { c.mark = m; c.autoColor = c.color; c.color = 'grey'; } }
 
-  const strip = (b) => ({ billID: b.billID, date: isoDay(b.d), propertyID: b.propertyID, address: b.address, amount: b.amount, description: b.description, reference: b.reference, payee: b.payee });
+  const strip = (b) => ({ billID: b.billID, date: isoDay(b.d), propertyID: b.propertyID, address: b.address, amount: b.amount, description: b.description, reference: b.reference, payee: b.payee, vendorBill: !!b.vendorBill });
   return {
-    charges: charges.sort((a, b) => b.d - a.d).map((c) => ({ id: c.id, date: isoDay(c.d), description: c.description, card: c.card || '', amount: c.amount, pending: !!c.pending, color: c.color, autoColor: c.autoColor || c.color, reasons: c.reasons, mark: c.mark || null, pairedWith: c.pairedWith || null, bills: c.bills.map(strip), billedTotal: c.bills.reduce((s, b) => s + b.amount, 0) })),
+    charges: charges.sort((a, b) => b.d - a.d).map((c) => ({ id: c.id, date: isoDay(c.d), description: c.description, card: c.card || '', amount: c.amount, pending: !!c.pending, color: c.color, autoColor: c.autoColor || c.color, reasons: c.reasons, fixPayee: !!c.fixPayee, mark: c.mark || null, pairedWith: c.pairedWith || null, bills: c.bills.map(strip), billedTotal: c.bills.reduce((s, b) => s + b.amount, 0) })),
     billAlerts: billAlerts.map((x) => ({ why: x.why, a: strip(x.a), b: strip(x.b) })),
   };
 }

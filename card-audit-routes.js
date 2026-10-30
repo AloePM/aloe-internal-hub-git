@@ -178,19 +178,25 @@ async function reimbursementBills(rvFetch, days) {
     displayColumns: ['billID', 'datePosted', 'propertyID', 'contact', 'amount', 'description', 'reference', 'isVoided'],
     filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: start, endDate: end }, { name: 'payeeContactID', comparator: 'in', values: PAYEES }, { name: 'isVoided', comparator: 'booleanFalse' }],
   };
-  const [list, addr] = await Promise.all([allPages(rvFetch, 'payables', report, 25), addresses(rvFetch)]);
+  // Second pull: every bill in the same window (any payee). A card charge whose only bill is
+  // payable to the vendor itself (not Reimbursements) is shown as orange — the vendor could be paid twice.
+  const allReport = { displayColumns: report.displayColumns, filters: [report.filters[0], report.filters[2]] };
+  const [list, everyBill, addr] = await Promise.all([allPages(rvFetch, 'payables', report, 25), allPages(rvFetch, 'payables', allReport, 60).catch((e) => { console.error('[card-audit] vendor bills:', e.message); return []; }), addresses(rvFetch)]);
+  const reimbIds = new Set(list.map((b) => String(b.billID)));
   const seen = new Set(); const v = [];
-  for (const b of list) {
-    if (!b.billID) continue;
+  const add = (b, vendorBill) => {
+    if (!b.billID) return;
     const voided = b.isVoided === true || b.isVoided === 1 || b.isVoided === '1';
     const payee = String(b.payeeContactID || b.contactID || '');
-    if (voided || (payee && !PAYEES.includes(payee))) continue;
-    if (b.datePosted && (b.datePosted < start && /^\d{4}-/.test(b.datePosted))) continue;
+    if (voided || (!vendorBill && payee && !PAYEES.includes(payee))) return;
+    if (b.datePosted && (b.datePosted < start && /^\d{4}-/.test(b.datePosted))) return;
     const key = b.billID + '|' + b.propertyID + '|' + b.amount + '|' + b.description;
-    if (seen.has(key)) continue; seen.add(key);
-    v.push({ billID: b.billID, date: b.datePosted, propertyID: String(b.propertyID || ''), address: addr[String(b.propertyID)] || '', amount: money(b.amount), description: b.description || '', reference: b.reference || '', payee: b.contactName || b.contact || '' });
-  }
-  billCache = { v, days, exp: Date.now() + 5 * 60000 };
+    if (seen.has(key)) return; seen.add(key);
+    v.push({ billID: b.billID, date: b.datePosted, propertyID: String(b.propertyID || ''), address: addr[String(b.propertyID)] || '', amount: money(b.amount), description: b.description || '', reference: b.reference || '', payee: b.contactName || (typeof b.contact === 'string' ? b.contact : '') || '', vendorBill });
+  };
+  for (const b of list) add(b, false);
+  for (const b of everyBill) if (!reimbIds.has(String(b.billID))) add(b, true);
+  billCache = { v, days, exp: Date.now() + 10 * 60000 };
   return v;
 }
 

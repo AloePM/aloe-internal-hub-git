@@ -32,6 +32,7 @@
   .amt { text-align:right; font-variant-numeric: tabular-nums; white-space:nowrap; }
   .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
   .pill.green { background:var(--g-bg); color:#166534; } .pill.orange { background:var(--o-bg); color:#92400e; }
+  .pill.star, .chip.star { background:#fff1c2; color:#7a5300; border-color:#f2d27a; }
   .pill.red { background:var(--r-bg); color:#991b1b; } .pill.grey { background:var(--n-bg); color:#4b5a5e; }
   .why { color:var(--muted); font-size:13px; margin-top:3px; }
   .bill { margin-bottom:4px; } .bill a { color:var(--teal-d); font-weight:600; text-decoration:none; } .bill a:hover { text-decoration:underline; }
@@ -85,6 +86,7 @@
     <span><span class="dot" style="background:var(--o)"></span> Check — bill lower, more than $300 higher, unclear, or billed over 30 days late</span>
     <span><span class="dot" style="background:var(--r)"></span> Needs attention — no bill after 7 days, or a possible double bill</span>
     <span><span class="dot" style="background:var(--n)"></span> Other — pending, refunded, new, or marked by someone</span>
+    <span>★ Change to reimbursement? — the bill is payable to the vendor, not Reimbursements</span>
   </div>
 
   <h2>Bills to double-check</h2>
@@ -162,13 +164,13 @@
     var counts = d.counts || {};
     $('chips').innerHTML = ['red', 'orange', 'green', 'grey'].map(function (k) {
       return '<div class="chip ' + (state.show[k] ? 'on' : '') + '" data-c="' + k + '"><span class="dot" style="background:var(--' + (k === 'grey' ? 'n' : k[0]) + ')"></span>' + LABEL[k] + ' <b>' + (counts[k] || 0) + '</b></div>';
-    }).join('');
+    }).join('') + (function () { var n = d.charges.filter(function (c) { return c.fixPayee; }).length; return n ? '<div class="chip star ' + (state.onlyStar ? 'on' : '') + '" data-c="star">★ Change to reimbursement? <b>' + n + '</b></div>' : ''; })();
     Array.prototype.forEach.call(document.querySelectorAll('.chip'), function (el) {
-      el.onclick = function () { state.show[el.dataset.c] = !state.show[el.dataset.c]; store.set('cardAuditShow', JSON.stringify(state.show)); render(); };
+      el.onclick = function () { if (el.dataset.c === 'star') { state.onlyStar = !state.onlyStar; render(); return; } state.show[el.dataset.c] = !state.show[el.dataset.c]; store.set('cardAuditShow', JSON.stringify(state.show)); render(); };
     });
     var q = $('q').value.trim().toLowerCase();
     var list = d.charges.filter(function (c) {
-      if (!state.show[c.color]) return false;
+      if (state.onlyStar) { if (!c.fixPayee) return false; } else if (!state.show[c.color]) return false;
       if (!q) return true;
       var hay = [c.date, c.description, c.card, fmt(c.amount), (c.amount / 100).toFixed(2), c.reasons.join(' '), c.mark && c.mark.note].concat(c.bills.map(function (b) { return b.billID + ' ' + b.address + ' ' + b.description + ' ' + b.reference; })).join(' ').toLowerCase();
       return hay.indexOf(q) >= 0;
@@ -194,7 +196,7 @@
   function row(c) {
     var bills = c.bills.map(function (b) {
       return '<div class="bill"><a href="' + RV + encodeURIComponent(b.billID) + '" target="_blank" rel="noopener" title="Open in Rentvine">#' + esc(b.billID) + '</a> ' + fmt(b.amount) +
-        ' <span class="addr">' + esc(b.date) + '</span><div class="addr">' + esc(b.address || '') + (b.reference ? ' · ' + esc(b.reference) : '') + '</div></div>';
+        ' <span class="addr">' + esc(b.date) + '</span><div class="addr">' + esc(b.address || '') + (b.reference ? ' · ' + esc(b.reference) : '') + '</div>' + (b.vendorBill ? '<div class="gap down">Payable to the vendor' + (b.payee ? ': ' + esc(b.payee) : '') + ', not Reimbursements</div>' : '') + '</div>';
     }).join('');
     if (c.bills.length && c.billedTotal !== c.amount) {
       var g = c.billedTotal - c.amount;
@@ -208,7 +210,7 @@
       '<td>' + esc(c.description) + '</td>' +
       '<td class="hide-sm">' + esc(c.card) + '</td>' +
       '<td class="amt">' + fmt(c.amount) + '</td>' +
-      '<td><span class="pill ' + c.color + '">' + LABEL[c.color] + '</span>' + autoNote + '<div class="why">' + esc(c.reasons.join('; ')) + '</div></td>' +
+      '<td><span class="pill ' + c.color + '">' + LABEL[c.color] + '</span>' + autoNote + (c.fixPayee ? ' <span class="pill star" title="Bill is payable to the vendor instead of Reimbursements">★ Change to reimbursement?</span>' : '') + '<div class="why">' + esc(c.reasons.join('; ')) + '</div></td>' +
       '<td>' + (bills || '<span class="addr">—</span>') + '</td>' +
       '<td class="mark"><select data-id="' + esc(c.id) + '">' + opts + '</select><input data-id="' + esc(c.id) + '" placeholder="Note" value="' + esc(m.note || '') + '">' + marked + '</td></tr>';
   }
