@@ -199,6 +199,10 @@
       return '<div class="bill"><a href="' + RV + encodeURIComponent(b.billID) + '" target="_blank" rel="noopener" title="Open in Rentvine">#' + esc(b.billID) + '</a> ' + fmt(b.amount) +
         ' <span class="addr">' + esc(b.date) + '</span><div class="addr">' + esc(b.address || '') + (b.reference ? ' · ' + esc(b.reference) : '') + '</div>' + (b.vendorBill ? '<div class="gap down">Payable to the vendor' + (b.payee ? ': ' + esc(b.payee) : '') + ', not Reimbursements</div>' : '') + '</div>';
     }).join('');
+    if (c.possible) {
+      var pb = c.possible;
+      bills += '<div class="hint">Not linked: <a href="' + RV + encodeURIComponent(pb.billID) + '" target="_blank" rel="noopener">#' + esc(pb.billID) + '</a> ' + fmt(pb.amount) + ' at ' + esc(pb.address || 'unknown home') + ' has the same amount, but it doesn\'t name this vendor.</div>';
+    }
     var lh = c.likelyHomes;
     if (lh && lh.count && (!c.bills.length || c.color !== 'green')) {
       bills += '<div class="hint">' + (lh.count > 5 ? 'Rentvine lists this vendor at ' + lh.count + ' homes, e.g.: ' : 'Rentvine lists this vendor at: ') +

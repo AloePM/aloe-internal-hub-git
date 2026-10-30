@@ -42,6 +42,8 @@ const VENDOR_HINTS = [
   [/FIVE TWO ZERO|520 APPL/, ['520', 'five two zero']],
   [/COOLTIMES|COOL TIMES/, ['cool times', 'cooltimes', 'cool time', 'service:mp', 'sales ']],
   [/GLISTENING/, ['glisten', 'pool']],
+  [/TREVAS/, ['trevas', 'pool']],
+  [/SLIDE ?RIGHT/, ['slide right', 'slideright', 'slider']],
   [/BUG GUYS/, ['az bug', 'bug guy', 'bug spray', 'pest']],
   [/T2 PEST|GREEN MACHINE|CITY WIDE PEST/, ['termite', 'tarf', 'pest', 'green machine', 'city wide']],
   [/JE ELITE|CLEANING|CARPET/, ['clean', 'carpet', 'residential']],
@@ -54,10 +56,11 @@ const VENDOR_HINTS = [
   [/PARKER LOC|LOCK/, ['parker', 'rekey', 'lock', 'deadbolt']],
   [/PLUMBING|ROOTER|RCS|JTB/, ['plumb', 'rcs', 'drain', 'faucet']],
   [/COOLING|HEATING|\bAIR\b|HVAC|GOOD AC/, ['hvac', 'ac ', 'cooling', 'air', 'trade fee']],
+  [/ROOF/, ['roof']],
 ];
 const STOP = new Set(['THE', 'LLC', 'INC', 'CORP', 'WEB', 'MKTPL', 'COMPANY', 'GROUP', 'SERVICE', 'SERVICES', 'ARIZONA', 'PAYPAL', 'AND', 'FOR']);
 
-const GENERIC = new Set(['pest', 'pool', 'clean', 'residential', 'water', 'utility', 'sewer', 'electric', 'plumb', 'drain', 'faucet', 'hvac', 'ac ', 'cooling', 'air', 'trade fee', 'home warranty', 'lock', 'legal', 'notice', 'registration', 'hoa', 'sku', 'dishwasher', 'washer', 'dryer', 'range', 'frig', 'microwave', 'termite', 'pilot', 'water heater', 'sales ', 'service:mp', 'deadbolt', 'carpet', 'court', 'attorney', 'pool key']);
+const GENERIC = new Set(['pest', 'pool', 'clean', 'residential', 'water', 'utility', 'sewer', 'electric', 'plumb', 'drain', 'faucet', 'hvac', 'ac ', 'cooling', 'air', 'trade fee', 'home warranty', 'lock', 'legal', 'notice', 'registration', 'hoa', 'sku', 'dishwasher', 'washer', 'dryer', 'range', 'frig', 'microwave', 'termite', 'pilot', 'water heater', 'sales ', 'service:mp', 'deadbolt', 'carpet', 'court', 'attorney', 'pool key', 'roof']);
 export function hintsFor(merchant) {
   const m = String(merchant || '').toUpperCase().replace(/&AMP;/g, '&');
   const curated = [];
@@ -73,6 +76,7 @@ export function hintsFor(merchant) {
 }
 const COMMON = new Set(['CONTROL', 'REPAIR', 'APPLIANCE', 'PLUMBING', 'HEATING', 'COOLING', 'ELECTRIC', 'ELECTRICAL', 'CLEANING', 'SUPPLY', 'DEPOT', 'STORE', 'MARKET', 'MKTPLACE', 'AMAZON', 'HOMEOWNERS', 'MANAGEMENT', 'SYSTEMS', 'DOORS', 'GLASS', 'WATER', 'HOME', 'PROTECT', 'WARRANTY', 'NATIONAL', 'CONSTRUCTION', 'LIGHTING', 'SLIDING', 'RESOURCES', 'PUBLIC', 'CHANDLER', 'MARICOPA', 'PHOENIX']);
 const strongOf = (hints) => hints.strong || [];
+const SAFE_GENERIC = new Set(['home warranty', 'trade fee', 'registration', 'hoa', 'pool key', 'electric', 'water', 'sewer', 'utility', 'legal', 'attorney', 'notice', 'court']);
 function textHit(hints, text) {
   const t = ' ' + String(text || '').toLowerCase() + ' ';
   return hints.some((h) => (h instanceof RegExp ? h.test(t) : h.length <= 3 ? new RegExp('(^|[^a-z0-9&])' + h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9])').test(t) : t.includes(h)));
@@ -133,7 +137,7 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {}, hom
   // 1. Exact amount, same vendor.  2. Exact amount, any vendor (orange).
   for (const pass of ['vendor', 'any', 'long']) {
     for (const c of open()) {
-      const cands = bills.filter((b) => free(b) && b.amount === c.amount && inWin(c, b, pass === 'long') && !wrongHome(c, b) && (pass !== 'vendor' || textHit(c.clue, b.text) || c.homes.has(String(b.propertyID)) || textHit(c.hints, b.text)));
+      const cands = bills.filter((b) => free(b) && b.amount === c.amount && inWin(c, b, pass === 'long') && !wrongHome(c, b) && (pass !== 'vendor' || textHit(c.clue, b.text) || c.homes.has(String(b.propertyID)) || textHit(c.hints.filter((h) => SAFE_GENERIC.has(h)), b.text) || (b.d - c.d >= -5 && b.d - c.d <= 10 && textHit(c.hints, b.text))));
       if (!cands.length) continue;
       const best = cands.sort((a, b) => score(c, b) - score(c, a))[0];
       // Is this the only open charge and the only free bill with this amount around this date?
@@ -141,9 +145,8 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {}, hom
       const unique = cands.length === 1 && rivals === 0;
       if (pass === 'vendor') { assign(c, [best], 'green', 'exact match'); lateNote(c); }
       else if (pass === 'any' && unique && c.amount % 500 !== 0) { assign(c, [best], 'green', 'exact amount — the only bill with this amount around this date'); lateNote(c); }
-      else if (pass === 'any' && unique) assign(c, [best], 'orange', 'same round amount and date, but the bill does not name this vendor — check it is the same job');
-      else if (pass === 'any') assign(c, [best], 'orange', 'same amount and date, but the bill does not name this vendor and other bills have the same amount');
-      else if (unique) { assign(c, [best], 'orange', `same amount, but billed ${best.d - c.d} days after the charge`); }
+      else if (pass === 'any') { if (!c.possible) c.possible = best; }
+      else if (unique && textHit(c.clue, best.text)) { assign(c, [best], 'orange', `same amount, but billed ${best.d - c.d} days after the charge`); }
     }
   }
 
@@ -245,7 +248,7 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {}, hom
   const likely = (c) => { const m = c.homes.size ? c.homes : c.noteHomes; return { count: m.size, homes: [...m.values()].slice(0, 5) }; };
   const strip = (b) => ({ billID: b.billID, date: isoDay(b.d), propertyID: b.propertyID, address: b.address, amount: b.amount, description: b.description, reference: b.reference, payee: b.payee, vendorBill: !!b.vendorBill });
   return {
-    charges: charges.sort((a, b) => b.d - a.d).map((c) => ({ id: c.id, date: isoDay(c.d), description: c.description, card: c.card || '', amount: c.amount, pending: !!c.pending, color: c.color, autoColor: c.autoColor || c.color, reasons: c.reasons, fixPayee: !!c.fixPayee, likelyHomes: likely(c), mark: c.mark || null, pairedWith: c.pairedWith || null, bills: c.bills.map(strip), billedTotal: c.bills.reduce((s, b) => s + b.amount, 0) })),
+    charges: charges.sort((a, b) => b.d - a.d).map((c) => ({ id: c.id, date: isoDay(c.d), description: c.description, card: c.card || '', amount: c.amount, pending: !!c.pending, color: c.color, autoColor: c.autoColor || c.color, reasons: c.reasons, fixPayee: !!c.fixPayee, likelyHomes: likely(c), possible: !c.bills.length && c.possible && !c.possible.used ? strip(c.possible) : null, mark: c.mark || null, pairedWith: c.pairedWith || null, bills: c.bills.map(strip), billedTotal: c.bills.reduce((s, b) => s + b.amount, 0) })),
     billAlerts: billAlerts.map((x) => ({ why: x.why, a: strip(x.a), b: strip(x.b) })),
   };
 }
