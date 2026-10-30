@@ -23,6 +23,8 @@ tr.owner{cursor:pointer}tr.owner:hover{background:#f0fafd}
 .ok{background:var(--tealbg);color:var(--tealdk)}.look{background:var(--amberbg);color:var(--amber)}.bad{background:var(--redbg);color:var(--red)}
 .tag{background:var(--silverbg);color:#3b5358;border:1px solid var(--silver)}.tag.in{background:var(--tealbg);color:var(--tealdk);border-color:var(--teal2)}.tag.out{background:var(--amberbg);color:var(--amber);border-color:#e2c477}.tag.first{background:#fff;color:var(--tealdk);border-color:var(--teal2)}
 .neg{color:var(--red);font-weight:600}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;background:transparent;border:1px solid var(--silver)}.dot.red{background:#c0392b;border-color:#c0392b}.dot.amber{background:#e0a21a;border-color:#e0a21a}.dot.teal{background:var(--teal);border-color:var(--teal)}
+.pill.b{font-size:11px;letter-spacing:.2px}.pill.b.red{background:var(--redbg);color:var(--red);border-color:#e8b4ad}.pill.b.amber{background:var(--amberbg);color:var(--amber);border-color:#e2c477}.pill.b.teal{background:var(--tealbg);color:var(--tealdk);border-color:var(--teal2)}.pill.more{background:#fff;color:#3b5358}
 tr.detail td{background:#fbfdfe;padding:0;white-space:normal}
 .inner{padding:14px 18px 18px}
 .flags{margin:0 0 10px;padding:0;list-style:none}.flags li{margin:2px 0}
@@ -103,26 +105,36 @@ function statusPill(o) {
   const bad = o.flags.includes('below_zero');
   return '<span class="pill ' + (bad ? 'bad' : 'look') + '">Needs a look</span>';
 }
+// Owner row: one colored dot (worst thing on the row) and at most 3 short badges, most important first. The rest is behind "+N" and inside the owner.
+function ownerItems(o) {
+  const c = o.tagCounts || {}, it = [], x = (n) => (n > 1 ? ' x' + n : '');
+  const add = (lvl, text, title) => it.push({ lvl, text, title: title || text });
+  if ((o.flags || []).includes('below_zero')) add('red', 'BELOW $0', 'Expenses are more than cleared money');
+  if (c.fee_missing) add('red', 'FEE NOT BILLED' + x(c.fee_missing), 'Placement fee not billed on a new move-in');
+  if ((o.contributions || []).length) add('red', 'CONTRIBUTION ' + money(o.contribTotal), 'Owner contributed money in the last 30 days - do not send it back');
+  if (c.vacant) add('red', 'VACANT' + x(c.vacant), 'A home is vacant - no rent coming in');
+  if (c.fee_check) add('amber', 'FEE CHECK' + x(c.fee_check), 'Placement fee amount needs a person to look');
+  if (c.late_pending) add('amber', 'LATE RENT PENDING' + x(c.late_pending), 'Late rent received but not cleared yet');
+  if (c.move_out_30) add('amber', 'MOVE-OUT 30D' + x(c.move_out_30), 'Tenant moving out within 30 days - consider holding funds');
+  if (c.late_cleared) add('teal', 'PAY NOW' + x(c.late_cleared), 'Late rent has cleared since the last payout');
+  if (o.newOwner) add('teal', 'NEW OWNER', 'New owner - pay as soon as funds clear');
+  else if (c.new_property) add('teal', 'NEW PROPERTY' + x(c.new_property), 'Home started with us in the last 60 days');
+  if (c.movein_cleared) add('teal', 'MOVE-IN FUNDS CLEARED', 'Move-in funds have settled');
+  if (c.new_move_in) add('gray', 'NEW MOVE-IN' + x(c.new_move_in));
+  if (o.neverPaid) add('gray', 'NO PAYOUT 3 MO', 'No owner payout in the last 3 months');
+  if (c.fee_skip) add('gray', 'NO FEE (LEASE BREAK)', 'Do not charge placement fee - prior tenant broke the lease');
+  return it; // move-out this/next month, no mgmt fee and "fee to bill" are shown inside the owner only
+}
+const LVL_ORDER = { red: 0, amber: 1, teal: 2, gray: 3 }, LVL_CLS = { red: 'out', amber: 'out', teal: 'in', gray: '' };
+function ownerDot(o) {
+  const it = ownerItems(o), w = it.length ? it.map((i) => i.lvl).sort((a, b) => LVL_ORDER[a] - LVL_ORDER[b])[0] : '';
+  return '<span class="dot ' + (w === 'gray' ? '' : w) + '"></span>';
+}
 function ownerTags(o) {
-  const c = o.tagCounts || {}, t = [], x = (n) => (n > 1 ? ' x' + n : '');
-  if (o.newOwner) t.push('<span class="pill tag in">New owner</span>');
-  else if (c.new_property) t.push('<span class="pill tag in">New property' + x(c.new_property) + '</span>');
-  if (c.vacant) t.push('<span class="pill tag out">Vacant home' + x(c.vacant) + '</span>');
-  if ((o.contributions || []).length) t.push('<span class="pill tag out">Owner contribution ' + money(o.contribTotal) + '</span>');
-  if (o.neverPaid) t.push('<span class="pill tag first">No payout in 3 months</span>');
-  if (c.new_move_in) t.push('<span class="pill tag in">New move-in' + x(c.new_move_in) + '</span>');
-  if (c.move_out_30) t.push('<span class="pill tag out">Moving out in 30 days' + x(c.move_out_30) + '</span>');
-  if (c.move_out_month) t.push('<span class="pill tag">Out this month' + x(c.move_out_month) + '</span>');
-  if (c.move_out_next) t.push('<span class="pill tag">Out next month' + x(c.move_out_next) + '</span>');
-  if (c.no_fee) t.push('<span class="pill tag">No mgmt fee' + x(c.no_fee) + '</span>');
-  if (c.late_cleared) t.push('<span class="pill tag in">Late rent cleared - pay now' + x(c.late_cleared) + '</span>');
-  if (c.movein_cleared) t.push('<span class="pill tag in">Move-in funds cleared' + x(c.movein_cleared) + '</span>');
-  if (c.late_pending) t.push('<span class="pill tag">Late rent pending' + x(c.late_pending) + '</span>');
-  if (c.fee_missing) t.push('<span class="pill tag out">Placement fee NOT billed' + x(c.fee_missing) + '</span>');
-  if (c.fee_check) t.push('<span class="pill tag out">Placement fee: check' + x(c.fee_check) + '</span>');
-  if (c.fee_skip) t.push('<span class="pill tag">Do not charge placement fee' + x(c.fee_skip) + '</span>');
-  if (c.fee_due) t.push('<span class="pill tag">Placement fee to bill' + x(c.fee_due) + '</span>');
-  return t.join('');
+  const it = ownerItems(o).sort((a, b) => LVL_ORDER[a.lvl] - LVL_ORDER[b.lvl]);
+  const shown = it.slice(0, 3), rest = it.slice(3);
+  return shown.map((i) => '<span class="pill tag b ' + i.lvl + '" title="' + esc(i.title) + '">' + esc(i.text) + '</span>').join('') +
+    (rest.length ? '<span class="pill tag more" title="' + esc(rest.map((i) => i.text).join(', ')) + '">+' + rest.length + '</span>' : '');
 }
 function sortVal(o, k) {
   if (k === 'name') return o.name.toLowerCase();
@@ -153,7 +165,7 @@ function render() {
   if (sortKey) rows = rows.slice().sort((a, b) => { const x = sortVal(a, sortKey), y = sortVal(b, sortKey); return (x < y ? -1 : x > y ? 1 : 0) * sortDir; });
   $('#body').innerHTML = rows.map((o) => {
     const d = data.decisions[o.ownerID];
-    const main = '<tr class="owner" data-id="' + esc(o.ownerID) + '"><td>' + esc(o.name) + ' <span class="muted tiny">(' + o.properties.length + ')</span>' + (d ? ' <span class="pill ok">' + esc(d.action.replace('_', ' ')) + '</span>' : '') + '<div>' + ownerTags(o) + '</div></td>' +
+    const main = '<tr class="owner" data-id="' + esc(o.ownerID) + '"><td>' + ownerDot(o) + esc(o.name) + ' <span class="muted tiny">(' + o.properties.length + ')</span>' + (d ? ' <span class="pill ok">' + esc(d.action.replace('_', ' ')) + '</span>' : '') + '<div>' + ownerTags(o) + '</div></td>' +
       '<td>' + money(o.settledIn) + '</td><td>' + money(o.fees) + '</td><td>' + money(o.unpaidBills) + '</td><td>' + money(o.recurringTotal) + '</td><td>' + money(o.reserve) + '</td>' +
       '<td class="' + (o.amountToPay < 0 ? 'neg' : '') + '"><b>' + money(o.amountToPay) + '</b></td><td>' + (o.lastPayout == null ? '<span class="muted">none in 3 months</span>' : money(o.lastPayout) + '<div class="muted tiny">' + esc(mdy(o.lastPayoutDate)) + '</div>') + '</td><td class="l">' + statusPill(o) + '</td></tr>';
     return main + (open.has(String(o.ownerID)) ? detail(o, d) : '');

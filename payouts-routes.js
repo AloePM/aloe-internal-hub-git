@@ -383,9 +383,12 @@ export function leaseTags(info, since, todayISO) {
 
 // Marks bills that look entered twice: same property, same account, same amount, same vendor or description, posted within 10 days.
 export function markDuplicates(list) {
-  const key = (b) => String(b.vendor || b.desc || '').trim().toLowerCase();
+  // Aloe's own bills (reimbursements, admin charges) are often several different items for the same amount, so those only match on the description too.
+  const norm = (v) => String(v || '').trim().toLowerCase();
+  const key = (b) => (/aloe property management/.test(norm(b.vendor)) ? norm(b.vendor) + '|' + norm(b.desc) : norm(b.vendor || b.desc));
   for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
     const a = list[i], b = list[j];
+    if (a.billID !== undefined && a.billID !== '' && String(a.billID) === String(b.billID)) continue; // two lines on the same bill are not a duplicate
     if (a.accountID === b.accountID && Math.abs(a.amount - b.amount) < 0.005 && key(a) === key(b) && a.date && b.date && Math.abs(dayDiff(a.date, b.date)) <= 10) { a.dup = true; b.dup = true; }
   }
   return list;
