@@ -184,10 +184,12 @@ export const LATE_AFTER_DAY = 12;
 export const LATE_RENT_ACCOUNTS = [10, 32, 39, 150];
 const LATE_COLS = ['datePosted', 'propertyID', 'leaseID', 'amount', 'amountAllocated', 'isDepositedSettled', 'settlementDate', 'isVoided', 'isReturned'];
 const LCHARGE_COLS = ['leaseID', 'chargeAccountID', 'amountPaid', 'isVoided'];
+// Charges posted after the 12th (admin fees, late fees...) can only be paid by money that came in after the 12th, so that money pays them first.
+const LCHARGE_NEW_COLS = ['leaseID', 'chargeAccountID', 'amountPaid', 'isVoided', 'datePosted'];
 // Tenant Receipts report (payments posted from the 13th of this month) plus this month's rent/fine charges, to see what each payment paid.
 // Small reports, loaded after the others. A failure never stops the page.
 export async function loadLateRent(rvFetch, todayISO = today()) {
-  const out = { rows: [], paidByLease: {}, error: '' };
+  const out = { rows: [], paidByLease: {}, feesAfterByLease: {}, error: '' };
   const from = todayISO.slice(0, 7) + '-' + String(LATE_AFTER_DAY + 1).padStart(2, '0');
   if (todayISO < from) return out;
   try {
@@ -197,6 +199,12 @@ export async function loadLateRent(rvFetch, todayISO = today()) {
       if (truthy(c.isVoided) || !LATE_RENT_ACCOUNTS.includes(num(c.chargeAccountID)) || c.leaseID === undefined || c.leaseID === '') continue;
       out.paidByLease[String(c.leaseID)] = (out.paidByLease[String(c.leaseID)] || 0) + num(c.amountPaid);
     }
+    const newCharges = await allPages(rvFetch, 'lease-charges', { displayColumns: LCHARGE_NEW_COLS, filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: from, endDate: todayISO }] }, { fields: LCHARGE_NEW_COLS, max: 12 });
+    for (const c of newCharges) {
+      if (truthy(c.isVoided) || LATE_RENT_ACCOUNTS.includes(num(c.chargeAccountID)) || c.leaseID === undefined || c.leaseID === '') continue;
+      const d = toISO(c.datePosted); if (d && d < from) continue;
+      out.feesAfterByLease[String(c.leaseID)] = (out.feesAfterByLease[String(c.leaseID)] || 0) + num(c.amountPaid);
+    }
   } catch (e) { console.error('late rent load', e); out.error = String(e.message || e); out.rows = []; }
   return out;
 }
@@ -204,15 +212,19 @@ export async function loadLateRent(rvFetch, todayISO = today()) {
 // Late rent for one property. A payment counts only for the part that paid rent / a fine (paidByLease caps it per lease), voided and returned
 // payments are ignored. Payments from a lease that is moving in (paid up to 7 days after move-in) are move-in funds, not late rent.
 // cleared = settled after the owner's last payout; pending = received but not cleared yet.
-export function lateRentFor(propertyID, rowsIn, since, todayISO = today(), { paidByLease = null, moveInByLease = {} } = {}) {
+export function lateRentFor(propertyID, rowsIn, since, todayISO = today(), { paidByLease = null, moveInByLease = {}, feesAfterByLease = null } = {}) {
   const out = { cleared: 0, pending: 0, moveinCleared: 0, moveinPending: 0, clearedRows: [], pendingRows: [], moveinClearedRows: [], moveinPendingRows: [] };
-  const remaining = {};
+  const remaining = {}; const absorb = {};
   const mine = (rowsIn || []).filter((r) => String(r.propertyID) === String(propertyID) && !truthy(r.isVoided) && !truthy(r.isReturned)).map((r) => ({ r, posted: toISO(r.datePosted) })).filter((x) => x.posted).sort((a, b) => (a.posted < b.posted ? -1 : 1));
   for (const { r, posted } of mine) {
     const moveIn = moveInByLease[String(r.leaseID)];
     const isMoveIn = !!moveIn && posted <= addDays(moveIn, 7);
     if (!isMoveIn && posted.slice(0, 7) === todayISO.slice(0, 7) && posted.slice(8, 10) <= String(LATE_AFTER_DAY).padStart(2, '0')) continue;
     let amt = num(r.amountAllocated); if (amt <= 0) continue;
+    if (feesAfterByLease) {
+      const k = String(r.leaseID); if (absorb[k] === undefined) absorb[k] = num(feesAfterByLease[k]);
+      const take = Math.min(amt, absorb[k]); amt -= take; absorb[k] -= take; if (amt <= 0.004) continue;
+    }
     if (paidByLease) {
       const k = String(r.leaseID); if (remaining[k] === undefined) remaining[k] = num(paidByLease[k]);
       amt = Math.min(amt, remaining[k]); if (amt <= 0) continue; remaining[k] -= amt;
@@ -308,7 +320,7 @@ export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], c
       const feeChecks = (feeData.moves || []).filter((m) => String(m.propertyID) === id && !/^closed/i.test(String(m.leaseStatusName || '')) && toISO(m.moveInDate))
         .map((m) => feeCheck(m, { feeBills: feeData.feeBills || [], breakRows: feeData.breakRows || [], brokenLeases: feeData.brokenLeases || [], startISO }, todayISO)).filter((f) => f.key);
       for (const f of feeChecks) lt.tags.push({ key: f.key, text: f.text });
-      const lateRent = lateRentFor(id, lateData.rows || [], since, todayISO, { paidByLease: lateData.rows && lateData.paidByLease ? lateData.paidByLease : null, moveInByLease });
+      const lateRent = lateRentFor(id, lateData.rows || [], since, todayISO, { paidByLease: lateData.rows && lateData.paidByLease ? lateData.paidByLease : null, feesAfterByLease: lateData.rows && lateData.feesAfterByLease ? lateData.feesAfterByLease : null, moveInByLease });
       const md3 = (iso) => Number(iso.slice(5, 7)) + '/' + Number(iso.slice(8, 10));
       const mny = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
       const lastOf = (a, k) => a.map((x) => x[k]).sort().pop();
