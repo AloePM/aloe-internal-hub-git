@@ -35,12 +35,12 @@ export function money(v) {
 // Words that tie a card merchant to the text Aloe staff put on bills.
 const VENDOR_HINTS = [
   [/HOME ?DEPOT|HOMEDEPOT/, ['hd', 'home depot', 'sku', 'homedepot']],
-  [/LOWE'?S/, ['lowes', 'lowe']],
+  [/LOWE'?S/, ['lowes', "lowe's"]],
   [/AMAZON|AMZN/, ['amazon', 'sold by']],
   [/SPENCER/, ['spencer', /\bnt\d{3,}/, 'dishwasher', 'washer', 'dryer', 'range', 'frig', 'microwave']],
   [/J\s*&?\s*G APPLIANCE/, ['j&g', 'j & g', 'jg', 'j g']],
   [/FIVE TWO ZERO|520 APPL/, ['520', 'five two zero']],
-  [/COOLTIMES|COOL TIMES/, ['cool', 'service:mp', 'sales ']],
+  [/COOLTIMES|COOL TIMES/, ['cool times', 'cooltimes', 'cool time', 'service:mp', 'sales ']],
   [/GLISTENING/, ['glisten', 'pool']],
   [/BUG GUYS/, ['az bug', 'bug guy', 'bug spray', 'pest']],
   [/T2 PEST|GREEN MACHINE|CITY WIDE PEST/, ['termite', 'tarf', 'pest', 'green machine', 'city wide']],
@@ -60,12 +60,18 @@ const STOP = new Set(['THE', 'LLC', 'INC', 'CORP', 'WEB', 'MKTPL', 'COMPANY', 'G
 const GENERIC = new Set(['pest', 'pool', 'clean', 'residential', 'water', 'utility', 'sewer', 'electric', 'plumb', 'drain', 'faucet', 'hvac', 'ac ', 'cooling', 'air', 'trade fee', 'home warranty', 'lock', 'legal', 'notice', 'registration', 'hoa', 'sku', 'dishwasher', 'washer', 'dryer', 'range', 'frig', 'microwave', 'termite', 'pilot', 'water heater', 'sales ', 'service:mp', 'deadbolt', 'carpet', 'court', 'attorney', 'pool key']);
 export function hintsFor(merchant) {
   const m = String(merchant || '').toUpperCase().replace(/&AMP;/g, '&');
-  const out = [];
-  for (const [re, words] of VENDOR_HINTS) if (re.test(m)) out.push(...words);
-  for (const w of m.replace(/^(IN|SQ|PY|PB|HDN|SP|TST)\s*\*+\s*/, '').split(/[^A-Z0-9]+/)) if (w.length >= 4 && !STOP.has(w) && !/^\d+$/.test(w)) out.push(w.toLowerCase());
+  const curated = [];
+  for (const [re, words] of VENDOR_HINTS) if (re.test(m)) curated.push(...words);
+  // Words from the merchant name only help pick between exact-amount bills; they never make a
+  // non-exact match on their own (a word like "control" or "city" shows up in unrelated bills).
+  const names = [];
+  for (const w of m.replace(/^(IN|SQ|PY|PB|HDN|SP|TST)\s*\*+\s*/, '').split(/[^A-Z0-9]+/)) if (w.length >= 5 && !STOP.has(w) && !COMMON.has(w) && !/\d/.test(w)) names.push(new RegExp('\\b' + w.toLowerCase() + '\\b'));
+  const out = [...curated, ...names];
+  out.strong = curated.filter((h) => h instanceof RegExp || !GENERIC.has(h));
   return out;
 }
-const strongOf = (hints) => hints.filter((h) => h instanceof RegExp || !GENERIC.has(h));
+const COMMON = new Set(['CONTROL', 'REPAIR', 'APPLIANCE', 'PLUMBING', 'HEATING', 'COOLING', 'ELECTRIC', 'ELECTRICAL', 'CLEANING', 'SUPPLY', 'DEPOT', 'STORE', 'MARKET', 'MKTPLACE', 'AMAZON', 'HOMEOWNERS', 'MANAGEMENT', 'SYSTEMS', 'DOORS', 'GLASS', 'WATER', 'HOME', 'PROTECT', 'WARRANTY', 'NATIONAL', 'CONSTRUCTION', 'LIGHTING', 'SLIDING', 'RESOURCES', 'PUBLIC', 'CHANDLER', 'MARICOPA', 'PHOENIX']);
+const strongOf = (hints) => hints.strong || [];
 function textHit(hints, text) {
   const t = ' ' + String(text || '').toLowerCase() + ' ';
   return hints.some((h) => (h instanceof RegExp ? h.test(t) : h.length <= 3 ? new RegExp('(^|[^a-z0-9&])' + h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9])').test(t) : t.includes(h)));
@@ -84,6 +90,7 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = 
   const charges = chargesIn.filter((c) => !isCardPayment(c)).map((c) => { const hints = hintsFor(c.description); return { ...c, d: dayNum(c.date), hints, strong: strongOf(hints), bills: [], color: null, reasons: [] }; });
   const bills = billsIn.map((b) => ({ ...b, d: dayNum(b.date), text: `${b.description || ''} ${b.reference || ''} ${b.payee || ''}`, used: null }));
   const free = (b) => !b.used;
+  const inWinNE = (c, b) => b.d != null && c.d != null && b.d - c.d >= -3 && b.d - c.d <= O.WIN_AFTER;
   const inWin = (c, b, long) => b.d != null && c.d != null && b.d - c.d >= -O.WIN_BEFORE && b.d - c.d <= (long ? O.LONG_WIN : O.WIN_AFTER);
   const assign = (c, list, color, reason) => { for (const b of list) b.used = c.id; c.bills = list; c.color = color; c.reasons.push(reason); };
   const lateNote = (c) => { const late = Math.max(...c.bills.map((b) => b.d - c.d)); if (late > O.LATE_DAYS) { c.color = 'orange'; c.reasons.push(`billed ${late} days after the charge`); } };
@@ -110,7 +117,8 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = 
       const rivals = open().filter((o) => o !== c && o.amount === c.amount && Math.abs(o.d - c.d) <= 14).length;
       const unique = cands.length === 1 && rivals === 0;
       if (pass === 'vendor') { assign(c, [best], 'green', 'exact match'); lateNote(c); }
-      else if (pass === 'any' && unique) { assign(c, [best], 'green', 'exact amount — the only bill with this amount around this date'); lateNote(c); }
+      else if (pass === 'any' && unique && c.amount % 500 !== 0) { assign(c, [best], 'green', 'exact amount — the only bill with this amount around this date'); lateNote(c); }
+      else if (pass === 'any' && unique) assign(c, [best], 'orange', 'same round amount and date, but the bill does not name this vendor — check it is the same job');
       else if (pass === 'any') assign(c, [best], 'orange', 'same amount and date, but the bill does not name this vendor and other bills have the same amount');
       else if (unique) { assign(c, [best], 'orange', `same amount, but billed ${best.d - c.d} days after the charge`); }
     }
@@ -151,7 +159,7 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = 
 
   // 5. Bill higher than the charge (markup, or supplies billed with labor).
   for (const c of open()) {
-    const cands = bills.filter((b) => free(b) && b.amount > c.amount && b.amount <= c.amount * 3 + O.MARKUP_MAX * 100 && inWin(c, b) && textHit(c.strong, b.text)).sort((a, b) => (a.amount - b.amount) || (Math.abs(a.d - c.d) - Math.abs(b.d - c.d)));
+    const cands = bills.filter((b) => free(b) && b.amount > c.amount && b.amount <= c.amount * 3 + O.MARKUP_MAX * 100 && inWinNE(c, b) && textHit(c.strong, b.text)).sort((a, b) => (a.amount - b.amount) || (Math.abs(a.d - c.d) - Math.abs(b.d - c.d)));
     const b = cands[0];
     if (!b) continue;
     const gap = b.amount - c.amount;
@@ -160,14 +168,14 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = 
 
   // 6. Bill lower than the charge (under-billed), then 6b. bill far higher than the charge.
   //    Pairs are chosen across all charges at once, closest date first, so one charge can't steal another's bill.
-  const greedy = (ok, reason) => {
+  const greedy = (ok, reason, win) => {
     const pairs = [];
-    for (const c of open()) for (const b of bills) if (free(b) && inWin(c, b) && textHit(c.strong, b.text) && ok(c, b)) pairs.push([Math.abs(b.d - c.d) + Math.abs(b.amount - c.amount) / 10000, c, b]);
+    for (const c of open()) for (const b of bills) if (free(b) && win(c, b) && textHit(c.strong, b.text) && ok(c, b)) pairs.push([Math.abs(b.d - c.d) + Math.abs(b.amount - c.amount) / 10000, c, b]);
     pairs.sort((x, y) => x[0] - y[0]);
     for (const [, c, b] of pairs) if (!c.color && free(b)) assign(c, [b], 'orange', reason(c, b));
   };
-  greedy((c, b) => b.amount < c.amount && b.amount >= c.amount * 0.75, (c, b) => `billed ${fmt(c.amount - b.amount)} less than the charge`);
-  greedy((c, b) => b.amount > c.amount + O.MARKUP_MAX * 100 && b.amount <= c.amount * 3 + O.MARKUP_MAX * 100, (c, b) => `bill is ${fmt(b.amount - c.amount)} higher than the charge — more than ${fmt(O.MARKUP_MAX * 100)}`);
+  greedy((c, b) => b.amount < c.amount && b.amount >= c.amount * 0.75, (c, b) => `billed ${fmt(c.amount - b.amount)} less than the charge`, inWin);
+  greedy((c, b) => b.amount > c.amount + O.MARKUP_MAX * 100 && b.amount <= c.amount * 3 + O.MARKUP_MAX * 100, (c, b) => `bill is ${fmt(b.amount - c.amount)} higher than the charge — more than ${fmt(O.MARKUP_MAX * 100)}`, inWinNE);
 
   // 7. Nothing found.
   for (const c of open()) {
