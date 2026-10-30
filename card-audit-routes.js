@@ -19,7 +19,7 @@ import { matchAll, money } from './card-audit-match.js';
 const PROJECT = 'property-agent-496300';
 const BUCKET = 'aloe-hub-data-496300';
 const MARKS_OBJECT = 'card-audit/marks.json';
-const PAYEES = ['3229', '3380', '3427']; // Reimbursements, Aloe PM-Vendor, John - Aloe PM
+const PAYEES = ['3229', '3380']; // Aloe PM - REIMBURSEMENTS, Aloe Property Management-Vendor
 const PLAID_BASE = 'https://production.plaid.com';
 const COOKIE = 'aloe_money';
 const SESSION_HOURS = 12;
