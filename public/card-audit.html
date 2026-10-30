@@ -32,6 +32,7 @@
   .amt { text-align:right; font-variant-numeric: tabular-nums; white-space:nowrap; }
   .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
   .pill.green { background:var(--g-bg); color:#166534; } .pill.orange { background:var(--o-bg); color:#92400e; }
+  .hint { font-size:12px; color:#0f5f73; background:#eaf8fc; border-radius:6px; padding:4px 6px; margin-top:4px; }
   .pill.star, .chip.star { background:#fff1c2; color:#7a5300; border-color:#f2d27a; }
   .pill.red { background:var(--r-bg); color:#991b1b; } .pill.grey { background:var(--n-bg); color:#4b5a5e; }
   .why { color:var(--muted); font-size:13px; margin-top:3px; }
@@ -198,6 +199,11 @@
       return '<div class="bill"><a href="' + RV + encodeURIComponent(b.billID) + '" target="_blank" rel="noopener" title="Open in Rentvine">#' + esc(b.billID) + '</a> ' + fmt(b.amount) +
         ' <span class="addr">' + esc(b.date) + '</span><div class="addr">' + esc(b.address || '') + (b.reference ? ' · ' + esc(b.reference) : '') + '</div>' + (b.vendorBill ? '<div class="gap down">Payable to the vendor' + (b.payee ? ': ' + esc(b.payee) : '') + ', not Reimbursements</div>' : '') + '</div>';
     }).join('');
+    var lh = c.likelyHomes;
+    if (lh && lh.count && (!c.bills.length || c.color !== 'green')) {
+      bills += '<div class="hint">' + (lh.count > 5 ? 'Rentvine lists this vendor at ' + lh.count + ' homes, e.g.: ' : 'Rentvine lists this vendor at: ') +
+        lh.homes.map(function (h) { return esc(h.address) + ' <span class="addr">(' + esc(h.field) + ')</span>'; }).join('; ') + '</div>';
+    }
     if (c.bills.length && c.billedTotal !== c.amount) {
       var g = c.billedTotal - c.amount;
       bills += '<div class="gap ' + (g > 0 ? 'up' : 'down') + '">' + (g > 0 ? '+' : '') + fmt(g) + (g > 0 ? ' billed above the charge' : ' not billed') + '</div>';

@@ -161,14 +161,33 @@ async function allPages(rvFetch, route, report, max = 20) {
   }
   return out;
 }
-let addrCache = null;
-async function addresses(rvFetch) {
-  if (addrCache && addrCache.exp > Date.now()) return addrCache.v;
-  const list = await allPages(rvFetch, 'property', { displayColumns: ['propertyID', 'propertyAddress', 'propertyCity'], filters: [] }, 10);
-  const v = {}; for (const p of list) v[String(p.propertyID)] = [p.propertyAddress, p.propertyCity].filter(Boolean).join(', ');
-  addrCache = { v, exp: Date.now() + 3600000 };
-  return v;
+// Property address plus the custom fields that say which company services each home.
+// (Login/credential fields are deliberately never requested.)
+const VENDOR_FIELDS = {
+  property_paragraph_6: 'Pool provider', property_paragraph_10: 'Pest provider', property_paragraph_9: 'Landscaping provider',
+  property_text_68: 'Home warranty', property_paragraph_11: 'Preferred HVAC vendor', property_paragraph_12: 'Preferred roof vendor',
+  property_paragraph_15: 'Preferred landscaper', property_text_67: 'HOA',
+};
+let propCache = null;
+async function propertyInfo(rvFetch) {
+  if (propCache && propCache.exp > Date.now()) return propCache.v;
+  const cols = ['propertyID', 'propertyAddress', 'propertyCity', 'maintenanceNotes', ...Object.keys(VENDOR_FIELDS)];
+  let list;
+  try { list = await allPages(rvFetch, 'property', { displayColumns: cols, filters: [] }, 10); }
+  catch (e) { console.error('[card-audit] property vendor fields:', e.message); list = await allPages(rvFetch, 'property', { displayColumns: cols.slice(0, 3), filters: [] }, 10); }
+  const addr = {}, homes = {};
+  for (const p of list) {
+    const id = String(p.propertyID), a = [p.propertyAddress, p.propertyCity].filter(Boolean).join(', ');
+    addr[id] = a;
+    const fields = {};
+    for (const [k, label] of Object.entries(VENDOR_FIELDS)) if (p[k] && String(p[k]).trim()) fields[label] = String(p[k]).slice(0, 300);
+    const notes = p.maintenanceNotes ? String(p.maintenanceNotes).slice(0, 800) : '';
+    if (Object.keys(fields).length || notes) homes[id] = { address: a, fields, notes };
+  }
+  propCache = { v: { addr, homes }, exp: Date.now() + 3600000 };
+  return propCache.v;
 }
+async function addresses(rvFetch) { return (await propertyInfo(rvFetch)).addr; }
 let billCache = null;
 async function reimbursementBills(rvFetch, days) {
   if (billCache && billCache.days >= days && billCache.exp > Date.now()) return billCache.v;
@@ -261,7 +280,7 @@ export function installCardAudit(app, rvFetch) {
     try {
       const [charges, bills, marks] = await Promise.all([chaseTransactions(days), reimbursementBills(rvFetch, days), readMarks().catch(() => ({}))]);
       if (!charges) return res.json({ connected: false, bills: bills.length });
-      const out = matchAll(charges, bills, { today: new Date(), marks });
+      const out = matchAll(charges, bills, { today: new Date(), marks, homes: (await propertyInfo(rvFetch)).homes });
       const counts = out.charges.reduce((m, c) => ((m[c.color] = (m[c.color] || 0) + 1), m), {});
       res.json({ connected: true, days, asOf: new Date().toISOString(), counts, billCount: bills.length, ...out });
     } catch (e) {

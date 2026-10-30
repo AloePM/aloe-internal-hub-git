@@ -68,6 +68,7 @@ export function hintsFor(merchant) {
   for (const w of m.replace(/^(IN|SQ|PY|PB|HDN|SP|TST)\s*\*+\s*/, '').split(/[^A-Z0-9]+/)) if (w.length >= 5 && !STOP.has(w) && !COMMON.has(w) && !/\d/.test(w)) names.push(new RegExp('\\b' + w.toLowerCase() + '\\b'));
   const out = [...curated, ...names];
   out.strong = curated.filter((h) => h instanceof RegExp || !GENERIC.has(h));
+  out.names = names;
   return out;
 }
 const COMMON = new Set(['CONTROL', 'REPAIR', 'APPLIANCE', 'PLUMBING', 'HEATING', 'COOLING', 'ELECTRIC', 'ELECTRICAL', 'CLEANING', 'SUPPLY', 'DEPOT', 'STORE', 'MARKET', 'MKTPLACE', 'AMAZON', 'HOMEOWNERS', 'MANAGEMENT', 'SYSTEMS', 'DOORS', 'GLASS', 'WATER', 'HOME', 'PROTECT', 'WARRANTY', 'NATIONAL', 'CONSTRUCTION', 'LIGHTING', 'SLIDING', 'RESOURCES', 'PUBLIC', 'CHANDLER', 'MARICOPA', 'PHOENIX']);
@@ -85,10 +86,29 @@ const isCardPayment = (c) => c.amount < 0 && /PAYMENT|AUTOPAY|THANK YOU/i.test(c
  * bills:   [{ billID, date, propertyID, address, amount (cents), description, reference, payee }]
  * marks:   { [chargeId]: { status, note, by, at } }   status: 'company' | 'reimbursed' | 'ignore'
  */
-export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = {}) {
+/**
+ * homes (optional): { [propertyID]: { address, fields: { 'Pool provider': 'Glistening Pools 480…', … }, notes: '…' } }
+ *   from Rentvine property custom fields. A field naming the charge's vendor tells us which homes that vendor serves.
+ */
+export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {}, homes = {} } = {}) {
   const O = { ...DEFAULTS, ...opts };
   const todayN = dayNum(today) ?? Math.floor(Date.now() / DAY);
-  const charges = chargesIn.filter((c) => !isCardPayment(c)).map((c) => { const hints = hintsFor(c.description); return { ...c, d: dayNum(c.date), hints, strong: strongOf(hints), supply: SUPPLY.test(c.description || ''), bills: [], color: null, reasons: [] }; });
+  const homeList = Object.entries(homes || {});
+  const charges = chargesIn.filter((c) => !isCardPayment(c)).map((c) => {
+    const hints = hintsFor(c.description);
+    const clue = [...strongOf(hints), ...(hints.names || [])];
+    // Homes whose provider fields name this vendor (used to confirm or rule out a bill's home),
+    // and homes whose maintenance notes mention it (used only as a suggestion).
+    const fieldHomes = new Map(), noteHomes = new Map();
+    if (clue.length) for (const [pid, h] of homeList) {
+      for (const [label, val] of Object.entries(h.fields || {})) if (val && textHit(clue, val)) { fieldHomes.set(String(pid), { address: h.address, field: label }); break; }
+      if (!fieldHomes.has(String(pid)) && h.notes && textHit(clue, h.notes)) noteHomes.set(String(pid), { address: h.address, field: 'Maintenance notes' });
+    }
+    return { ...c, d: dayNum(c.date), hints, clue, strong: strongOf(hints), supply: SUPPLY.test(c.description || ''),
+      homes: fieldHomes.size <= 40 ? fieldHomes : new Map(), noteHomes: noteHomes.size <= 15 ? noteHomes : new Map(), bills: [], color: null, reasons: [] };
+  });
+  // A bill is on a home that Rentvine says a DIFFERENT company services for this vendor's kind of work.
+  const wrongHome = (c, b) => c.homes.size > 0 && b.propertyID && !c.homes.has(String(b.propertyID));
   const all = billsIn.map((b) => ({ ...b, d: dayNum(b.date), text: `${b.description || ''} ${b.reference || ''} ${b.payee || ''}`, used: null }));
   const bills = all.filter((b) => !b.vendorBill);            // reimbursement / Aloe PM-Vendor bills
   const vendorBills = all.filter((b) => b.vendorBill);       // bills payable to the vendor itself
@@ -108,12 +128,12 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = 
   }
   for (const c of charges) if (c.pending && !c.color) { c.color = 'grey'; c.reasons.push('pending at the bank'); }
   const open = () => charges.filter((c) => !c.color && c.amount > 0).sort((a, b) => b.amount - a.amount);
-  const score = (c, b) => (textHit(c.hints, b.text) ? 100 : 0) - Math.abs(b.d - c.d);
+  const score = (c, b) => (textHit(c.clue, b.text) ? 100 : 0) + (c.homes.has(String(b.propertyID)) ? 100 : 0) - Math.abs(b.d - c.d);
 
   // 1. Exact amount, same vendor.  2. Exact amount, any vendor (orange).
   for (const pass of ['vendor', 'any', 'long']) {
     for (const c of open()) {
-      const cands = bills.filter((b) => free(b) && b.amount === c.amount && inWin(c, b, pass === 'long') && (pass !== 'vendor' || textHit(c.hints, b.text)));
+      const cands = bills.filter((b) => free(b) && b.amount === c.amount && inWin(c, b, pass === 'long') && !wrongHome(c, b) && (pass !== 'vendor' || textHit(c.clue, b.text) || c.homes.has(String(b.propertyID)) || textHit(c.hints, b.text)));
       if (!cands.length) continue;
       const best = cands.sort((a, b) => score(c, b) - score(c, a))[0];
       // Is this the only open charge and the only free bill with this amount around this date?
@@ -143,7 +163,7 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = 
     const named = bills.filter((b) => free(b) && inWin(c, b) && textHit(c.strong, b.text));
     const key = (b) => String(b.description).trim().toLowerCase().slice(0, 28);
     const sameText = new Set(named.map(key).filter((t) => t.length > 8));
-    const cands = bills.filter((b) => free(b) && b.amount > 0 && b.amount < c.amount && inWin(c, b) && (textHit(c.strong, b.text) || sameText.has(key(b)))).sort((a, b) => Math.abs(a.d - c.d) - Math.abs(b.d - c.d)).slice(0, 18);
+    const cands = bills.filter((b) => free(b) && b.amount > 0 && b.amount < c.amount && inWin(c, b) && !wrongHome(c, b) && (textHit(c.strong, b.text) || sameText.has(key(b)) || c.homes.has(String(b.propertyID)))).sort((a, b) => Math.abs(a.d - c.d) - Math.abs(b.d - c.d)).slice(0, 18);
     const pick = subsetSum(cands, c.amount, (b) => b.amount);
     if (pick) { assign(c, pick, 'green', `covered by ${pick.length} bills`); lateNote(c); }
   }
@@ -162,16 +182,15 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = 
 
   // 4b. The only bill is payable to the vendor itself, not to Reimbursements.
   for (const c of open()) {
-    const cands = vendorBills.filter((b) => free(b) && b.amount === c.amount && inWin(c, b));
-    if (!cands.length) continue;
-    const named = cands.filter((b) => textHit(c.hints, b.text));
-    const pick = named.length === 1 ? named[0] : (named.length === 0 && cands.length === 1 && c.amount % 500 !== 0 ? cands[0] : null);
+    // Only bills whose PAYEE is this same vendor. A same-amount bill to another company is not this charge.
+    const cands = vendorBills.filter((b) => free(b) && b.amount === c.amount && inWin(c, b) && b.payee && textHit(c.clue, b.payee));
+    const pick = cands.length ? cands.sort((a, b) => score(c, b) - score(c, a))[0] : null;
     if (pick) { assign(c, [pick], 'orange', `bill is payable to the vendor${pick.payee ? ' (' + pick.payee + ')' : ''} instead of Reimbursements, so the card is not reimbursed and the vendor could be paid twice`); c.fixPayee = true; }
   }
 
   // 5. Bill higher than the charge (markup, or supplies billed with labor).
   for (const c of open().filter((c) => c.supply)) {
-    const cands = bills.filter((b) => free(b) && b.amount > c.amount && b.amount <= c.amount * 3 + O.MARKUP_MAX * 100 && inWinNE(c, b) && textHit(c.strong, b.text)).sort((a, b) => (a.amount - b.amount) || (Math.abs(a.d - c.d) - Math.abs(b.d - c.d)));
+    const cands = bills.filter((b) => free(b) && b.amount > c.amount && b.amount <= c.amount * 3 + O.MARKUP_MAX * 100 && inWinNE(c, b) && !wrongHome(c, b) && textHit(c.strong, b.text)).sort((a, b) => (a.amount - b.amount) || (Math.abs(a.d - c.d) - Math.abs(b.d - c.d)));
     const b = cands[0];
     if (!b) continue;
     const gap = b.amount - c.amount;
@@ -182,7 +201,7 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = 
   //    Pairs are chosen across all charges at once, closest date first, so one charge can't steal another's bill.
   const greedy = (ok, reason, win) => {
     const pairs = [];
-    for (const c of open()) for (const b of bills) if (free(b) && win(c, b) && textHit(c.strong, b.text) && ok(c, b)) pairs.push([Math.abs(b.d - c.d) + Math.abs(b.amount - c.amount) / 10000, c, b]);
+    for (const c of open()) for (const b of bills) if (free(b) && win(c, b) && !wrongHome(c, b) && textHit(c.strong, b.text) && ok(c, b)) pairs.push([Math.abs(b.d - c.d) + Math.abs(b.amount - c.amount) / 10000, c, b]);
     pairs.sort((x, y) => x[0] - y[0]);
     for (const [, c, b] of pairs) if (!c.color && free(b)) assign(c, [b], 'orange', reason(c, b));
   };
@@ -223,9 +242,10 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {} } = 
   // Person marks override the colour but keep the reasons.
   for (const c of charges) { const m = marks[c.id]; if (m && m.status) { c.mark = m; c.autoColor = c.color; c.color = 'grey'; } }
 
+  const likely = (c) => { const m = c.homes.size ? c.homes : c.noteHomes; return { count: m.size, homes: [...m.values()].slice(0, 5) }; };
   const strip = (b) => ({ billID: b.billID, date: isoDay(b.d), propertyID: b.propertyID, address: b.address, amount: b.amount, description: b.description, reference: b.reference, payee: b.payee, vendorBill: !!b.vendorBill });
   return {
-    charges: charges.sort((a, b) => b.d - a.d).map((c) => ({ id: c.id, date: isoDay(c.d), description: c.description, card: c.card || '', amount: c.amount, pending: !!c.pending, color: c.color, autoColor: c.autoColor || c.color, reasons: c.reasons, fixPayee: !!c.fixPayee, mark: c.mark || null, pairedWith: c.pairedWith || null, bills: c.bills.map(strip), billedTotal: c.bills.reduce((s, b) => s + b.amount, 0) })),
+    charges: charges.sort((a, b) => b.d - a.d).map((c) => ({ id: c.id, date: isoDay(c.d), description: c.description, card: c.card || '', amount: c.amount, pending: !!c.pending, color: c.color, autoColor: c.autoColor || c.color, reasons: c.reasons, fixPayee: !!c.fixPayee, likelyHomes: likely(c), mark: c.mark || null, pairedWith: c.pairedWith || null, bills: c.bills.map(strip), billedTotal: c.bills.reduce((s, b) => s + b.amount, 0) })),
     billAlerts: billAlerts.map((x) => ({ why: x.why, a: strip(x.a), b: strip(x.b) })),
   };
 }
