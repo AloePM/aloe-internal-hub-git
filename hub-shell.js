@@ -29,7 +29,7 @@
       { id: 'acct', label: 'Accounting', items: [
         ['Bills and recon', '/recon-bills'], ['Reconciliation', '/recon'],
         ['Expense log', '/expense-log'], ['Suppressed fees', '/suppressed-fees'],
-        ['Owner payouts', '/payouts'] ] },
+        ['Owner payouts', '/payouts'], ['Card audit', '/card-audit'] ] },
       { id: 'reports', label: 'Reports', items: [ ['Metrics', '/metrics'] ] },
       { id: 'agents', label: 'Agents', items: [
         ['Overview', '/agents'], ['Activity', '/agents/activity'], ['Playbooks', '/agents/playbooks'],

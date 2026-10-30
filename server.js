@@ -24,6 +24,7 @@ const supabaseHeaders = {
 const app = express();
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
 app.use(express.json({ limit: '50mb' }));
+const { installCardAuditGate } = await import('./card-audit-routes.js'); installCardAuditGate(app);
 import { installAuthGate } from './auth-gate.js';
 installAuthGate(app);
 app.use('/api/chat', (req, res, next) => {
@@ -5191,6 +5192,7 @@ const { installMoveoutRepairs } = await import('./moveouts-repairs.js'); install
 const { installMoveoutProperty } = await import('./moveouts-property.js'); installMoveoutProperty(app, rvFetch);
 const { installMaintenance } = await import('./maintenance-routes.js'); installMaintenance(app, rvFetch, fetchAllRVOpenWOs, findBillMatchedWOs, unitsFetch);
 const { installPayouts } = await import('./payouts-routes.js'); installPayouts(app, rvFetch);
+const { installCardAudit } = await import('./card-audit-routes.js'); installCardAudit(app, rvFetch);
 app.get('/move-outs', (req, res) => res.sendFile(new URL('./public/move-outs.html', import.meta.url).pathname));
 app.get('/suppressed-fees', (req, res) => res.sendFile(new URL('./suppressed-fees.html', import.meta.url).pathname));
 

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aloe PM · Card audit</title>
+<style>
+  :root { --teal:#3CC3E1; --teal-d:#1f8fa8; --ink:#0f2a33; --muted:#5b6b70; --line:#e2e8ea; --bg:#F8FAFC;
+          --g:#16a34a; --g-bg:#e8f7ee; --o:#d97706; --o-bg:#fff4e0; --r:#dc2626; --r-bg:#fdecec; --n:#8a979b; --n-bg:#f1f4f5; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--ink); font-size:14px; }
+  .wrap { max-width:1280px; margin:0 auto; padding:22px 20px 60px; }
+  header { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:16px; }
+  h1 { font-size:22px; margin:0; } .sub { color:var(--muted); margin-top:4px; }
+  .conn { display:flex; align-items:center; gap:10px; background:#fff; border:1px solid var(--line); border-radius:10px; padding:8px 12px; }
+  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex:none; }
+  button, select, input { font:inherit; }
+  .btn { border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 12px; cursor:pointer; }
+  .btn.primary { background:var(--teal); border-color:var(--teal); color:#06303a; font-weight:600; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 14px; }
+  .chip { display:flex; align-items:center; gap:8px; padding:8px 14px; border-radius:999px; border:1px solid var(--line); background:#fff; cursor:pointer; }
+  .chip b { font-size:16px; } .chip.on { outline:2px solid var(--teal); }
+  .tools { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; align-items:center; }
+  .tools input[type=search] { flex:1; min-width:200px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; }
+  .tools select { padding:7px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  table { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); background:#fbfcfd; padding:9px 10px; border-bottom:1px solid var(--line); cursor:pointer; user-select:none; white-space:nowrap; }
+  td { padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  tr.green td:first-child { box-shadow: inset 4px 0 var(--g); } tr.orange td:first-child { box-shadow: inset 4px 0 var(--o); }
+  tr.red td:first-child { box-shadow: inset 4px 0 var(--r); } tr.grey td:first-child { box-shadow: inset 4px 0 var(--n); }
+  .amt { text-align:right; font-variant-numeric: tabular-nums; white-space:nowrap; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
+  .pill.green { background:var(--g-bg); color:#166534; } .pill.orange { background:var(--o-bg); color:#92400e; }
+  .pill.red { background:var(--r-bg); color:#991b1b; } .pill.grey { background:var(--n-bg); color:#4b5a5e; }
+  .why { color:var(--muted); font-size:13px; margin-top:3px; }
+  .bill { margin-bottom:4px; } .bill a { color:var(--teal-d); font-weight:600; text-decoration:none; } .bill a:hover { text-decoration:underline; }
+  .addr { color:var(--muted); font-size:12px; }
+  .gap { font-size:12px; font-weight:600; } .gap.up { color:#166534; } .gap.down { color:#991b1b; }
+  .mark select { padding:4px 6px; border:1px solid var(--line); border-radius:6px; background:#fff; max-width:150px; }
+  .mark input { margin-top:4px; width:150px; padding:4px 6px; border:1px solid var(--line); border-radius:6px; font-size:12px; }
+  .marked { font-size:12px; color:var(--muted); margin-top:3px; }
+  .note { background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:14px; }
+  .note.warn { border-color:#f3c98b; background:#fffaf0; }
+  h2 { font-size:16px; margin:26px 0 8px; }
+  .scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:10px; }
+  .scroll table { min-width:900px; }
+  .empty { padding:30px; text-align:center; color:var(--muted); }
+  .key { display:flex; flex-wrap:wrap; gap:14px; color:var(--muted); font-size:12px; margin-top:10px; }
+  @media (max-width: 760px) { .hide-sm { display:none; } td, th { padding:8px 6px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Card audit</h1>
+      <div class="sub">Chase card charges checked against Rentvine reimbursement bills (Reimbursements, Aloe PM-Vendor, John).</div>
+    </div>
+    <div class="conn" id="conn"><span class="dot" style="background:var(--n)"></span><span>Checking Chase connection…</span></div>
+  </header>
+
+  <div id="setup"></div>
+
+  <div class="chips" id="chips"></div>
+  <div class="tools">
+    <input type="search" id="q" placeholder="Search merchant, address, bill ID, amount…">
+    <select id="days" title="How far back">
+      <option value="60">Last 60 days</option><option value="120" selected>Last 120 days</option><option value="365">Last 12 months</option>
+    </select>
+    <input id="me" placeholder="Your name (for notes)" style="width:170px;padding:7px 10px;border:1px solid var(--line);border-radius:8px">
+    <button class="btn" id="reload">Refresh</button>
+    <button class="btn" id="logout" title="Sign out of the accounting pages">Sign out</button>
+  </div>
+
+  <div class="scroll"><table>
+    <thead><tr>
+      <th data-k="date">Date</th><th data-k="description">Charge</th><th class="hide-sm" data-k="card">Card</th>
+      <th class="amt" data-k="amount">Amount</th><th data-k="color">Status</th><th>Rentvine bill</th><th>Mark</th>
+    </tr></thead>
+    <tbody id="rows"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+  </table></div>
+  <div class="key">
+    <span><span class="dot" style="background:var(--g)"></span> Matched — exact, several bills that add up, or bill up to $300 higher (markup or labor)</span>
+    <span><span class="dot" style="background:var(--o)"></span> Check — bill lower, more than $300 higher, unclear, or billed over 30 days late</span>
+    <span><span class="dot" style="background:var(--r)"></span> Needs attention — no bill after 7 days, or a possible double bill</span>
+    <span><span class="dot" style="background:var(--n)"></span> Other — pending, refunded, new, or marked by someone</span>
+  </div>
+
+  <h2>Bills to double-check</h2>
+  <div class="sub" style="margin-bottom:8px">Two bills on the same home with the same amount or the same reference within 30 days.</div>
+  <div class="scroll"><table><thead><tr><th>Home</th><th>Why</th><th>Bill A</th><th>Bill B</th></tr></thead><tbody id="alerts"><tr><td colspan="4" class="empty">—</td></tr></tbody></table></div>
+</div>
+
+<script>
+(function () {
+  var RV = 'https://aloepm.rentvine.com/accounting/payables/bills/';
+  var LABEL = { green: 'Matched', orange: 'Check', red: 'Needs attention', grey: 'Other' };
+  var MARKS = { '': 'No mark', billing: 'Being billed now', reimbursed: 'Reimbursed another way', company: 'Company cost (not billed)', ignore: 'Ignore' };
+  var state = { data: null, show: { red: true, orange: true, green: false, grey: false }, sort: { k: 'date', dir: -1 } };
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var fmt = function (c) { var n = Math.abs(c) / 100; return (c < 0 ? '-' : '') + '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  $('me').value = store.get('cardAuditName') || '';
+  $('me').addEventListener('change', function () { store.set('cardAuditName', $('me').value.trim()); });
+  try { var saved = JSON.parse(store.get('cardAuditShow') || 'null'); if (saved) state.show = saved; } catch (e) {}
+
+  function api(path, opts) {
+    return fetch(path, opts).then(function (r) {
+      if (r.status === 401) { location.href = '/card-audit/login?next=/card-audit'; throw new Error('login'); }
+      return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('Error ' + r.status)); return j; });
+    });
+  }
+
+  function loadStatus() {
+    return api('/api/card-audit/status').then(function (s) {
+      var c = $('conn'), set = $('setup');
+      if (!s.keys) {
+        c.innerHTML = '<span class="dot" style="background:var(--o)"></span><span>Plaid keys not set up</span>';
+        set.innerHTML = '<div class="note warn"><b>Plaid keys are not set up yet.</b> They go in Google Secret Manager as <code>plaid-client-id</code> and <code>plaid-secret</code>. Once they are there, a <b>Connect Chase</b> button appears here.</div>';
+        return s;
+      }
+      if (!s.connected) {
+        c.innerHTML = '<span class="dot" style="background:var(--o)"></span><span>Chase not connected</span> <button class="btn primary" id="connect">Connect Chase</button>';
+        set.innerHTML = s.error ? '<div class="note warn">' + esc(s.error) + ' <button class="btn primary" id="connect2">Reconnect Chase</button></div>' : '<div class="note">Connect the Chase business card account once. You sign in to Chase in Plaid\'s own window; this page never sees your Chase password.</div>';
+        [$('connect'), $('connect2')].forEach(function (b) { if (b) b.onclick = connect; });
+        return s;
+      }
+      var acc = s.accounts.map(function (a) { return esc(a.name) + (a.mask ? ' ••' + esc(a.mask) : ''); }).join(', ');
+      c.innerHTML = '<span class="dot" style="background:var(--g)"></span><span>Chase connected: ' + acc + '</span>';
+      set.innerHTML = '';
+      return s;
+    }).catch(function (e) { if (e.message !== 'login') $('conn').innerHTML = '<span class="dot" style="background:var(--r)"></span><span>' + esc(e.message) + '</span>'; });
+  }
+
+  function connect() {
+    var go = function () {
+      api('/api/card-audit/plaid/link-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(function (j) {
+        var h = Plaid.create({ token: j.link_token, onSuccess: function (public_token) {
+          api('/api/card-audit/plaid/exchange', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ public_token: public_token }) })
+            .then(function () { loadStatus(); setTimeout(loadData, 1500); }).catch(function (e) { alert('Could not save the Chase connection: ' + e.message); });
+        } });
+        h.open();
+      }).catch(function (e) { alert(e.message); });
+    };
+    if (window.Plaid) return go();
+    var s = document.createElement('script'); s.src = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js'; s.onload = go; document.head.appendChild(s);
+  }
+
+  function loadData() {
+    $('rows').innerHTML = '<tr><td colspan="7" class="empty">Loading charges and bills…</td></tr>';
+    return api('/api/card-audit/data?days=' + $('days').value).then(function (d) {
+      state.data = d;
+      if (!d.connected) { $('rows').innerHTML = '<tr><td colspan="7" class="empty">Connect Chase to see charges. (' + (d.bills || 0) + ' Rentvine bills ready to match.)</td></tr>'; $('chips').innerHTML = ''; return; }
+      render();
+    }).catch(function (e) { if (e.message !== 'login') $('rows').innerHTML = '<tr><td colspan="7" class="empty">' + esc(e.message) + '</td></tr>'; });
+  }
+
+  function render() {
+    var d = state.data; if (!d || !d.charges) return;
+    var counts = d.counts || {};
+    $('chips').innerHTML = ['red', 'orange', 'green', 'grey'].map(function (k) {
+      return '<div class="chip ' + (state.show[k] ? 'on' : '') + '" data-c="' + k + '"><span class="dot" style="background:var(--' + (k === 'grey' ? 'n' : k[0]) + ')"></span>' + LABEL[k] + ' <b>' + (counts[k] || 0) + '</b></div>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('.chip'), function (el) {
+      el.onclick = function () { state.show[el.dataset.c] = !state.show[el.dataset.c]; store.set('cardAuditShow', JSON.stringify(state.show)); render(); };
+    });
+    var q = $('q').value.trim().toLowerCase();
+    var list = d.charges.filter(function (c) {
+      if (!state.show[c.color]) return false;
+      if (!q) return true;
+      var hay = [c.date, c.description, c.card, fmt(c.amount), (c.amount / 100).toFixed(2), c.reasons.join(' '), c.mark && c.mark.note].concat(c.bills.map(function (b) { return b.billID + ' ' + b.address + ' ' + b.description + ' ' + b.reference; })).join(' ').toLowerCase();
+      return hay.indexOf(q) >= 0;
+    });
+    var order = { red: 0, orange: 1, green: 2, grey: 3 }, s = state.sort;
+    list.sort(function (a, b) {
+      var x = s.k === 'color' ? order[a.color] : a[s.k], y = s.k === 'color' ? order[b.color] : b[s.k];
+      return (x < y ? -1 : x > y ? 1 : 0) * s.dir;
+    });
+    if (!list.length) { $('rows').innerHTML = '<tr><td colspan="7" class="empty">Nothing here with these filters.</td></tr>'; }
+    else $('rows').innerHTML = list.map(row).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('.mark select'), function (sel) { sel.onchange = function () { saveMark(sel.dataset.id); }; });
+    Array.prototype.forEach.call(document.querySelectorAll('.mark input'), function (inp) { inp.onchange = function () { saveMark(inp.dataset.id); }; });
+    $('alerts').innerHTML = (d.billAlerts || []).length ? d.billAlerts.map(function (a) {
+      return '<tr><td>' + esc(a.a.address || ('Property ' + a.a.propertyID)) + '</td><td>' + esc(a.why) + '</td><td>' + billLink(a.a) + '</td><td>' + billLink(a.b) + '</td></tr>';
+    }).join('') : '<tr><td colspan="4" class="empty">None found.</td></tr>';
+  }
+
+  function billLink(b) {
+    return '<div class="bill"><a href="' + RV + encodeURIComponent(b.billID) + '" target="_blank" rel="noopener">#' + esc(b.billID) + '</a> ' + fmt(b.amount) + ' <span class="addr">' + esc(b.date) + '</span><div class="addr">' + esc((b.description || '').slice(0, 80)) + '</div></div>';
+  }
+
+  function row(c) {
+    var bills = c.bills.map(function (b) {
+      return '<div class="bill"><a href="' + RV + encodeURIComponent(b.billID) + '" target="_blank" rel="noopener" title="Open in Rentvine">#' + esc(b.billID) + '</a> ' + fmt(b.amount) +
+        ' <span class="addr">' + esc(b.date) + '</span><div class="addr">' + esc(b.address || '') + (b.reference ? ' · ' + esc(b.reference) : '') + '</div></div>';
+    }).join('');
+    if (c.bills.length && c.billedTotal !== c.amount) {
+      var g = c.billedTotal - c.amount;
+      bills += '<div class="gap ' + (g > 0 ? 'up' : 'down') + '">' + (g > 0 ? '+' : '') + fmt(g) + (g > 0 ? ' billed above the charge' : ' not billed') + '</div>';
+    }
+    var m = c.mark || {}, opts = Object.keys(MARKS).map(function (k) { return '<option value="' + k + '"' + ((m.status || '') === k ? ' selected' : '') + '>' + MARKS[k] + '</option>'; }).join('');
+    var marked = c.mark ? '<div class="marked">' + esc([MARKS[m.status] || '', m.by, (m.at || '').slice(0, 10)].filter(Boolean).join(' · ')) + '</div>' : '';
+    var autoNote = c.mark && c.autoColor !== c.color ? ' <span class="pill ' + c.autoColor + '" title="What the matcher found">' + LABEL[c.autoColor] + '</span>' : '';
+    return '<tr class="' + c.color + '">' +
+      '<td style="white-space:nowrap">' + esc(c.date) + (c.pending ? '<div class="addr">pending</div>' : '') + '</td>' +
+      '<td>' + esc(c.description) + '</td>' +
+      '<td class="hide-sm">' + esc(c.card) + '</td>' +
+      '<td class="amt">' + fmt(c.amount) + '</td>' +
+      '<td><span class="pill ' + c.color + '">' + LABEL[c.color] + '</span>' + autoNote + '<div class="why">' + esc(c.reasons.join('; ')) + '</div></td>' +
+      '<td>' + (bills || '<span class="addr">—</span>') + '</td>' +
+      '<td class="mark"><select data-id="' + esc(c.id) + '">' + opts + '</select><input data-id="' + esc(c.id) + '" placeholder="Note" value="' + esc(m.note || '') + '">' + marked + '</td></tr>';
+  }
+
+  function saveMark(id) {
+    var sel = document.querySelector('.mark select[data-id="' + CSS.escape(id) + '"]'), inp = document.querySelector('.mark input[data-id="' + CSS.escape(id) + '"]');
+    api('/api/card-audit/mark', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, status: sel.value, note: inp.value, by: $('me').value.trim() }) })
+      .then(function (r) { loadData(); }).catch(function (e) { alert('Could not save: ' + e.message); });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('th[data-k]'), function (th) {
+    th.onclick = function () { var k = th.dataset.k; state.sort = { k: k, dir: state.sort.k === k ? -state.sort.dir : (k === 'date' || k === 'amount' ? -1 : 1) }; render(); };
+  });
+  $('q').addEventListener('input', render);
+  $('days').addEventListener('change', loadData);
+  $('reload').onclick = function () { loadStatus(); loadData(); };
+  $('logout').onclick = function () { fetch('/api/card-audit/logout', { method: 'POST' }).then(function () { location.href = '/card-audit/login'; }); };
+  loadStatus().then(loadData);
+})();
+</script>
+<script src="/hub-shell.js" defer></script>
+</body>
+</html>

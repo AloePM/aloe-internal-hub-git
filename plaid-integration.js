@@ -90,7 +90,7 @@ export function initPlaidRoutes(app) {
       // Store token — in production save to DB or Render env var
       ACCESS_TOKENS[account_key] = data.access_token;
       console.log(`[plaid] Token saved for ${account_key} — item_id: ${data.item_id}`);
-      console.log(`[plaid] Set env var: PLAID_TOKEN_${account_key.toUpperCase()}=${data.access_token}`);
+      // (access token intentionally not logged)
       res.json({ success: true, item_id: data.item_id, account_key });
     } catch (e) {
       res.status(500).json({ error: e.message });
