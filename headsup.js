@@ -245,7 +245,10 @@ export function buildPreview({ owners, contacts = {}, balances = {}, todayISO, s
   const balFor = (o) => balances[String(o.portfolioID ?? o.ownerID)] || null;
   const { drafts, needsPerson } = buildAll(owners, (o) => {
     const bal = balFor(o);
-    const recipients = pickRecipients(bal ? bal.contacts : [], contacts.emailByContact || {});
+    // normally the owner contacts (with their ownership shares) come from Rentvine's balances report; if that report is unavailable
+    // fall back to the owner ids on the property record, so the preview still shows who the email would go to
+    const fallbackContacts = (o.contactIDs || []).map((id) => ({ contactID: id, percentOwned: '100', percentDistributed: '100', name: (contacts.nameByContact || {})[String(id)] || '' }));
+    const recipients = pickRecipients(bal ? bal.contacts : fallbackContacts, contacts.emailByContact || {});
     const hold = !!(bal && bal.hold) || recipients.some((r) => (contacts.holdByContact || {})[r.contactID]);
     return { recipients, balance: bal ? { distributable: bal.distributable, hold } : (hold ? { distributable: NaN, hold } : null), reserve: bal ? bal.reserve : undefined, sign };
   }, todayISO);
@@ -253,6 +256,7 @@ export function buildPreview({ owners, contacts = {}, balances = {}, todayISO, s
   for (const d of drafts) {
     const o = ownerByID.get(String(d.ownerID)), bal = balFor(o);
     if (bal && Math.abs(bal.reserve - (Number(o.reserve) || 0)) > 0.005) d.warnings.push(warnLine('amber', 'Rentvine holds a ' + money(bal.reserve) + ' reserve for this owner but the page uses ' + money(o.reserve || 0) + ', so this amount differs from the Amount to pay column'));
+    if (!bal && d.recipients.length) d.warnings.push(warnLine('amber', 'Recipients come from the owners on the property record, not Rentvine\u2019s balances report - confirm who it goes to (portal logins may be included)'));
     d.key = 'headsup:' + d.ownerID + ':' + month;
     d.alreadyDrafted = (drafted[d.key] && drafted[d.key].at) || '';
     if (d.alreadyDrafted) d.warnings.unshift(warnLine('amber', 'A draft was already created for this owner this month (' + String(d.alreadyDrafted).slice(0, 10) + ')'));

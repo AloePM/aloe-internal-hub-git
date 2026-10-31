@@ -468,16 +468,20 @@ export function makeMemoryDecisionStore() {
 const OWNER_COLS = ['contactID', 'name', 'email', 'holdPayments'];
 export async function loadOwnerContacts(rvFetch) {
   const r = await allPages(rvFetch, 'owner', { displayColumns: OWNER_COLS, filters: [] }, { fields: OWNER_COLS, max: 15 });
-  const emailByContact = {}, holdByContact = {};
-  for (const x of r) { const id = String(x.contactID); const e = String(x.email || '').trim(); if (e) emailByContact[id] = e; if (truthy(x.holdPayments)) holdByContact[id] = true; }
-  return { emailByContact, holdByContact, count: r.length };
+  const emailByContact = {}, holdByContact = {}, nameByContact = {};
+  for (const x of r) { const id = String(x.contactID); const e = String(x.email || '').trim(); if (e) emailByContact[id] = e; if (x.name) nameByContact[id] = String(x.name); if (truthy(x.holdPayments)) holdByContact[id] = true; }
+  return { emailByContact, holdByContact, nameByContact, count: r.length };
 }
 // Portfolio Balances report: Rentvine's own reserve, operating balance and "distributable" amount per portfolio, plus the owner contacts.
 const BAL_COLS = ['portfolio', 'contacts', 'totalReserveAmount', 'operatingBalance', 'distributableAmount', 'holdDistributions', 'isActive'];
 const BAL_FIELDS = ['portfolioID', 'portfolioName', ...BAL_COLS];
 export const parseContactsJson = (v) => { if (Array.isArray(v)) return v; try { const a = JSON.parse(String(v || '[]')); return Array.isArray(a) ? a : []; } catch { return []; } };
 export async function loadPortfolioBalances(rvFetch) {
-  const r = await allPages(rvFetch, 'portfolio-balances', { displayColumns: BAL_COLS, filters: [] }, { fields: BAL_FIELDS, max: 10 });
+  let r = null, lastErr = null;
+  for (const size of [100, 25]) {   // the report computes balances for every portfolio, so a big page can time out (Rentvine 500)
+    try { r = await allPages(rvFetch, 'portfolio-balances', { displayColumns: BAL_COLS, filters: [] }, { fields: BAL_FIELDS, max: Math.ceil(900 / size), pageSize: size }); break; } catch (e) { lastErr = e; }
+  }
+  if (!r) throw lastErr;
   const out = {};
   for (const x of r) out[String(x.portfolioID)] = { reserve: num(x.totalReserveAmount), operating: num(x.operatingBalance), distributable: num(x.distributableAmount), hold: truthy(x.holdDistributions), contacts: parseContactsJson(x.contacts) };
   return out;
