@@ -4,6 +4,7 @@
 // Install (one line in server.js, right after the Maintenance install line):
 //   const { installPayouts } = await import('./payouts-routes.js'); installPayouts(app, rvFetch);
 import { portfolio, recurringExpected, FLAG_TEXT } from './payouts-data.js';
+import { buildPreview, runBatch } from './headsup.js';
 import { sessionOk } from './maintenance-routes.js';
 
 export const TRUST_BANK_ACCOUNT_ID = 129;
@@ -358,7 +359,7 @@ export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], c
       const fee = feeBills.length ? postedFee : (inn > 0 ? plan.fee : 0);
       const expense = counted.filter((b) => num(b.chargeAccountID) !== MGMT_FEE_ACCOUNT_ID).map((b) => ({
         amountUnpaid: truthy(b.isPaid) ? num(b.amount) : num(b.amountUnpaid || b.amount), isPaid: false, isVoided: false,
-        desc: (b.description || b.chargeAccountName || 'Bill') + (truthy(b.isPaid) ? ' (paid ' + toISO(b.datePosted) + ')' : ' (unpaid)'), billID: b.billID, vendor: b.contactName,
+        desc: (b.description || b.chargeAccountName || 'Bill') + (truthy(b.isPaid) ? ' (paid ' + toISO(b.datePosted) + ')' : ' (unpaid)'), billID: b.billID, vendor: b.contactName, due: toISO(b.dateDue), date: toISO(b.datePosted), paid: truthy(b.isPaid),
       }));
       const lt = leaseTags(leaseInfo[id], lp ? lp.date : '', todayISO);
       const startISO = toISO(p.dateContractBegins) || toISO(p.dateTimeCreated);
@@ -398,7 +399,7 @@ export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], c
         billExpected: expectedBill.has(id),
       };
     });
-    owners.push({ ownerID: o.id, name: o.name, newOwner: properties.length > 0 && properties.every((x) => x.isNewProperty), properties, lastPayout: lp ? lp.amount : null, lastPayoutDate: lp ? lp.date : null, reserve, contributions: mine.map(({ date, amount, desc, type }) => ({ date, amount, desc, type })) });
+    owners.push({ ownerID: o.id, portfolioID: o.id, contactIDs: [...o.ids], name: o.name, newOwner: properties.length > 0 && properties.every((x) => x.isNewProperty), properties, lastPayout: lp ? lp.amount : null, lastPayoutDate: lp ? lp.date : null, reserve, contributions: mine.map(({ date, amount, desc, type }) => ({ date, amount, desc, type })) });
   }
   owners.unmatchedContributions = contribs.filter((c) => !matchedC.has(c)).map(({ date, amount, desc, type }) => ({ date, amount, desc, type }));
   return owners;
@@ -462,19 +463,56 @@ export function makeMemoryDecisionStore() {
   return { persistent: false, get: async () => Object.fromEntries(m), set: async (ownerID, d) => { m.set(String(ownerID), { ...d, at: new Date().toISOString() }); return m.get(String(ownerID)); } };
 }
 
-export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionStore(), getRents = null, getLeaseInfo = defaultLeaseInfo, getExpectedBills = async () => new Set(), typical = {}, reserve = 0, env = process.env } = {}) {
+// ---- Owner heads-up emails: read-only loaders ----
+// Owner Contact report: ONLY these four columns are requested (never the tax / bank columns the report also has).
+const OWNER_COLS = ['contactID', 'name', 'email', 'holdPayments'];
+export async function loadOwnerContacts(rvFetch) {
+  const r = await allPages(rvFetch, 'owner', { displayColumns: OWNER_COLS, filters: [] }, { fields: OWNER_COLS, max: 15 });
+  const emailByContact = {}, holdByContact = {};
+  for (const x of r) { const id = String(x.contactID); const e = String(x.email || '').trim(); if (e) emailByContact[id] = e; if (truthy(x.holdPayments)) holdByContact[id] = true; }
+  return { emailByContact, holdByContact, count: r.length };
+}
+// Portfolio Balances report: Rentvine's own reserve, operating balance and "distributable" amount per portfolio, plus the owner contacts.
+const BAL_COLS = ['portfolio', 'contacts', 'totalReserveAmount', 'operatingBalance', 'distributableAmount', 'holdDistributions', 'isActive'];
+const BAL_FIELDS = ['portfolioID', 'portfolioName', ...BAL_COLS];
+export const parseContactsJson = (v) => { if (Array.isArray(v)) return v; try { const a = JSON.parse(String(v || '[]')); return Array.isArray(a) ? a : []; } catch { return []; } };
+export async function loadPortfolioBalances(rvFetch) {
+  const r = await allPages(rvFetch, 'portfolio-balances', { displayColumns: BAL_COLS, filters: [] }, { fields: BAL_FIELDS, max: 10 });
+  const out = {};
+  for (const x of r) out[String(x.portfolioID)] = { reserve: num(x.totalReserveAmount), operating: num(x.operatingBalance), distributable: num(x.distributableAmount), hold: truthy(x.holdDistributions), contacts: parseContactsJson(x.contacts) };
+  return out;
+}
+// Default Aptly draft writer (same call the weekly vacancy drafts use). It only ever creates a DRAFT; nothing is sent.
+export const APTLY_INFO_CHANNEL_ID = '6c8783b9-3fb4-5911-9468-a7c6b91ee25e';
+export function makeAptlyDraftWriter(env = process.env, fetchImpl = (...a) => fetch(...a)) {
+  return async ({ channelId, to, subject, body }) => {
+    const token = env.APTLY_TOKEN;
+    if (!token) throw new Error('APTLY_TOKEN is not set on this service');
+    const res = await fetchImpl('https://core-api.getaptly.com/api/email/create-draft', { method: 'POST', headers: { 'x-token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: env.APTLY_DRAFT_USER_ID || 'op8mkGcfjAoka2GJS', channelId, to, subject, body }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error('Aptly draft creation failed: ' + res.status + ' ' + JSON.stringify(data).slice(0, 300));
+    return data;
+  };
+}
+export function makeSlackNotifier(env = process.env, fetchImpl = (...a) => fetch(...a)) {
+  return async (text) => {
+    if (!env.SLACK_TOKEN) throw new Error('SLACK_TOKEN is not set');
+    const r = await fetchImpl('https://slack.com/api/chat.postMessage', { method: 'POST', headers: { Authorization: 'Bearer ' + env.SLACK_TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: env.PAYOUTS_SLACK_CHANNEL || 'C06CQ5NUKK3', text }) });
+    const d = await r.json().catch(() => ({})); if (!d.ok) throw new Error('Slack: ' + (d.error || r.status));
+  };
+}
+export const MIN_PROPERTIES_FOR_DRAFTS = 300;   // same idea as the vacancy job's "500 leads" check: refuse to draft from a half-loaded list
+
+export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionStore(), getRents = null, getLeaseInfo = defaultLeaseInfo, getExpectedBills = async () => new Set(), typical = {}, reserve = 0, env = process.env, createDraft = null, notify = null } = {}) {
   if (typeof rvFetch !== 'function') throw new Error('installPayouts needs rvFetch');
   const guard = (req, res) => { if (!sessionOk(req, env)) { res.status(401).json({ error: 'Sign in required' }); return false; } return true; };
   let cache = { at: 0, v: null }, inflight = null;
 
   app.get('/payouts', (req, res) => res.sendFile(new URL('./public/payouts.html', import.meta.url).pathname));
 
-  app.get('/api/payouts/list', async (req, res) => {
-    if (!guard(req, res)) return;
-    try {
-      const fresh = req.query.refresh === '1';
-      if (!fresh && cache.v && Date.now() - cache.at < TTL) return res.json(cache.v);
-      if (!inflight) inflight = (async () => {
+  async function getList(fresh) {
+    if (!fresh && cache.v && Date.now() - cache.at < TTL) return cache.v;
+    if (!inflight) inflight = (async () => {
       const raw = await loadPayoutData(rvFetch, { typical, reserve });
       const li = getRents ? { rents: await getRents(rvFetch), info: {} } : await getLeaseInfo(rvFetch);
       const rents = li.rents;
@@ -490,10 +528,52 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       };
       cache = { at: Date.now(), v: out };
       return out;
-      })().finally(() => { inflight = null; });
-      const out = await inflight;
+    })().finally(() => { inflight = null; });
+    return inflight;
+  }
+
+  app.get('/api/payouts/list', async (req, res) => {
+    if (!guard(req, res)) return;
+    try { res.json(await getList(req.query.refresh === '1')); }
+    catch (e) { console.error('payouts list', e); res.status(502).json({ error: String(e.message || e) }); }
+  });
+
+  // ---- Owner heads-up emails. The preview is read-only. Drafts are only created by the POST below, and only with create:true.
+  const sign = { name: env.HEADSUP_SIGN_NAME || '', phone: env.HEADSUP_SIGN_PHONE || '' };
+  let huCache = { at: 0, list: null, v: null };
+  async function getHeadsUp(fresh) {
+    const list = await getList(fresh);
+    if (!fresh && huCache.v && huCache.list === list && Date.now() - huCache.at < TTL) return huCache.v;
+    const errors = [];
+    const contacts = await loadOwnerContacts(rvFetch).catch((e) => { errors.push('Owner emails could not be read: ' + (e.message || e)); return { emailByContact: {}, holdByContact: {} }; });
+    const balances = await loadPortfolioBalances(rvFetch).catch((e) => { errors.push('Rentvine balances could not be read: ' + (e.message || e)); return {}; });
+    const drafted = await decisions.get();
+    const pv = buildPreview({ owners: list.owners, contacts, balances, todayISO: today(), sign, drafted });
+    const v = { recordsPersistent: !!decisions.persistent, asOf: new Date().toISOString(), listAsOf: list.asOf, properties: list.counts.properties, errors, ownerEmails: Object.keys(contacts.emailByContact || {}).length, balances: Object.keys(balances).length, ...pv };
+    huCache = { at: Date.now(), list, v };
+    return v;
+  }
+  app.get('/api/payouts/heads-up', async (req, res) => {
+    if (!guard(req, res)) return;
+    try {
+      const v = await getHeadsUp(req.query.refresh === '1');
+      // the page shows the text, not the html (the html is rebuilt on the server when a draft is created)
+      res.json({ ...v, drafts: v.drafts.map(({ html, paras, ...d }) => d) });
+    } catch (e) { console.error('payouts heads-up', e); res.status(502).json({ error: String(e.message || e) }); }
+  });
+  app.post('/api/payouts/heads-up/draft', async (req, res) => {
+    if (!guard(req, res)) return;
+    try {
+      const { ownerIDs, create, testTo } = req.body || {};
+      const v = await getHeadsUp(false);
+      if (create === true && v.properties < MIN_PROPERTIES_FOR_DRAFTS) return res.status(503).json({ error: 'Only ' + v.properties + ' properties loaded (expected 300+). No drafts created - refresh and try again.' });
+      if (create === true && v.errors.length) return res.status(503).json({ error: 'Not creating drafts: ' + v.errors.join(' | ') });
+      const writer = createDraft || makeAptlyDraftWriter(env);
+      const slack = notify || makeSlackNotifier(env);
+      const out = await runBatch({ preview: v, ownerIDs, create: create === true, testTo: String(testTo || '').trim(), createDraft: writer, notify: slack, channelId: env.APTLY_INFO_CHANNEL_ID || APTLY_INFO_CHANNEL_ID, markDrafted: (k, d) => decisions.set(k, { action: 'headsup_drafted', ...d }) });
+      if (create === true && !testTo) huCache = { at: 0, list: null, v: null };
       res.json(out);
-    } catch (e) { console.error('payouts list', e); res.status(502).json({ error: String(e.message || e) }); }
+    } catch (e) { console.error('payouts heads-up draft', e); res.status(400).json({ error: String(e.message || e) }); }
   });
 
   app.post('/api/payouts/decision', async (req, res) => {

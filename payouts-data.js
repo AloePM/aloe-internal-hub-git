@@ -67,7 +67,7 @@ export function ownerRow(o, opts = {}) {
   if (rows.some((r) => (r.recurring || []).some((x) => !x.amount))) flags.push('recurring_unknown');
   const needsLook = flags.some((f) => f !== 'bill_expected' || true) && flags.length > 0;
   return {
-    ownerID: o.ownerID, name: o.name, properties: rows,
+    ownerID: o.ownerID, portfolioID: o.portfolioID ?? o.ownerID, contactIDs: o.contactIDs || [], name: o.name, properties: rows,
     settledIn: dollars(sum('settledIn')), fees: dollars(sum('fee')),
     unpaidBills: dollars(sum('unpaidBills')), recurringTotal: dollars(sum('recurringTotal')),
     reserve: dollars(reserve), expected: dollars(expected), amountToPay: dollars(amountToPay),

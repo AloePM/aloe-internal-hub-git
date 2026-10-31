@@ -39,6 +39,15 @@ tr.dup td{background:var(--amberbg)}tr.old td{color:var(--mute)}
 .mark{color:var(--amber);font-weight:600}
 .muted{color:var(--mute)}
 .tiny{font-size:12px}
+#hu{background:#f4f8f9;border-color:#cfdde2;color:#2a3b42}#hu>summary{cursor:pointer}
+#hu table{font-size:13px;margin-top:8px}#hu td,#hu th{padding:7px 10px}#hu td.l,#hu th.l{white-space:normal}
+#hu tr.hrow{cursor:pointer}#hu tr.hrow:hover{background:#f0fafd}
+#hu pre.mail{white-space:pre-wrap;font:13px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;max-width:780px;margin:6px 0 4px}
+#hu .hph{background:#fff3a3;padding:0 2px;border-radius:3px}
+#hu .acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+#hu .acts input[type=text]{padding:6px 9px;border:1px solid var(--line);border-radius:8px;min-width:200px}
+#hu .res{margin:8px 0;padding:8px 12px;border-radius:8px;background:#fff;border:1px solid var(--line)}
+#hu button.go{background:var(--tealdk);color:#fff;border-color:var(--tealdk)}
 </style></head>
 <body>
 <main>
@@ -69,6 +78,8 @@ tr.dup td{background:var(--amberbg)}tr.old td{color:var(--mute)}
       <div><b>VACANT</b> no rent coming in &nbsp;&middot;&nbsp; <b>CONTRIBUTION</b> owner added money in 30 days, do not send back &nbsp;&middot;&nbsp; <b>MOVE-OUT 30D</b> tenant leaving soon, consider holding funds &nbsp;&middot;&nbsp; <b>NEW MOVE-IN</b> lease started recently &nbsp;&middot;&nbsp; <b>+N</b> more tags (hover)</div>
     </div></details>
   <div class="note" id="unm" hidden></div>
+  <details class="note" id="hu"><summary><b>Owner heads-up emails</b> - owners who will get less than usual, or need to send money, because of bills <span class="muted" id="huSum"></span></summary>
+    <div id="huBody" class="tiny" style="margin-top:8px">Open this to load. It only reads Rentvine. Nothing is created until you press a Create button.</div></details>
   <table id="t"><thead><tr id="head"></tr></thead><tbody id="body"></tbody></table>
 </main>
 <script>
@@ -234,6 +245,74 @@ $('#selPaid').addEventListener('change', (e) => { paid = e.target.value; if (dat
 $('#selAlert').addEventListener('change', (e) => { alertSel = e.target.value; if (data) render(); });
 $('#selTen').addEventListener('change', (e) => { ten = e.target.value; if (data) render(); });
 for (const [id, f] of [['fAll', 'all'], ['fLook', 'look'], ['fOk', 'ok'], ['fReady', 'ready']]) $('#' + id).addEventListener('click', () => { filter = f; for (const x of ['fAll', 'fLook', 'fOk', 'fReady']) $('#' + x).classList.toggle('on', x === id); if (data) render(); });
+
+// ---- Owner heads-up emails (drafts in Aptly; nothing is ever sent from here) ----
+let hu = null; const huSel = new Set(), huOpen = new Set(); let huRes = '';
+const phMark = (t) => esc(t).replace(/\[([^\]]+)\]/g, '<span class="hph">[$1]</span>');
+async function loadHu(refresh) {
+  $('#huBody').innerHTML = 'Loading from Rentvine...';
+  try {
+    const r = await fetch('/api/payouts/heads-up' + (refresh ? '?refresh=1' : ''), {credentials: 'same-origin'});
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+    hu = await r.json(); renderHu();
+  } catch (e) { $('#huBody').textContent = 'Could not load: ' + e.message; }
+}
+function renderHu() {
+  const c = hu.counts;
+  $('#huSum').textContent = '- ' + c.contribution + ' need to send money, ' + c.lower + ' lower than usual' + (c.needsPerson ? ', ' + c.needsPerson + ' need a person' : '');
+  const th = '<tr><th class="l"></th><th class="l">Owner</th><th>Bills</th><th>Amount</th><th>Usual / last</th><th>Send by</th><th class="l">To</th><th class="l">Check</th></tr>';
+  const rowsHtml = hu.drafts.map((d) => {
+    const k = d.kind === 'contribution' ? '<span class="pill b red">CONTRIBUTION NEEDED</span>' : '<span class="pill b amber">LOWER THAN USUAL</span>';
+    const amt = d.kind === 'contribution' ? '<span class="neg" title="Amount to ask the owner to send">' + money(d.contribution) + '</span>' : money(d.amount);
+    const warn = (d.warnings || []).map((w) => '<span class="pill b ' + (w.level === 'red' ? 'red' : 'amber') + '" title="' + esc(w.text) + '">' + esc(w.text.length > 46 ? w.text.slice(0, 44) + '...' : w.text) + '</span>').join('') || '<span class="muted">-</span>';
+    const to = (d.recipients || []).map((r) => esc(r.email)).join(', ') || '<span class="neg">no email</span>';
+    const main = '<tr class="hrow" data-id="' + esc(d.ownerID) + '"><td class="l"><input type="checkbox" class="hsel" data-id="' + esc(d.ownerID) + '"' + (huSel.has(String(d.ownerID)) ? ' checked' : '') + '></td><td class="l">' + esc(d.name) + '<div>' + k + (d.alreadyDrafted ? ' <span class="pill b teal">DRAFTED</span>' : '') + '</div></td><td>' + money(d.billsTotal) + '</td><td>' + amt + '</td><td>' + money(d.expected) + (d.lastPayout != null ? '<div class="muted tiny">last ' + money(d.lastPayout) + '</div>' : '') + '</td><td>' + (d.sendBy ? esc(mdy(d.sendBy).slice(0, 5)) : '<span class="muted">-</span>') + '</td><td class="l tiny">' + to + '</td><td class="l">' + warn + '</td></tr>';
+    const det = huOpen.has(String(d.ownerID)) ? '<tr><td></td><td class="l" colspan="7"><div class="tiny"><b>Subject:</b> ' + esc(d.subject) + '</div><pre class="mail">' + phMark(d.text) + '</pre><div class="tiny muted">Yellow [brackets] are filled in by you in the Aptly draft. Warnings: ' + ((d.warnings || []).map((w) => esc(w.text)).join(' &middot; ') || 'none') + '</div></td></tr>' : '';
+    return main + det;
+  }).join('') || '<tr><td colspan="8" class="l muted">No owners are lower than usual because of bills right now.</td></tr>';
+  const np = hu.needsPerson.length ? '<div class="tiny" style="margin-top:10px"><b>Below $0 but no bill explains it - check by hand (' + hu.needsPerson.length + '):</b> ' + hu.needsPerson.map((n) => esc(n.name) + ' ' + money(n.amount)).join(' &middot; ') + '</div>' : '';
+  const errs = (hu.errors || []).map((e) => '<div class="neg tiny">' + esc(e) + '</div>').join('');
+  $('#huBody').innerHTML = errs +
+    (hu.recordsPersistent === false ? '<div class="tiny mark">Heads up: records of which owners were drafted are only kept in memory right now (they reset when the site restarts). Before creating, glance at the info@ inbox drafts so you do not make a second copy.</div>' : '') +
+    '<div class="tiny">Click a row to read the email. Amounts use Rentvine\'s reserve and the same settled-money math as the table below. Read ' + hu.properties + ' properties, ' + hu.ownerEmails + ' owner emails, ' + hu.balances + ' portfolio balances.</div>' +
+    '<div class="acts"><button id="huAll">Select all with an email</button><button id="huDry">What would be created?</button>' +
+    '<input type="text" id="huTo" value="randi@aloepm.com" title="Test drafts go only to an @aloepm.com address"><button id="huTest">Create TEST draft(s) to this address</button>' +
+    '<button id="huGo" class="go">Create drafts for owners (<span id="huN">' + huSel.size + '</span>)</button><button id="huRef">Refresh</button></div>' +
+    (huRes ? '<div class="res" id="huRes">' + huRes + '</div>' : '') +
+    '<table><thead>' + th + '</thead><tbody>' + rowsHtml + '</tbody></table>' + np;
+}
+async function huPost(body) {
+  const r = await fetch('/api/payouts/heads-up/draft', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.status); return j;
+}
+function huSummary(j) {
+  const L = [];
+  L.push('<b>' + (j.dryRun ? 'Dry run - nothing was created.' : j.test ? 'TEST drafts created in the info@aloepm.com inbox.' : 'Drafts created in the info@aloepm.com inbox. Nothing was sent.') + '</b> ' + j.drafted.length + (j.dryRun ? ' would be created' : ' drafted') + ', ' + j.skipped.length + ' skipped, ' + j.failed.length + ' failed.');
+  if (j.drafted.some((d) => d.recorded === false)) L.push('<span class="neg"><b>Some drafts were created but could not be recorded as drafted.</b> Do NOT press Create again for those owners - check the info@ inbox drafts first.</span>');
+  for (const d of j.drafted) L.push('&bull; ' + esc(d.name) + ' &rarr; ' + esc((d.to || []).join(', ')) + ' - ' + esc(d.subject));
+  for (const s of j.skipped) L.push('<span class="muted">&bull; skipped ' + esc(s.name || s.ownerID) + ': ' + esc(s.reason) + '</span>');
+  for (const f of j.failed) L.push('<span class="neg">&bull; FAILED ' + esc(f.name) + ': ' + esc(f.error) + '</span>');
+  return L.join('<br>');
+}
+$('#hu').addEventListener('toggle', () => { if ($('#hu').open && !hu) loadHu(false); });
+$('#hu').addEventListener('click', async (e) => {
+  const id = e.target.id;
+  if (e.target.classList && e.target.classList.contains('hsel')) { const o = e.target.dataset.id; e.target.checked ? huSel.add(o) : huSel.delete(o); const n = $('#huN'); if (n) n.textContent = huSel.size; return; }
+  const run = async (body, btn) => { btn.disabled = true; try { huRes = huSummary(await huPost(body)); } catch (err) { huRes = '<span class="neg">' + esc(err.message) + '</span>'; } if (body.create === true && !body.testTo) { huSel.clear(); hu = null; await loadHu(true); } else renderHu(); };
+  if (id === 'huRef') return loadHu(true);
+  if (id === 'huAll') { const all = hu.drafts.filter((d) => d.recipients.length && !d.alreadyDrafted); const on = all.every((d) => huSel.has(String(d.ownerID))); all.forEach((d) => on ? huSel.delete(String(d.ownerID)) : huSel.add(String(d.ownerID))); return renderHu(); }
+  const ids = [...huSel];
+  if (id === 'huDry' || id === 'huTest' || id === 'huGo') {
+    if (!ids.length) { huRes = 'Tick at least one owner first.'; return renderHu(); }
+    if (id === 'huDry') return run({ownerIDs: ids}, e.target);
+    if (id === 'huTest') return run({ownerIDs: ids, create: true, testTo: $('#huTo').value.trim()}, e.target);
+    const names = hu.drafts.filter((d) => huSel.has(String(d.ownerID))).map((d) => d.name);
+    if (!confirm('Create ' + ids.length + ' draft(s) in the info@aloepm.com inbox?\n\nThey are DRAFTS only - nothing is sent. You review and send each one from Aptly.\n\n' + names.slice(0, 15).join('\n') + (names.length > 15 ? '\n... and ' + (names.length - 15) + ' more' : ''))) return;
+    return run({ownerIDs: ids, create: true}, e.target);
+  }
+  const tr = e.target.closest('tr.hrow'); if (!tr) return;
+  const o = tr.dataset.id; huOpen.has(o) ? huOpen.delete(o) : huOpen.add(o); renderHu();
+});
 $('#refresh').addEventListener('click', () => load(true));
 head();
 load();
