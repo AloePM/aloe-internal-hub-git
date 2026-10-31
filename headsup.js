@@ -48,23 +48,52 @@ export function pickRecipients(contacts = [], emailByContact = {}) {
 const lcFirst = (t) => (/^[A-Z][a-z]/.test(t) ? t[0].toLowerCase() + t.slice(1) : t);
 const cleanDesc = (d) => String(d || 'Bill').replace(/\s*\((unpaid|paid [^)]*)\)\s*$/i, '').replace(/\s+/g, ' ').trim().slice(0, 80);
 
+// Owners never see vendor names or the work description. A bill is described by its type ("AC bill") or, when the
+// description is not clearly one type of work, as "repair bill from a maintenance request".
+export const GENERIC_FALLBACK = 'repair bill from a maintenance request';
+const BILL_TYPES = [
+  [/(^|[^a-z])(a\/c|ac|hvac)([^a-z]|$)|air ?cond|heat pump|furnace|refrigerant|freon/i, 'AC bill'],
+  [/plumb|leak|drain|toilet|faucet|water heater|sewer|pipe/i, 'plumbing bill'],
+  [/roof/i, 'roof bill'],
+  [/electric|outlet|breaker|wiring/i, 'electrical bill'],
+  [/dishwasher|refrigerator|fridge|washer|dryer|stove|oven|microwave|disposal|appliance/i, 'appliance bill'],
+  [/pest|termite|rodent|scorpion/i, 'pest control bill'],
+  [/pool/i, 'pool bill'],
+  [/landscap|lawn|tree|irrigation|sprinkler/i, 'landscaping bill'],
+  [/paint/i, 'paint bill'],
+  [/floor|carpet|tile/i, 'flooring bill'],
+  [/lock|garage door/i, 'lock and door bill'],
+  [/clean|trash|haul/i, 'cleaning bill'],
+];
+export function genericBill(desc) {
+  const d = String(desc || '').replace(/\s+/g, ' ').trim();
+  if (!d || d.length > 60 || d.split(' ').length > 9) return GENERIC_FALLBACK;
+  for (const [re, label] of BILL_TYPES) if (re.test(d)) return label;
+  return GENERIC_FALLBACK;
+}
+const shortGeneric = (g) => (g === GENERIC_FALLBACK ? 'repair bill' : g);
+const ARRANGEMENT = /partial|payment plan|arrangement|install?ment|remainder|remaining balance|(end of|with) (the )?(month|next month|november|december|rent)/i;
+
 // Flatten an owner's bills (and expected recurring bills) into the list the email talks about.
 function collectBills(owner) {
   const out = [];
   for (const p of owner.properties || []) {
     for (const b of p.bills || []) {
       if (!(cents(b.amountUnpaid) > 0)) continue;
-      out.push({ addr: p.address, what: cleanDesc(b.desc), vendor: b.vendor || '', amount: Number(b.amountUnpaid) || 0, due: b.due || '', billed: b.date || '', paid: !!b.paid, expected: false, propertyID: p.propertyID });
+      const what = cleanDesc(b.desc), g = genericBill(what);
+      out.push({ addr: p.address, what, generic: shortGeneric(g), longGeneric: g, vendor: b.vendor || '', amount: Number(b.amountUnpaid) || 0, due: b.due || '', billed: b.date || '', paid: !!b.paid, expected: false, propertyID: p.propertyID, arrangement: ARRANGEMENT.test(what) });
     }
     for (const r of p.recurring || []) {
       if (!(cents(r.amount) > 0)) continue;
-      out.push({ addr: p.address, what: r.label, vendor: '', amount: Number(r.amount) || 0, due: '', billed: '', paid: false, expected: true, propertyID: p.propertyID });
+      const g = String(r.label || 'bill').toLowerCase().replace(/ bill$/, '') + ' bill';
+      out.push({ addr: p.address, what: r.label, generic: g, longGeneric: g, vendor: '', amount: Number(r.amount) || 0, due: '', billed: '', paid: false, expected: true, propertyID: p.propertyID, arrangement: false });
     }
   }
   return out;
 }
 
 // 2 calendar days before the earliest unpaid bill due date, never on a weekend, never before tomorrow.
+// (Only used for the "send by" column - the email itself says "within 3 days".)
 export function sendByDate(bills, todayISO) {
   const dues = bills.filter((b) => !b.paid && !b.expected && b.due).map((b) => b.due).sort();
   if (!dues.length) return { date: '', late: false };
@@ -85,8 +114,10 @@ const WARN_FLAGS = {
   move_out_soon: 'Tenant moving out within 30 days',
 };
 
-// Decide whether this owner gets an email, and what kind.
-// ctx: { reserve (dollars, defaults to the owner's), balance: {distributable, hold} | null, cfg }
+// Decide whether this owner gets an email, and what kind. Only UNPAID bills can ask an owner for money.
+//   basis 'now'  - a bill is already due: ask for (unpaid bills - usable funds in the account), do not wait for rent
+//   basis 'rent' - nothing is due yet: only ask if expected rent still does not cover it (the old page math)
+// ctx: { todayISO, reserve (dollars), balance: {distributable, hold} | null, cfg }
 export function classify(owner, ctx = {}) {
   const cfg = { ...DEFAULTS, ...(ctx.cfg || {}) };
   const props = owner.properties || [];
@@ -95,108 +126,164 @@ export function classify(owner, ctx = {}) {
   const amount = net - reserve;
   const bills = collectBills(owner);
   const billsC = bills.reduce((s, b) => s + cents(b.amount), 0);
+  const unpaidBilled = bills.filter((b) => !b.paid && !b.expected);
+  const unpaidC = unpaidBilled.reduce((s, b) => s + cents(b.amount), 0);
+  const today = ctx.todayISO || '';
+  const dueNow = unpaidBilled.some((b) => !b.due || b.due <= today);
+  const bal = ctx.balance;
+  const usable = bal && Number.isFinite(bal.distributable) ? Math.max(0, cents(bal.distributable)) : null;
   const expected = cents(owner.expected);
   const last = owner.lastPayout == null ? null : cents(owner.lastPayout);
-  let kind = null, why = '';
+  const contributedRecently = (owner.flags || []).includes('owner_contribution');
+  let kind = null, why = '', basis = '', shortage = 0, outAmount = amount, listBills = bills;
   if (billsC <= 0) { if (amount < 0) why = 'Below $0 but no bills explain it - check rent not received yet, fees, or a vacancy'; }
-  else if (amount < 0) kind = 'contribution';
+  else if (unpaidC > 0 && dueNow && usable != null && unpaidC - usable > 0) { kind = 'contribution'; basis = 'now'; shortage = unpaidC - usable; outAmount = -shortage; listBills = unpaidBilled; }
+  else if (unpaidC > 0 && !(dueNow && usable != null) && amount < 0) { kind = 'contribution'; basis = 'rent'; shortage = -amount; }
+  else if (amount < 0) why = unpaidC > 0 ? 'Below $0 on the page but the account already holds enough for the unpaid bills - check before asking for money' : 'Below $0 but every bill is already paid - needs a person (check the owner balance in Rentvine)';
   else if ((expected > 0 && amount < expected * cfg.lessThanUsualPct) || (last != null && last > 0 && amount < last * cfg.lowerThanLastPct)) kind = 'lower';
-  return { kind, why, amount: amount / 100, net: net / 100, reserve: reserve / 100, bills, billsTotal: billsC / 100 };
+  if (kind === 'contribution' && contributedRecently) { kind = null; basis = ''; why = 'Needs a contribution but the owner already contributed in the last 30 days - check before asking again'; }
+  return { kind, why, basis, amount: outAmount / 100, pageAmount: amount / 100, usable: usable == null ? null : usable / 100, net: net / 100, reserve: reserve / 100, bills: listBills, allBills: bills, billsTotal: (kind === 'lower' ? billsC : listBills.reduce((s, b) => s + cents(b.amount), 0)) / 100, unpaidTotal: unpaidC / 100, dueNow };
 }
 
 const warnLine = (level, text) => ({ level, text });
+const plural = (n, one, many) => (n === 1 ? one : many);
 
-// Everything the draft needs. ctx: { todayISO, recipients, balance, reserve, sign }
+// Everything the draft needs. ctx: { todayISO, recipients, balance, reserve, cfg }
 export function buildHeadsUp(owner, ctx = {}) {
   const todayISO = ctx.todayISO;
+  const cfg = { ...DEFAULTS, ...(ctx.cfg || {}) };
   const c = classify(owner, ctx);
-  if (!c.kind) return { ownerID: owner.ownerID, name: owner.name, kind: null, why: c.why, amount: c.amount };
+  if (!c.kind) return { ownerID: owner.ownerID, name: owner.name, kind: null, why: c.why, amount: c.pageAmount };
   const month = monthName(todayISO);
   const props = (owner.properties || []);
   const recipients = ctx.recipients || [];
   const bills = c.bills;
+  const real = bills.filter((b) => !b.expected);
   const one = bills.length === 1 ? bills[0] : null;
   const homes = props.filter((p) => cents(p.settledIn) !== 0 || (p.bills || []).length || (p.recurring || []).length || cents(p.fee) !== 0);
   const multiHome = homes.length > 1;
   const sb = sendByDate(bills, todayISO);
+  const distributedThisMonth = !!(owner.lastPayoutDate && String(owner.lastPayoutDate).slice(0, 7) === todayISO.slice(0, 7));
   const warnings = [];
   if (!recipients.length) warnings.push(warnLine('red', 'No usable owner email in Rentvine - cannot create a draft'));
   if (recipients.length > 1) warnings.push(warnLine('amber', 'Addressed to ' + recipients.length + ' co-owners'));
   const bal = ctx.balance;
-  if (bal && Number.isFinite(bal.distributable) && Math.abs(bal.distributable - c.amount) > 1) warnings.push(warnLine('amber', 'Rentvine shows ' + money(bal.distributable) + ' distributable, this page shows ' + money(c.amount) + ' - check before sending'));
+  if (c.basis !== 'now' && bal && Number.isFinite(bal.distributable) && Math.abs(bal.distributable - c.amount) > 1) warnings.push(warnLine('amber', 'Rentvine shows ' + money(bal.distributable) + ' distributable, this page shows ' + money(c.amount) + ' - check before sending'));
   if (bal && bal.hold) warnings.push(warnLine('amber', 'Rentvine has distributions on hold for this owner'));
   for (const f of owner.flags || []) if (WARN_FLAGS[f]) warnings.push(warnLine('amber', WARN_FLAGS[f]));
   if (bills.some((b) => b.expected)) warnings.push(warnLine('amber', 'Includes an expected recurring bill that is not billed yet (' + bills.filter((b) => b.expected).map((b) => b.what).join(', ') + ')'));
+  if (bills.some((b) => b.arrangement)) warnings.push(warnLine('red', 'A bill description mentions a partial payment or arrangement - review it before asking for money'));
   const pendingLate = props.reduce((s, p) => s + (((p.lateRent || {}).pending) || 0), 0);
   if (pendingLate > 0) warnings.push(warnLine('amber', 'Late rent of ' + money(pendingLate) + ' is received but not cleared - the amount may change'));
   const stillToCome = props.reduce((s, p) => (p.vacant ? s : s + Math.max(0, cents(p.rent) - cents(p.settledIn))), 0) / 100;
   if (c.kind === 'contribution') {
-    if (!sb.date) warnings.push(warnLine('amber', 'No due date on the bills - fill in the send-by date'));
-    else if (sb.late) warnings.push(warnLine('red', 'A bill is due ' + shortDate(sb.due) + ' - there is less than 2 days to collect, confirm the date'));
+    if (real.some((b) => !b.due)) warnings.push(warnLine('amber', 'No due date on a bill - treated as due now'));
+    else if (sb.late) warnings.push(warnLine('amber', 'A bill is due ' + shortDate(sb.due) + ' - already due or very soon'));
   }
+
+  // ---- carry offer: only when the amount asked for is bigger than one month's rent after the management fee
+  const rentAfterFee = props.reduce((s, p) => (p.vacant ? s : s + Math.max(0, cents(p.rent) - cents(p.fee))), 0) / 100;
+  const ask = c.kind === 'contribution' ? -c.amount : 0;
+  const carryPct = Number.isFinite(cfg.carryPct) ? cfg.carryPct : 0.05;
+  const carry = { offered: c.kind === 'contribution' && cfg.carryOffer !== false && rentAfterFee > 0 && ask > rentAfterFee, rentAfterFee, pct: carryPct, fee: Math.round(ask * carryPct * 100) / 100 };
+  if (c.kind === 'contribution' && cfg.carryOffer !== false && !(rentAfterFee > 0)) warnings.push(warnLine('amber', 'No rent to carry against (vacant or no rent found) - carry offer left out'));
 
   // ---- the math, as lines: { sign: '', '-', '+', '=', label, amount, bold }
   const L = (sign, label, amount, bold) => ({ sign, label, amount, bold: !!bold });
-  const billLabel = (b) => b.what + ' (' + (b.expected ? 'expected, not billed yet' : (b.vendor ? b.vendor + ', ' : '') + (b.paid ? 'paid' : b.due ? 'due ' + shortDate(b.due) : b.billed ? 'billed ' + shortDate(b.billed) : 'unpaid')) + ')';
+  const billLabel = (b) => cap(b.generic) + ' (' + (b.expected ? 'expected, not billed yet' : (b.paid ? 'paid' : b.due ? 'due ' + shortDate(b.due) : b.billed ? 'billed ' + shortDate(b.billed) : 'unpaid')) + ')';
   const blocks = [];
-  for (const p of (multiHome ? homes : [homes[0] || props[0]])) {
-    if (!p) continue;
-    const lines = [L('', month + ' rent received', p.settledIn), L('-', 'Management fee', p.fee)];
-    for (const b of bills.filter((x) => x.propertyID === p.propertyID)) lines.push(L('-', billLabel(b), b.amount));
-    lines.push(L('=', multiHome ? 'Net for this home' : (c.kind === 'contribution' ? 'Balance after paying the bills' : (c.reserve > 0 ? 'Balance after bills' : 'Your distribution')), p.net, true));
-    blocks.push({ title: multiHome ? p.address : '', lines });
+  if (c.kind === 'contribution' && c.basis === 'now') {
+    const lines = [L('', 'Funds available in your account', c.usable || 0)];
+    for (const b of bills) lines.push(L('-', billLabel(b), b.amount));
+    lines.push(L('=', 'Contribution needed', ask, true));
+    blocks.push({ title: '', lines });
+  } else if (c.kind === 'contribution') {
+    for (const p of (multiHome ? homes : [homes[0] || props[0]])) {
+      if (!p) continue;
+      const lines = [L('', month + ' rent received', p.settledIn), L('-', 'Management fee', p.fee)];
+      for (const b of bills.filter((x) => x.propertyID === p.propertyID)) lines.push(L('-', billLabel(b), b.amount));
+      lines.push(L('=', multiHome ? 'Net for this home' : 'Balance after paying the bills', p.net, true));
+      blocks.push({ title: multiHome ? p.address : '', lines });
+    }
+    const tail = [];
+    if (multiHome) tail.push(L('', 'Net of all homes', c.net, true));
+    if (c.reserve > 0) tail.push(L('+', 'Restore reserve', c.reserve));
+    tail.push(L('=', 'Contribution needed', ask, true));
+    if (multiHome) blocks.push({ title: 'Your total', lines: tail });
+    else blocks[blocks.length - 1].lines.push(...tail);
+  } else {
+    for (const p of (multiHome ? homes : [homes[0] || props[0]])) {
+      if (!p) continue;
+      const lines = [L('', month + ' rent received', p.settledIn), L('-', 'Management fee', p.fee)];
+      for (const b of bills.filter((x) => x.propertyID === p.propertyID)) lines.push(L('-', billLabel(b), b.amount));
+      lines.push(L('=', multiHome ? 'Net for this home' : (c.reserve > 0 ? 'Balance after bills' : 'Your distribution'), p.net, true));
+      blocks.push({ title: multiHome ? p.address : '', lines });
+    }
+    const tail = [];
+    if (multiHome) tail.push(L('', 'Net of all homes', c.net, true));
+    if (c.reserve > 0) tail.push(L('-', 'Reserve held', c.reserve));
+    if (multiHome || c.reserve > 0) tail.push(L('=', 'Your distribution', c.amount, true));
+    if (multiHome) blocks.push({ title: 'Your total', lines: tail });
+    else blocks[blocks.length - 1].lines.push(...tail);
   }
-  const tail = [];
-  if (multiHome) tail.push(L('', 'Net of all homes', c.net, true));
-  if (c.reserve > 0) tail.push(c.kind === 'contribution' ? L('+', 'Restore reserve', c.reserve) : L('-', 'Reserve held', c.reserve));
-  if (c.kind === 'contribution') tail.push(L('=', 'Contribution needed', -c.amount, true));
-  else if (multiHome || c.reserve > 0) tail.push(L('=', 'Your distribution', c.amount, true));
-  if (multiHome) blocks.push({ title: 'Your total', lines: tail });
-  else blocks[blocks.length - 1].lines.push(...tail);
+  // rent minus management fee, shown after the main math so owners can see where their usual amount comes from
+  const liveHomes = props.filter((p) => !p.vacant && cents(p.rent) > 0);
+  const feeKnownAll = liveHomes.length > 0 && liveHomes.every((p) => cents(p.fee) > 0);
+  const rentTotal = liveHomes.reduce((t, p) => t + cents(p.rent), 0) / 100, feeTotal = liveHomes.reduce((t, p) => t + cents(p.fee), 0) / 100;
+  const rentBreakdown = feeKnownAll ? { title: '', lines: [L('', month + ' rent', rentTotal), L('-', 'Management fee', feeTotal), L('=', 'Rent after management fee', rentTotal - feeTotal, true)] } : null;
+  if (c.kind === 'contribution' && c.basis === 'now' && !rentBreakdown) warnings.push(warnLine('amber', 'Management fee not posted yet - the rent-minus-fee breakdown was left out of the email'));
 
   // ---- paragraphs
-  const vendors = [...new Set(bills.filter((b) => !b.expected && b.vendor).map((b) => b.vendor))];
-  const vendorPhrase = vendors.length === 1 ? vendors[0] : vendors.length ? 'the vendors' : 'the vendor';
+  const vendors = new Set(real.map((b) => b.vendor || b.propertyID));
+  const vendorPhrase = vendors.size > 1 ? 'the vendors' : 'the vendor';
   const homesWord = multiHome ? 'homes' : 'home';
   const paras = [];
   paras.push({ t: 'p', text: greetingFor(recipients) });
   const billListItems = bills.map((b) => (multiHome ? b.addr + ' - ' : '') + billLabel(b) + ': ' + money(b.amount));
   let subject = '';
   if (c.kind === 'contribution') {
-    const shortWhat = one ? one.what : 'bills';
-    subject = (multiHome || !one ? 'Your properties' : one.addr) + ' – ' + (one ? lcFirst(shortWhat) + ' and owner contribution' : 'owner contribution') + ' needed by ' + (sb.date ? shortDate(sb.date) : '[send-by date]');
-    if (one) paras.push({ t: 'p', text: 'I’m writing about the ' + one.what + ' at ' + one.addr + '. ' + (one.vendor || 'The vendor') + ' billed ' + money(one.amount) + (one.paid ? ', which has already been paid from your account.' : one.due ? ', and the bill is due ' + shortDate(one.due) + '.' : '.') });
-    else { paras.push({ t: 'p', text: 'I’m writing about the following bills for your ' + homesWord + ':' }); paras.push({ t: 'ul', items: billListItems }); }
-    const shortfallOnlyReserve = c.net >= 0;
-    paras.push({ t: 'p', text: shortfallOnlyReserve
-      ? 'After ' + month + ' rent and ' + (one ? 'this bill' : 'these bills') + ', your account would be below the ' + money(c.reserve) + ' reserve we keep, so there won’t be an owner distribution in ' + month + '. We’ll need a small contribution from you to restore it.'
-      : 'Because ' + (one ? 'this bill is' : 'these bills are') + ' larger than what your ' + homesWord + ' brought in after ' + month + ' rent and the management fee, there won’t be an owner distribution in ' + month + '. We’ll also need a contribution from you so we can pay ' + vendorPhrase + ' on time' + (c.reserve > 0 ? ' and keep your ' + money(c.reserve) + ' reserve in place' : '') + '.' });
+    subject = (multiHome || !one ? 'Your properties' : one.addr) + ' – ' + (one ? one.generic : 'bills') + ' – owner contribution needed within 3 days';
+    if (one) paras.push({ t: 'p', text: 'I wanted to reach out about the ' + one.longGeneric + ' for ' + one.addr + ': ' + money(one.amount) + (one.paid ? ', which has already been paid from your account.' : one.due ? ', due ' + shortDate(one.due) + '.' : '.') });
+    else { paras.push({ t: 'p', text: 'I wanted to reach out about the following bills for your ' + homesWord + ':' }); paras.push({ t: 'ul', items: billListItems }); }
+    const it = one ? 'this bill' : 'these bills';
+    if (c.basis === 'now') {
+      paras.push({ t: 'p', text: distributedThisMonth
+        ? 'Since your owner distribution for this month has already been processed, there are no longer enough funds in your account to cover ' + it + '. Rather than waiting for next month’s rent, we’re asking for a contribution so we can pay ' + vendorPhrase + ' promptly.'
+        : 'There aren’t enough funds in your account to cover ' + it + ' right now, and we’d rather not keep ' + vendorPhrase + ' waiting until next month’s rent. We’re asking for a contribution so we can get ' + (one ? 'it' : 'them') + ' paid promptly.' });
+    } else if (c.net >= 0) {
+      paras.push({ t: 'p', text: 'After ' + month + ' rent and ' + it + ', your account would be below the ' + money(c.reserve) + ' reserve we keep, so there won’t be an owner distribution in ' + month + '. We’ll need a small contribution from you to restore it.' });
+    } else {
+      paras.push({ t: 'p', text: 'Because ' + (one ? 'this bill is' : 'these bills are') + ' larger than what your ' + homesWord + ' brought in after ' + month + ' rent and the management fee, there won’t be an owner distribution in ' + month + '. We’ll also need a contribution from you so we can pay ' + vendorPhrase + ' on time' + (c.reserve > 0 ? ' and keep your ' + money(c.reserve) + ' reserve in place' : '') + '.' });
+    }
+    paras.push({ t: 'p', text: 'Here’s the math:' });
+    for (const b of blocks) paras.push({ t: 'math', title: b.title, lines: b.lines });
+    if (c.basis === 'now' && rentBreakdown) { paras.push({ t: 'p', text: 'For reference, here’s what your ' + month + ' rent looks like after the management fee:' }); paras.push({ t: 'math', title: rentBreakdown.title, lines: rentBreakdown.lines }); }
+    if (c.basis === 'rent' && stillToCome > 0.99) paras.push({ t: 'p', text: 'This assumes the remaining ' + money(stillToCome) + ' of ' + month + ' rent is received in full and on time.' });
+    paras.push({ t: 'p', text: 'I know unexpected expenses are never fun, and I really appreciate your help with this.' });
+    paras.push({ t: 'p', text: 'Could you send ' + money(ask) + ' within 3 days? That gives the funds time to clear. You can pay by ' + ph('payment instructions') + '.' });
+    if (carry.offered) paras.push({ t: 'p', text: 'If you’d prefer, we can carry this balance against your upcoming rent instead. The fee is ' + Math.round(carryPct * 100) + '% of the balance we’re carrying, charged for each month it stays open. For the ' + money(ask) + ' above, that’s ' + money(carry.fee) + ' per month. Just let me know and I’ll set it up.' });
+    paras.push({ t: 'p', text: 'You can see the bill details in your owner portal under Bills. I’m also happy to walk through the numbers on a call.' });
   } else {
-    subject = 'Your ' + month + ' distribution: ' + money(c.amount) + ', lower than usual because of ' + (one ? lcFirst(one.what) : 'bills');
-    paras.push({ t: 'p', text: 'Your ' + month + ' owner distribution of ' + money(c.amount) + ' will go out on ' + (ctx.payoutDate ? shortDate(ctx.payoutDate) : ph('payout date')) + '. It’s lower than usual because of ' + (one ? 'the ' + lcFirst(one.what) + ' at ' + one.addr + ' (' + (one.vendor ? one.vendor + ', ' : '') + money(one.amount) + ').' : 'the following bills for your ' + homesWord + ':') });
-    if (!one) paras.push({ t: 'ul', items: billListItems });
+    subject = 'Heads-up: your ' + month + ' distribution will be lower than usual';
+    paras.push({ t: 'p', text: 'I wanted to let you know that your ' + month + ' owner distribution will be lower than usual.' });
+    if (one) paras.push({ t: 'p', text: 'The ' + one.longGeneric + ' for ' + one.addr + ' (' + money(one.amount) + (one.due && !one.paid ? ', due ' + shortDate(one.due) : '') + ') will come out of ' + month + ' rent, so your distribution will be ' + money(c.billsTotal) + ' less than expected.' });
+    else { paras.push({ t: 'p', text: 'The following bills for your ' + homesWord + ' will come out of ' + month + ' rent, so your distribution will be ' + money(c.billsTotal) + ' less than expected:' }); paras.push({ t: 'ul', items: billListItems }); }
+    paras.push({ t: 'p', text: 'You can see the ' + plural(bills.length, 'bill', 'bills') + ' in your owner portal under Bills.' });
+    paras.push({ t: 'p', text: 'Here’s the math:' });
+    for (const b of blocks) paras.push({ t: 'math', title: b.title, lines: b.lines });
+    paras.push({ t: 'p', text: 'Please let me know if you have any questions. I’m always happy to help.' });
   }
-  paras.push({ t: 'p', text: 'Here’s the math:' });
-  for (const b of blocks) paras.push({ t: 'math', title: b.title, lines: b.lines });
-  if (c.kind === 'contribution' && stillToCome > 0.99) paras.push({ t: 'p', text: 'This assumes the remaining ' + money(stillToCome) + ' of ' + month + ' rent is received in full and on time.' });
-  if (c.kind === 'contribution') {
-    paras.push({ t: 'p', text: 'Could you send ' + money(-c.amount) + ' by ' + (sb.date ? shortDate(sb.date) : ph('send-by date')) + '? That gives the funds time to clear' + (sb.due ? ' before the bill is due' : '') + '. You can pay by ' + ph('payment instructions') + '.' });
-    paras.push({ t: 'p', text: 'If paying the full amount at once is difficult, please let me know as soon as possible and I’ll ask ' + vendorPhrase + ' whether they would accept a payment arrangement.' });
-  } else {
-    if (owner.lastPayout != null) paras.push({ t: 'p', text: 'For comparison, your last distribution was ' + money(owner.lastPayout) + '.' });
-    paras.push({ t: 'p', text: 'Nothing is needed from you. I wanted you to see exactly where the money went before you saw the deposit.' });
-  }
-  paras.push({ t: 'p', text: 'I’m happy to send the ' + (bills.filter((b) => !b.expected).length > 1 ? 'invoices' : 'invoice') + ' or walk through the numbers on a call.' });
-  const sign = ctx.sign || {};
-  paras.push({ t: 'sig', lines: ['Thank you,', sign.name || ph('Your name'), 'Aloe Property Management', sign.phone || ph('Phone')] });
+  // no signature block: Aptly adds the sender's own signature to the draft
+  paras.push({ t: 'p', text: 'Thank you,' });
 
   return {
-    ownerID: owner.ownerID, name: owner.name, kind: c.kind, amount: c.amount, contribution: c.kind === 'contribution' ? -c.amount : 0,
-    expected: owner.expected, lastPayout: owner.lastPayout, reserve: c.reserve, billsTotal: c.billsTotal,
+    ownerID: owner.ownerID, name: owner.name, kind: c.kind, basis: c.basis, amount: c.amount, contribution: c.kind === 'contribution' ? ask : 0,
+    expected: owner.expected, lastPayout: owner.lastPayout, reserve: c.reserve, billsTotal: c.billsTotal, usable: c.usable, carry,
     sendBy: sb.date, recipients, subject, paras, warnings, stillToCome,
     text: renderText(paras), html: renderHtml(paras),
   };
 }
+const cap = (t) => (t ? t[0].toUpperCase() + t.slice(1) : t);
 
 // ---- rendering
 const lineText = (l) => (l.sign ? l.sign.replace('-', '−') + ' ' : '') + l.label + ': ' + money(l.amount);
