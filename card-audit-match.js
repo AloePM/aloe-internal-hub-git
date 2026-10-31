@@ -9,7 +9,7 @@
 //   red    = no bill found after GRACE_DAYS, or a possible double bill
 //   grey   = pending, refunded, too new, or marked by a person
 
-export const DEFAULTS = { MARKUP_MAX: 300, LATE_DAYS: 30, GRACE_DAYS: 7, WIN_BEFORE: 21, WIN_AFTER: 45, LONG_WIN: 150 };
+export const DEFAULTS = { MARKUP_MAX: 300, CLOSE_MAX: 25, LATE_DAYS: 30, GRACE_DAYS: 7, WIN_BEFORE: 21, WIN_AFTER: 45, LONG_WIN: 150 };
 
 const DAY = 86400000;
 export function dayNum(s) {
@@ -76,6 +76,9 @@ export function hintsFor(merchant) {
 }
 const COMMON = new Set(['CONTROL', 'REPAIR', 'APPLIANCE', 'PLUMBING', 'HEATING', 'COOLING', 'ELECTRIC', 'ELECTRICAL', 'CLEANING', 'SUPPLY', 'DEPOT', 'STORE', 'MARKET', 'MKTPLACE', 'AMAZON', 'HOMEOWNERS', 'MANAGEMENT', 'SYSTEMS', 'DOORS', 'GLASS', 'WATER', 'HOME', 'PROTECT', 'WARRANTY', 'NATIONAL', 'CONSTRUCTION', 'LIGHTING', 'SLIDING', 'RESOURCES', 'PUBLIC', 'CHANDLER', 'MARICOPA', 'PHOENIX']);
 const strongOf = (hints) => hints.strong || [];
+// Generic words that only ever appear on bills from one kind of card charge (a home-warranty trade fee,
+// an HOA registration, a utility bill, a legal fee). Words like "pool", "pest", "clean" or "microwave"
+// are NOT here: several different vendors share them, so they never link a bill on their own.
 const SAFE_GENERIC = new Set(['home warranty', 'trade fee', 'registration', 'hoa', 'pool key', 'electric', 'water', 'sewer', 'utility', 'legal', 'attorney', 'notice', 'court']);
 function textHit(hints, text) {
   const t = ' ' + String(text || '').toLowerCase() + ' ';
@@ -144,6 +147,8 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {}, hom
       const rivals = open().filter((o) => o !== c && o.amount === c.amount && Math.abs(o.d - c.d) <= 14).length;
       const unique = cands.length === 1 && rivals === 0;
       if (pass === 'vendor') { assign(c, [best], 'green', 'exact match'); lateNote(c); }
+      // Amount-only: link it only when the amount is odd enough to be no coincidence. Otherwise never connect a
+      // bill that doesn't name the vendor — just mention it as a possible bill to look at.
       else if (pass === 'any' && unique && c.amount % 500 !== 0) { assign(c, [best], 'green', 'exact amount — the only bill with this amount around this date'); lateNote(c); }
       else if (pass === 'any') { if (!c.possible) c.possible = best; }
       else if (unique && textHit(c.clue, best.text)) { assign(c, [best], 'orange', `same amount, but billed ${best.d - c.d} days after the charge`); }
@@ -200,16 +205,26 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {}, hom
     if (gap <= O.MARKUP_MAX * 100) { assign(c, [b], 'green', `bill is ${fmt(gap)} higher (markup or labor)`); lateNote(c); }
   }
 
-  // 6. Bill lower than the charge (under-billed), then 6b. bill far higher than the charge.
-  //    Pairs are chosen across all charges at once, closest date first, so one charge can't steal another's bill.
-  const greedy = (ok, reason, win) => {
-    const pairs = [];
-    for (const c of open()) for (const b of bills) if (free(b) && win(c, b) && !wrongHome(c, b) && textHit(c.strong, b.text) && ok(c, b)) pairs.push([Math.abs(b.d - c.d) + Math.abs(b.amount - c.amount) / 10000, c, b]);
-    pairs.sort((x, y) => x[0] - y[0]);
-    for (const [, c, b] of pairs) if (!c.color && free(b)) assign(c, [b], 'orange', reason(c, b));
-  };
-  greedy((c, b) => b.amount < c.amount && b.amount >= c.amount * 0.75, (c, b) => `billed ${fmt(c.amount - b.amount)} less than the charge`, inWin);
-  greedy((c, b) => c.supply && b.amount > c.amount + O.MARKUP_MAX * 100 && b.amount <= c.amount * 3 + O.MARKUP_MAX * 100, (c, b) => `bill is ${fmt(b.amount - c.amount)} higher than the charge — more than ${fmt(O.MARKUP_MAX * 100)}`, inWinNE);
+  // 6. Same vendor, amount a little off (up to CLOSE_MAX either way, e.g. delivery fee or tax): link it, orange.
+  //    Pairs are chosen across all charges at once, closest amount first, so one charge can't steal another's bill.
+  //    Anything further off is NOT linked; the closest same-vendor bill is only mentioned so someone can look.
+  const pairs = [];
+  for (const c of open()) for (const b of bills) {
+    if (!free(b) || !inWin(c, b) || wrongHome(c, b) || !textHit(c.strong, b.text)) continue;
+    const diff = b.amount - c.amount;
+    if (diff === 0 || Math.abs(diff) > O.CLOSE_MAX * 100) continue;
+    if (c.supply && diff > 0) continue;   // store purchases billed higher were handled by the markup rule
+    pairs.push([Math.abs(diff) * 1000 + Math.abs(b.d - c.d), c, b]);
+  }
+  pairs.sort((x, y) => x[0] - y[0]);
+  for (const [, c, b] of pairs) if (!c.color && free(b)) {
+    const diff = b.amount - c.amount;
+    assign(c, [b], 'orange', diff < 0 ? `billed ${fmt(-diff)} less than the charge` : `billed ${fmt(diff)} more than the charge`);
+  }
+  for (const c of open()) {
+    const near = bills.filter((b) => free(b) && inWin(c, b) && !wrongHome(c, b) && textHit(c.strong, b.text)).sort((a, b) => Math.abs(a.amount - c.amount) - Math.abs(b.amount - c.amount))[0];
+    if (near && Math.abs(near.amount - c.amount) <= Math.max(10000, c.amount * 0.3)) c.nearest = near;   // only mention it if it's reasonably close
+  }
 
   // 7. Nothing found.
   for (const c of open()) {
@@ -248,7 +263,7 @@ export function matchAll(chargesIn, billsIn, { today, marks = {}, opts = {}, hom
   const likely = (c) => { const m = c.homes.size ? c.homes : c.noteHomes; return { count: m.size, homes: [...m.values()].slice(0, 5) }; };
   const strip = (b) => ({ billID: b.billID, date: isoDay(b.d), propertyID: b.propertyID, address: b.address, amount: b.amount, description: b.description, reference: b.reference, payee: b.payee, vendorBill: !!b.vendorBill });
   return {
-    charges: charges.sort((a, b) => b.d - a.d).map((c) => ({ id: c.id, date: isoDay(c.d), description: c.description, card: c.card || '', amount: c.amount, pending: !!c.pending, color: c.color, autoColor: c.autoColor || c.color, reasons: c.reasons, fixPayee: !!c.fixPayee, likelyHomes: likely(c), possible: !c.bills.length && c.possible && !c.possible.used ? strip(c.possible) : null, mark: c.mark || null, pairedWith: c.pairedWith || null, bills: c.bills.map(strip), billedTotal: c.bills.reduce((s, b) => s + b.amount, 0) })),
+    charges: charges.sort((a, b) => b.d - a.d).map((c) => ({ id: c.id, date: isoDay(c.d), description: c.description, card: c.card || '', amount: c.amount, pending: !!c.pending, color: c.color, autoColor: c.autoColor || c.color, reasons: c.reasons, fixPayee: !!c.fixPayee, likelyHomes: likely(c), possible: !c.bills.length && c.possible && !c.possible.used ? strip(c.possible) : null, nearest: !c.bills.length && c.nearest && !c.nearest.used ? strip(c.nearest) : null, mark: c.mark || null, pairedWith: c.pairedWith || null, bills: c.bills.map(strip), billedTotal: c.bills.reduce((s, b) => s + b.amount, 0) })),
     billAlerts: billAlerts.map((x) => ({ why: x.why, a: strip(x.a), b: strip(x.b) })),
   };
 }

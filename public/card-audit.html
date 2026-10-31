@@ -161,9 +161,11 @@
     if (/double bill/.test(r)) { var m = r.match(/bills (\S+) and (\S+)\)/); return 'Possible double bill' + (m ? ': ' + billLink({ billID: m[1] }) + ' and ' + billLink({ billID: m[2].replace(/\)$/, '') }) : ''); }
     if (/no bill found/.test(r)) {
       var h = c.likelyHomes && c.likelyHomes.count ? c.likelyHomes.homes[0] : null;
+      if (c.nearest) return 'No matching bill — closest is ' + billLink(c.nearest) + ' (' + fmt(Math.abs(c.nearest.amount - c.amount)) + ' different)' + (h ? '; likely ' + esc(h.address) : '');
       return 'No bill yet' + (h ? ' — likely ' + esc(h.address) : '');
     }
     var less = r.match(/billed (\$[\d,.]+) less/); if (less) return 'Billed ' + less[1] + ' short on ' + billLink(c.bills[0]);
+    var over = r.match(/billed (\$[\d,.]+) more than the charge/); if (over) return 'Billed ' + over[1] + ' more on ' + billLink(c.bills[0]);
     var more = r.match(/bill is (\$[\d,.]+) higher than the charge — more than/); if (more) return 'Billed ' + more[1] + ' more than the charge on ' + billLink(c.bills[0]);
     var late = r.match(/billed (\d+) days after/); if (late) return 'Billed ' + late[1] + ' days late on ' + billLink(c.bills[0]);
     return esc(c.reasons[0] || '');
@@ -175,6 +177,7 @@
     c.bills.forEach(function (b) { out.push('<div>' + billLink(b) + ' ' + fmt(b.amount) + ' · ' + esc(shortDate(b.date)) + ' · ' + esc(b.address || '') + (b.payee && b.vendorBill ? ' · payable to ' + esc(b.payee) : '') + '</div>'); });
     var lh = c.likelyHomes;
     if (lh && lh.count) out.push('<div>Rentvine lists this vendor at: ' + lh.homes.map(function (h) { return esc(h.address) + ' (' + esc(h.field) + ')'; }).join('; ') + (lh.count > 5 ? ' and ' + (lh.count - 5) + ' more' : '') + '</div>');
+    if (c.nearest) out.push('<div>Closest bill from this vendor: ' + billLink(c.nearest) + ' ' + fmt(c.nearest.amount) + ' at ' + esc(c.nearest.address || 'unknown home') + ' — ' + fmt(Math.abs(c.nearest.amount - c.amount)) + ' different, so not linked.</div>');
     if (c.possible) out.push('<div>Not linked: ' + billLink(c.possible) + ' ' + fmt(c.possible.amount) + ' at ' + esc(c.possible.address || 'unknown home') + ' has the same amount but doesn\'t name this vendor.</div>');
     var m = c.mark || {};
     out.push('<div class="markbox"><select data-id="' + esc(c.id) + '">' + Object.keys(MARKS).map(function (k) { return '<option value="' + k + '"' + ((m.status || '') === k ? ' selected' : '') + '>' + MARKS[k] + '</option>'; }).join('') + '</select>' +
