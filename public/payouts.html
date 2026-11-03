@@ -90,9 +90,14 @@ const mdy = (iso) => iso ? iso.slice(5, 7) + '/' + iso.slice(8, 10) + '/' + iso.
 let data = null, filter = 'all', paid = 'all', ten = 'all', alertSel = 'all', open = new Set(), sortKey = null, sortDir = 1;
 
 const COLS = [
-  ['name', 'Owner', 'l'], ['settledIn', 'Settled in'], ['fees', 'Mgmt fees'], ['unpaidBills', 'Unpaid bills'], ['recurringTotal', 'Recurring'],
+  ['name', 'Owner', 'l'], ['expectedMonthly', 'Expected / month'], ['settledIn', 'Settled in'], ['fees', 'Mgmt fees'], ['unpaidBills', 'Unpaid bills'], ['recurringTotal', 'Recurring'],
   ['reserve', 'Reserve'], ['amountToPay', 'Amount to pay'], ['lastPayout', 'Last payout'], ['status', 'Status', 'l'],
 ];
+function amountNote(o) {
+  if (o.amountSource !== 'rentvine') return '<div class="tiny muted" title="Rentvine had no balance for this owner, so this is the page\'s own math">page math</div>';
+  if (Math.abs((o.pageAmount || 0) - (o.amountToPay || 0)) > 1) return '<div class="tiny" style="color:#b45309" title="Rentvine Distributable Amount differs from the page\'s own math by more than $1">Rentvine &middot; page math ' + money(o.pageAmount) + '</div>';
+  return '';
+}
 function head() {
   $('#head').innerHTML = COLS.map(([k, label, cls]) => '<th class="s ' + (cls || '') + '" data-k="' + k + '">' + label + '<span class="ar">' + (sortKey === k ? (sortDir > 0 ? ' ▲' : ' ▼') : '') + '</span></th>').join('');
 }
@@ -112,6 +117,7 @@ async function load(refresh) {
     $('#sub').textContent = data.scope + ' - settled money only - as of ' + new Date(data.asOf).toLocaleString('en-US', {timeZone: 'America/Phoenix'}) + ' (Phoenix)' + (data.reserve ? ' - reserve ' + money(data.reserve) + ' per owner' : ' - reserve $0') + (data.counts ? ' - read ' + data.counts.properties + ' properties, ' + data.counts.payments + ' payments, ' + (data.counts.payouts ?? 0) + ' owner payouts, ' + data.counts.bills + ' bills, ' + data.counts.rents + ' rents, ' + (data.counts.vacant ?? 0) + ' vacancies, ' + (data.counts.contributions ?? 0) + ' contributions' : '') + (data.counts && data.counts.moveIns !== undefined ? ' - ' + data.counts.moveIns + ' recent move-ins checked against ' + data.counts.feeBills + ' placement fee bills' : '');
     if (data.lateRentError) $('#sub').textContent += ' - LATE RENT CHECK DID NOT RUN: ' + data.lateRentError;
     if (data.feeCheckError) $('#sub').textContent += ' - PLACEMENT FEE CHECK DID NOT RUN: ' + data.feeCheckError;
+    if (data.balancesError) $('#sub').textContent += ' - RENTVINE BALANCES COULD NOT BE READ (Amount to pay is the page math): ' + data.balancesError;
     $('#stor').hidden = !!data.decisionsSaved;
     const um = data.unmatchedContributions || [];
     $('#unm').hidden = !um.length;
@@ -189,10 +195,10 @@ function render() {
   $('#body').innerHTML = rows.map((o) => {
     const d = data.decisions[o.ownerID];
     const main = '<tr class="owner" data-id="' + esc(o.ownerID) + '"><td>' + ownerDot(o) + esc(o.name) + ' <span class="muted tiny">(' + o.properties.length + ')</span>' + (d ? ' <span class="pill ok">' + esc(d.action.replace('_', ' ')) + '</span>' : '') + '<div>' + ownerTags(o) + '</div></td>' +
-      '<td>' + money(o.settledIn) + '</td><td>' + money(o.fees) + '</td><td>' + money(o.unpaidBills) + '</td><td>' + money(o.recurringTotal) + '</td><td>' + money(o.reserve) + '</td>' +
-      '<td class="' + (o.amountToPay < 0 ? 'neg' : '') + '"' + (o.amountToPay < 0 ? ' title="Below $0 - expenses are more than cleared money"' : '') + '><b>' + money(o.amountToPay) + '</b></td><td>' + (o.lastPayout == null ? (isNewish(o) ? '<span class="muted">1st payout *</span>' : '<span class="muted">none in 3 months</span>') : money(o.lastPayout) + '<div class="muted tiny">' + esc(mdy(o.lastPayoutDate)) + '</div>') + '</td><td class="l">' + statusPill(o) + '</td></tr>';
+      '<td title="Rent minus management fee, per month">' + money(o.expectedMonthly) + '</td><td>' + money(o.settledIn) + '</td><td>' + money(o.fees) + '</td><td>' + money(o.unpaidBills) + '</td><td>' + money(o.recurringTotal) + '</td><td>' + money(o.reserve) + '</td>' +
+      '<td class="' + (o.amountToPay < 0 ? 'neg' : '') + '"' + (o.amountToPay < 0 ? ' title="Below $0 - expenses are more than cleared money"' : '') + '><b>' + money(o.amountToPay) + '</b>' + amountNote(o) + '</td><td>' + (o.lastPayout == null ? (isNewish(o) ? '<span class="muted">1st payout *</span>' : '<span class="muted">none in 3 months</span>') : money(o.lastPayout) + '<div class="muted tiny">' + esc(mdy(o.lastPayoutDate)) + '</div>') + '</td><td class="l">' + statusPill(o) + '</td></tr>';
     return main + (open.has(String(o.ownerID)) ? detail(o, d) : '');
-  }).join('') || '<tr><td colspan="9" class="l muted">' + (data.owners.length ? 'Nothing matches these filters or search.' : 'Rentvine returned no owners. See the counts above.') + '</td></tr>';
+  }).join('') || '<tr><td colspan="10" class="l muted">' + (data.owners.length ? 'Nothing matches these filters or search.' : 'Rentvine returned no owners. See the counts above.') + '</td></tr>';
 }
 
 function billTable(p) {
@@ -222,7 +228,8 @@ function detail(o, d) {
       '<div class="nums"><span>Rent <b>' + money(p.rent) + '</b></span><span>Fee <b>' + money(p.fee) + '</b></span><span>Settled in <b>' + money(p.settledIn) + '</b></span><span>Net <b class="' + (p.net < 0 ? 'neg' : '') + '">' + money(p.net) + '</b></span></div></div>' +
       feeTable(p) + billTable(p) + '</div>';
   }).join('');
-  return '<tr class="detail"><td colspan="9"><div class="inner">' +
+  return '<tr class="detail"><td colspan="10"><div class="inner">' +
+    '<div class="tiny" style="margin-bottom:6px"><b>Expected each month:</b> ' + money(o.expectedMonthly) + ' (rent ' + money(o.monthlyRent) + ' &minus; management fee ' + money(o.monthlyFee) + ')' + (o.amountSource === 'rentvine' ? ' &middot; Amount to pay is Rentvine\'s Distributable Amount' + (Math.abs(o.pageAmount - o.amountToPay) > 1 ? ' (page math says ' + money(o.pageAmount) + ')' : '') : ' &middot; Amount to pay is the page math (no Rentvine balance found)') + '</div>' +
     (flags ? '<ul class="flags">' + flags + '</ul>' : '') + contrib + props +
     '<div class="dec" data-id="' + esc(o.ownerID) + '"><button data-a="approve">Approve</button><button data-a="hold">Hold</button><button data-a="ask_owner">Ask owner</button>' +
     '<input type="text" maxlength="500" placeholder="Note (optional)" value="' + esc(d ? d.note : '') + '"></div></div></td></tr>';
@@ -270,7 +277,7 @@ function renderHu() {
     const det = huOpen.has(String(d.ownerID)) ? '<tr><td></td><td class="l" colspan="7"><div class="tiny"><b>Subject:</b> ' + esc(d.subject) + '</div><pre class="mail">' + phMark(d.text) + '</pre><div class="tiny muted">Yellow [brackets] are filled in by you in the Aptly draft. Warnings: ' + ((d.warnings || []).map((w) => esc(w.text)).join(' &middot; ') || 'none') + '</div></td></tr>' : '';
     return main + det;
   }).join('') || '<tr><td colspan="8" class="l muted">No owners are lower than usual because of bills right now.</td></tr>';
-  const np = hu.needsPerson.length ? '<div class="tiny" style="margin-top:10px"><b>Below $0 but no bill explains it - check by hand (' + hu.needsPerson.length + '):</b> ' + hu.needsPerson.map((n) => esc(n.name) + ' ' + money(n.amount)).join(' &middot; ') + '</div>' : '';
+  const np = hu.needsPerson.length ? '<div class="tiny" style="margin-top:10px"><b>Check by hand (' + hu.needsPerson.length + '):</b><ul style="margin:4px 0 0 18px;padding:0">' + hu.needsPerson.map((n) => '<li>' + esc(n.name) + ' ' + money(n.amount) + ' - ' + esc(n.why || '') + '</li>').join('') + '</ul></div>' : '';
   const errs = (hu.errors || []).map((e) => '<div class="neg tiny">' + esc(e) + '</div>').join('');
   $('#huBody').innerHTML = errs +
     (hu.recordsPersistent === false ? '<div class="tiny mark">Heads up: records of which owners were drafted are only kept in memory right now (they reset when the site restarts). Before creating, glance at the info@ inbox drafts so you do not make a second copy.</div>' : '') +

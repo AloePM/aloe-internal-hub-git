@@ -30,7 +30,7 @@ export function propertyRow(p) {
   const expected = rent - fee;
   return {
     propertyID: p.propertyID, address: p.address,
-    rent: dollars(rent), fee: dollars(fee), expected: dollars(expected),
+    rent: dollars(rent), fee: dollars(fee), planFee: dollars(cents(p.planFee)), expected: dollars(expected),
     settledIn: dollars(settled),
     unpaidBills: dollars(billsC), bills,
     recurring: p.recurring || [], recurringTotal: dollars(recC),
@@ -48,7 +48,13 @@ export function ownerRow(o, opts = {}) {
   const rows = (o.properties || []).map(propertyRow);
   const sum = (f) => rows.reduce((s, r) => s + cents(r[f]), 0);
   const expected = sum('expected') - sum('recurringTotal');
-  const amountToPay = sum('net') - reserve;
+  const pageAmount = sum('net') - reserve;   // our own cumulative math (kept as the fallback and the cross-check)
+  const rvOK = !!(o.rentvine && Number.isFinite(o.rentvine.distributable));
+  const amountToPay = rvOK ? cents(o.rentvine.distributable) : pageAmount;   // Rentvine's Distributable Amount is the cash truth (reserve, unpaid bills, unsettled and undeposited receipts already taken out)
+  // what the owner should normally get each month: rent minus the management fee (the posted fee, else the plan fee), homes with a tenant only
+  const live = rows.filter((r) => !r.vacant && cents(r.rent) > 0);
+  const monthlyRent = live.reduce((t, r) => t + cents(r.rent), 0);
+  const monthlyFee = live.reduce((t, r) => t + (cents(r.fee) > 0 ? cents(r.fee) : cents(r.planFee)), 0);
   const last = o.lastPayout == null ? null : cents(o.lastPayout);
   const flags = [];
   if (amountToPay < 0) flags.push('below_zero');
@@ -71,6 +77,8 @@ export function ownerRow(o, opts = {}) {
     settledIn: dollars(sum('settledIn')), fees: dollars(sum('fee')),
     unpaidBills: dollars(sum('unpaidBills')), recurringTotal: dollars(sum('recurringTotal')),
     reserve: dollars(reserve), expected: dollars(expected), amountToPay: dollars(amountToPay),
+    amountSource: rvOK ? 'rentvine' : 'page', pageAmount: dollars(pageAmount), rentvine: rvOK ? o.rentvine : null,
+    expectedMonthly: dollars(monthlyRent - monthlyFee), monthlyRent: dollars(monthlyRent), monthlyFee: dollars(monthlyFee),
     lastPayout: last == null ? null : dollars(last), lastPayoutDate: o.lastPayoutDate || null, neverPaid: last == null, newOwner: !!o.newOwner, contributions: o.contributions || [], contribTotal: dollars((o.contributions || []).reduce((t, c) => t + cents(c.amount), 0)),
     tagCounts: Object.fromEntries(['new_move_in', 'move_out_30', 'move_out_month', 'move_out_next', 'vacant', 'no_fee', 'new_property', 'fee_missing', 'fee_check', 'fee_ok', 'fee_due', 'fee_skip', 'late_cleared', 'late_pending', 'movein_cleared', 'movein_pending', 'fee_prorate', 'fee_prorate_due'].map((k) => [k, rows.filter((r) => (r.tags || []).some((t) => t.key === k)).length])),
     flags, status: flags.length ? 'Needs a look' : 'Looks fine', needsLook,

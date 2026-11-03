@@ -395,6 +395,7 @@ export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], c
         rent, fee, feeKnown: feeBills.length ? true : plan.known, feePlan: (p.managementFeeSettingName || '') + (feeBills.length ? ' (posted)' : ' (expected)'),
         settledIn: inn, bills: expense,
         // an expected recurring bill is dropped once the real bill for it has already been posted in this window
+        planFee: plan.fee, planFeeKnown: plan.known,
         recurring: recurringExpected({ pool: p.property_text_61, pest: p.property_text_62, landscaping: p.property_text_63 }, typical).filter((r) => !counted.some((b) => num(b.chargeAccountID) === RECURRING_ACCOUNTS[r.key])),
         billExpected: expectedBill.has(id),
       };
@@ -511,6 +512,17 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
   if (typeof rvFetch !== 'function') throw new Error('installPayouts needs rvFetch');
   const guard = (req, res) => { if (!sessionOk(req, env)) { res.status(401).json({ error: 'Sign in required' }); return false; } return true; };
   let cache = { at: 0, v: null }, inflight = null;
+  let balCache = { at: 0, v: null, err: '' }, balInflight = null;
+  // Rentvine Portfolio Balances (distributable amount per portfolio). Shared by the main list and the heads-up emails; a failure never breaks the page.
+  async function getBalances(fresh) {
+    if (!fresh && balCache.v && Date.now() - balCache.at < TTL) return balCache;
+    if (!balInflight) balInflight = (async () => {
+      try { balCache = { at: Date.now(), v: await loadPortfolioBalances(rvFetch), err: '' }; }
+      catch (e) { console.error('payouts balances', e); balCache = { at: Date.now(), v: {}, err: String(e.message || e) }; }
+      return balCache;
+    })().finally(() => { balInflight = null; });
+    return balInflight;
+  }
 
   app.get('/payouts', (req, res) => res.sendFile(new URL('./public/payouts.html', import.meta.url).pathname));
 
@@ -521,11 +533,13 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       const li = getRents ? { rents: await getRents(rvFetch), info: {} } : await getLeaseInfo(rvFetch);
       const rents = li.rents;
       const owners = shapeOwners(raw, rents, await getExpectedBills(rvFetch), li.info);
+      const bals = await getBalances(fresh);
+      for (const o of owners) { const b = (bals.v || {})[String(o.portfolioID)]; if (b) o.rentvine = { distributable: b.distributable, operating: b.operating, reserve: b.reserve, hold: b.hold }; }
       const out = {
         asOf: new Date().toISOString(), scope: 'Rental Trust (bank account ' + TRUST_BANK_ACCOUNT_ID + ')', reserve,
         decisionsSaved: !!decisions.persistent, flagText: FLAG_TEXT,
         counts: { properties: raw.props.length, payments: raw.settle.length, payouts: raw.checks.length, bills: raw.bills.length, rents: Object.keys(rents).length, vacant: raw.vacancy.length, contributions: raw.contribRows.length, moveIns: (raw.fee.moves || []).length, feeBills: (raw.fee.feeBills || []).length, latePayments: (raw.late.rows || []).length },
-        feeCheckError: raw.fee.error || '', lateRentError: raw.late.error || '',
+        feeCheckError: raw.fee.error || '', lateRentError: raw.late.error || '', balancesError: bals.err || '', balancesLoaded: Object.keys(bals.v || {}).length,
         windows: { payoutDays: PAYOUT_DAYS, billDays: BILL_DAYS, contributionDays: CONTRIB_DAYS },
         unmatchedContributions: owners.unmatchedContributions || [],
         owners: portfolio(owners, {}), decisions: await decisions.get(),
@@ -550,7 +564,8 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
     if (!fresh && huCache.v && huCache.list === list && Date.now() - huCache.at < TTL) return huCache.v;
     const errors = [];
     const contacts = await loadOwnerContacts(rvFetch).catch((e) => { errors.push('Owner emails could not be read: ' + (e.message || e)); return { emailByContact: {}, holdByContact: {} }; });
-    const balances = await loadPortfolioBalances(rvFetch).catch((e) => { errors.push('Rentvine balances could not be read: ' + (e.message || e)); return {}; });
+    const bc = await getBalances(fresh); const balances = bc.v || {};
+    if (bc.err) errors.push('Rentvine balances could not be read: ' + bc.err);
     const drafted = await decisions.get();
     const pv = buildPreview({ owners: list.owners, contacts, balances, todayISO: today(), sign, drafted });
     const v = { recordsPersistent: !!decisions.persistent, asOf: new Date().toISOString(), listAsOf: list.asOf, properties: list.counts.properties, errors, ownerEmails: Object.keys(contacts.emailByContact || {}).length, balances: Object.keys(balances).length, ...pv };
