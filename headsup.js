@@ -122,7 +122,9 @@ export function classify(owner, ctx = {}) {
   const bills = collectBills(owner);
   const U = bills.reduce((s, b) => s + cents(b.amount), 0);
   const bal = ctx.balance;
-  const D = bal && Number.isFinite(bal.distributable) ? cents(bal.distributable) : null;
+  // Rentvine's distributable still holds tenant money that is not the owner's (Resident Benefit Package...), so that comes off first
+  const nonOwner = props.reduce((s, p) => s + cents(p.nonOwnerPaid), 0);
+  const D = bal && Number.isFinite(bal.distributable) ? cents(bal.distributable) - nonOwner : null;
   const live = props.filter((p) => !p.vacant && cents(p.rent) > 0);
   const feeFor = (p) => (cents(p.fee) > 0 ? cents(p.fee) : cents(p.planFee));
   const monthlyRent = live.reduce((s, p) => s + cents(p.rent), 0);
@@ -130,7 +132,7 @@ export function classify(owner, ctx = {}) {
   const feeKnown = live.length > 0 && live.every((p) => feeFor(p) > 0);
   const E = monthlyRent - monthlyFee;                                           // what the owner normally gets each month
   const still = live.reduce((s, p) => s + Math.max(0, cents(p.rent) - cents(p.settledIn)), 0);   // rent not yet settled
-  const unposted = live.reduce((s, p) => s + (cents(p.fee) > 0 ? 0 : cents(p.planFee)), 0);      // management fee not billed yet
+  const unposted = live.reduce((s, p) => s + ((p.feePosted === undefined ? cents(p.fee) > 0 : p.feePosted) ? 0 : feeFor(p)), 0);      // management fee not billed yet
   const P = D == null ? null : D + still - unposted;                            // projected balance after the rest of this month's rent
   const dueNow = bills.some((b) => !b.due || b.due <= today);
   const last = owner.lastPayout == null ? null : cents(owner.lastPayout);
