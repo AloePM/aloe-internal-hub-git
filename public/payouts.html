@@ -226,7 +226,7 @@ function detail(o, d) {
     const rec = p.recurring.map((r) => esc(r.label) + ' ' + (r.amount ? money(r.amount) : '<span class="mark">amount?</span>')).join(', ');
     return '<div class="prop"><div class="ph"><div><span class="addr">' + esc(p.address) + '</span>' + (p.billExpected ? ' <span class="mark" title="Open work order, bill expected">&#9873; bill expected</span>' : '') +
       '<div class="muted tiny">' + esc(p.feePlan) + (rec ? ' &middot; expected: ' + rec : '') + '</div><div>' + propTags(p) + '</div></div>' +
-      '<div class="nums"><span>Rent <b>' + money(p.rent) + '</b></span><span>Fee <b>' + money(p.fee) + '</b></span><span>Settled in <b>' + money(p.settledIn) + '</b></span>' + (p.nonOwnerPaid > 0 ? '<span title="Paid by the tenant toward charges that are not owner money, already taken out">Tenant charges <b>' + money(p.nonOwnerPaid) + '</b></span>' : '') + '<span>Net <b class="' + (p.net < 0 ? 'neg' : '') + '">' + money(p.net) + '</b></span></div></div>' +
+      '<div class="nums"><span>Rent <b>' + money(p.rent) + '</b></span><span>Fee <b>' + money(p.fee) + '</b></span><span>Settled in <b>' + money(p.settledIn) + '</b></span>' + (p.nonOwnerRaw > 0 ? '<span title="Paid by the tenant toward charges that are not owner money, already taken out">Tenant charges <b>' + money(p.nonOwnerRaw) + '</b></span>' : '') + '<span>Net <b class="' + (p.net < 0 ? 'neg' : '') + '">' + money(p.net) + '</b></span></div></div>' +
       feeTable(p) + billTable(p) + '</div>';
   }).join('');
   return '<tr class="detail"><td colspan="10"><div class="inner">' +

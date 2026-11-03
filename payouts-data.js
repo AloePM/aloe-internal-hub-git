@@ -34,7 +34,7 @@ export function propertyRow(p) {
   return {
     propertyID: p.propertyID, address: p.address,
     rent: dollars(rent), fee: dollars(fee), planFee: dollars(cents(p.planFee)), expected: dollars(expected),
-    settledIn: dollars(settled), nonOwnerPaid: dollars(nonOwner),
+    settledIn: dollars(settled), nonOwnerPaid: dollars(nonOwner), nonOwnerRaw: dollars(Math.max(0, cents(p.nonOwnerPaid))),
     feePosted: p.feePosted === undefined ? fee > 0 : !!p.feePosted,
     unpaidBills: dollars(billsC), bills,
     recurring: p.recurring || [], recurringTotal: dollars(recC),
@@ -56,7 +56,8 @@ export function ownerRow(o, opts = {}) {
   const rvOK = !!(o.rentvine && Number.isFinite(o.rentvine.distributable));
   // Rentvine's Distributable Amount is the cash truth (reserve, unpaid bills, unsettled and undeposited receipts already taken out), but it still holds
   // tenant money that is not the owner's (Resident Benefit Package...) and does not yet have this month's management fee when that has not been posted
-  const nonOwnerTotal = sum('nonOwnerPaid');
+  // Rentvine already counts the deposit even when the page's own settled-money list does not show it yet, so for the Rentvine amount the whole tenant payment comes off (no cap)
+  const nonOwnerTotal = sum('nonOwnerRaw');
   const unpostedFee = rows.reduce((t, r) => t + (!r.feePosted && cents(r.fee) > 0 ? cents(r.fee) : 0), 0);
   const amountToPay = rvOK ? cents(o.rentvine.distributable) - nonOwnerTotal - unpostedFee : pageAmount;
   // what the owner should normally get each month: rent minus the management fee (the posted fee, else the plan fee), homes with a tenant only

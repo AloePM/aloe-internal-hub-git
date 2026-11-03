@@ -123,7 +123,7 @@ export function classify(owner, ctx = {}) {
   const U = bills.reduce((s, b) => s + cents(b.amount), 0);
   const bal = ctx.balance;
   // Rentvine's distributable still holds tenant money that is not the owner's (Resident Benefit Package...), so that comes off first
-  const nonOwner = props.reduce((s, p) => s + cents(p.nonOwnerPaid), 0);
+  const nonOwner = props.reduce((s, p) => s + cents(p.nonOwnerRaw !== undefined ? p.nonOwnerRaw : p.nonOwnerPaid), 0);
   const D = bal && Number.isFinite(bal.distributable) ? cents(bal.distributable) - nonOwner : null;
   const live = props.filter((p) => !p.vacant && cents(p.rent) > 0);
   const feeFor = (p) => (cents(p.fee) > 0 ? cents(p.fee) : cents(p.planFee));
