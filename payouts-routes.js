@@ -435,6 +435,7 @@ export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], c
         })(),
         billExpected: expectedBill.has(id),
         recurringVendors: ((recExp[id] || {}).extra || []).map((x) => x.vendor).filter(Boolean),
+        recurringAmounts: { pool: (recExp[id] || {}).pool || 0, landscaping: (recExp[id] || {}).landscaping || 0, pest: (recExp[id] || {}).pest || 0 },
       };
     });
     owners.push({ ownerID: o.id, portfolioID: o.id, contactIDs: [...o.ids], name: o.name, newOwner: properties.length > 0 && properties.every((x) => x.isNewProperty), properties, lastPayout: lp ? lp.amount : null, lastPayoutDate: lp ? lp.date : null, reserve, contributions: mine.map(({ date, amount, desc, type }) => ({ date, amount, desc, type })) });

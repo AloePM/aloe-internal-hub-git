@@ -38,7 +38,7 @@ export function propertyRow(p) {
     feePosted: p.feePosted === undefined ? fee > 0 : !!p.feePosted,
     unpaidBills: dollars(billsC), bills,
     recurring: p.recurring || [], recurringTotal: dollars(recC),
-    billExpected: !!p.billExpected, recurringVendors: p.recurringVendors || [],
+    billExpected: !!p.billExpected, recurringVendors: p.recurringVendors || [], recurringAmounts: p.recurringAmounts || {},
     billHistory: p.billHistory || [], feeChecks: p.feeChecks || [], lateRent: p.lateRent || null, lease: p.lease || null, tags: p.tags || [], moveOutSoon: !!p.moveOutSoon, vacant: !!p.vacant, vacantDays: p.vacantDays ?? null,
     // settled money less the fee and the expenses for this property
     net: dollars(settled - fee - billsC - recC),
@@ -109,7 +109,10 @@ const m2 = (c) => '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigit
 export function classifyQueue({ rows, flags, amountC, expectedC, recurringC }) {
   const counted = [];
   for (const r of rows) for (const b of r.billHistory || []) if (b.counted && b.accountID !== 93) counted.push({ b, r });
-  const isNormal = ({ b, r }) => SERVICE_ACCTS.includes(Number(b.accountID)) || /owner\s*admin|hoa/i.test(b.account || '') || (r.recurringVendors || []).some((v) => nv(v) && nv(v) === nv(b.vendor));
+  // a pool / landscaping / pest bill is normal only when it matches the amount that home is normally billed (a one-off like a $135 bucket of chlorine on the pool account is an extra)
+  const SVC = { 83: 'pool', 79: 'landscaping', 77: 'pest' };
+  const svcOK = ({ b, r }) => { const known = Number((r.recurringAmounts || {})[SVC[Number(b.accountID)]]) || 0; return !known || Math.abs((Number(b.amount) || 0) - known) <= 0.5; };
+  const isNormal = (x) => { const { b, r } = x; return (SERVICE_ACCTS.includes(Number(b.accountID)) ? svcOK(x) : false) || /owner\s*admin|hoa/i.test(b.account || '') || (r.recurringVendors || []).some((v) => nv(v) && nv(v) === nv(b.vendor)); };
   const normal = counted.filter(isNormal), extra = counted.filter((x) => !isNormal(x));
   const label = ({ b }) => (b.account || b.vendor || 'Bill') + ' ' + m2(Math.round((Number(b.amount) || 0) * 100));
   const list = (arr) => arr.slice(0, 3).map(label).join(', ') + (arr.length > 3 ? ' +' + (arr.length - 3) + ' more' : '');
