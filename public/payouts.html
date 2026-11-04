@@ -63,7 +63,16 @@ tr.dup td{background:var(--amberbg)}tr.old td{color:var(--mute)}
 .chip{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:1px 8px;margin-left:6px;cursor:help}
 .chip.normal{background:#e3f4e6;color:#1f6b33}.chip.extra{background:#fbeccb;color:#8a5a06}.chip.jump{background:#f9dcdc;color:#9b2222}.chip.missing{background:#eef2f2;color:#4a5f64}.chip.new{background:#e4f6fb;color:#167a93}
 .stitem td{font-size:12px;color:var(--mute);padding-top:2px;padding-bottom:2px;border-bottom:none}
-@media print{body>*:not(#stm){display:none!important}#stm{position:static;background:none;padding:0;display:block!important}.stbox{box-shadow:none;max-width:none;padding:0}.sthead,.noprint{display:none!important}.stbox h3{break-after:avoid}.stbox table{break-inside:avoid}}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:8px 0 12px}
+.card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff}.card.hl{background:var(--tealbg);border-color:#bfe6f1}
+.card .k{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute)}.card .v{font-size:20px;font-weight:700;margin-top:2px}.card .d{font-size:12px;color:var(--mute);margin-top:2px}
+.expl{background:#f4f8f9;border:1px solid #cfdde2;border-radius:10px;padding:12px 14px;margin:0 0 12px}.expl h3{margin:0 0 6px}
+.qchips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.qchips button{font-size:12px;border-radius:999px;padding:4px 10px}.qa{margin-top:8px;padding:8px 10px;background:#fff;border:1px solid var(--line);border-radius:8px}
+details.vrow{border-bottom:1px solid var(--line)}details.vrow>summary{display:grid;grid-template-columns:1fr 110px 110px 110px;gap:8px;padding:7px 8px;cursor:pointer;list-style:none;align-items:center}
+details.vrow>summary::-webkit-details-marker{display:none}details.vrow>summary>span+span{text-align:right}details.vrow[open]>summary{background:var(--silverbg)}
+.vhead{display:grid;grid-template-columns:1fr 110px 110px 110px;gap:8px;padding:6px 8px;background:var(--tealbg);color:var(--tealdk);font-size:12px;text-transform:uppercase;letter-spacing:.03em}.vhead span+span{text-align:right}
+.vitems{padding:2px 8px 8px 22px}.vitems div{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--mute);padding:2px 0}
+@media print{details.vrow>summary{background:none!important}.qchips{display:none!important}body>*:not(#stm){display:none!important}#stm{position:static;background:none;padding:0;display:block!important}.stbox{box-shadow:none;max-width:none;padding:0}.sthead,.noprint{display:none!important}.stbox h3{break-after:avoid}.stbox table{break-inside:avoid}}
 </style></head>
 <body>
 <main>
@@ -395,34 +404,40 @@ const CHIP = {
   new: ['New home', 'Not enough history to call this normal'],
 };
 function stChip(g) { const c = CHIP[g.flag]; return c ? '<span class="chip ' + g.flag + '" title="' + esc(g.note || c[1]) + '">' + c[0] + '</span>' : ''; }
+function cardsHtml(t, c, extra) {
+  const card = (k, v, cv, hl, note) => '<div class="card' + (hl ? ' hl' : '') + '"><div class="k">' + k + '</div><div class="v">' + money(v) + '</div><div class="d">' + (note || (cv === undefined ? '' : delta(v, cv) + ' vs ' + esc(mShort(st.data.compareMonth)))) + '</div></div>';
+  return '<div class="cards">' + card('Money received', t.received, c.received) + card('Expenses', t.expenses, c.expenses) + card('Management fee', t.fee, c.fee) + card('Net for the month', t.net, c.net, true) + card('Paid to owner', t.paidOut, c.paidOut, false, extra) + '</div>';
+}
+function vendorRows(p, internal) {
+  if (!p.groups.length) return '<div class="muted">No expenses this month.</div>';
+  return '<div class="vhead"><span>Vendor</span><span>' + esc(mShort(p.month)) + '</span><span>' + esc(mShort(p.compareMonth)) + '</span><span>Change</span></div>' +
+    p.groups.map((g) => '<details class="vrow"><summary><span><b>' + esc(g.vendor) + '</b>' + (internal ? stChip(g) : '') + '</span><span>' + (g.total ? money(g.total) : '&ndash;') + '</span><span>' + (g.compare ? money(g.compare) : '&ndash;') + '</span><span>' + delta(g.total, g.compare) + '</span></summary>' +
+      '<div class="vitems">' + (g.items.length ? g.items.map((i) => '<div><span>' + esc(mdy(i.date)) + ' &middot; ' + esc(i.desc || i.account) + (i.billID ? ' &middot; bill #' + esc(i.billID) : '') + (internal && !i.paid ? ' <span class="mark">unpaid</span>' : '') + '</span><span>' + money(i.amount) + '</span></div>').join('') : '<div><span>Not billed yet this month</span><span></span></div>') + '</div></details>').join('');
+}
+function trendTable(series, month) {
+  return '<table><thead><tr><th class="l">Month</th><th>Received</th><th>Expenses</th><th>Mgmt fee</th><th>Net</th></tr></thead><tbody>' +
+    series.map((x) => '<tr' + (x.month === month ? ' class="tot"' : '') + '><td class="l">' + esc(mShort(x.month)) + '</td><td>' + money(x.received) + '</td><td>' + money(x.expenses) + '</td><td>' + money(x.fee) + '</td><td>' + money(x.net) + '</td></tr>').join('') + '</tbody></table>';
+}
 function stHome(p, internal) {
-  const rows = (lab, a, b, bold) => '<tr' + (bold ? ' class="tot"' : '') + '><td class="l">' + lab + '</td><td>' + money(a) + '</td><td>' + money(b) + '</td><td>' + delta(a, b) + '</td></tr>';
-  const sum = '<table><thead><tr><th class="l"></th><th>' + esc(mLabel(p.month)) + '</th><th>' + esc(mLabel(p.compareMonth)) + '</th><th>Change</th></tr></thead><tbody>' +
-    rows('Money received', p.received, p.compare.received) + rows('Expenses', p.expenses, p.compare.expenses) + rows('Management fee', p.fee, p.compare.fee) + rows('Net for the month', p.net, p.compare.net, true) +
-    (p.paidOut || p.compare.paidOut ? rows('Paid to owner', p.paidOut, p.compare.paidOut) : '') + '</tbody></table>';
-  const gr = p.groups.map((g) => '<tr><td class="l"><b>' + esc(g.vendor) + '</b>' + (internal ? stChip(g) : '') + '</td><td>' + (g.total ? money(g.total) : '&ndash;') + '</td><td>' + (g.compare ? money(g.compare) : '&ndash;') + '</td><td>' + delta(g.total, g.compare) + '</td></tr>' +
-    g.items.map((i) => '<tr class="stitem"><td class="l">&nbsp;&nbsp;' + esc(mdy(i.date)) + ' &middot; ' + esc(i.desc || i.account) + (internal && !i.paid ? ' <span class="mark">unpaid</span>' : '') + '</td><td>' + money(i.amount) + '</td><td></td><td></td></tr>').join('')).join('');
-  const exp = '<h3>Expenses by vendor</h3>' + (gr ? '<table><thead><tr><th class="l">Vendor</th><th>' + esc(mShort(p.month)) + '</th><th>' + esc(mShort(p.compareMonth)) + '</th><th>Change</th></tr></thead><tbody>' + gr + '</tbody></table>' : '<div class="muted">No expenses this month.</div>');
   const tc = internal && p.tenantCharged > 0 ? '<div class="muted tiny">Also billed to the tenant (not owner money): ' + money(p.tenantCharged) + '</div>' : '';
-  const tr = '<h3>Last 12 months</h3><table><thead><tr><th class="l">Month</th><th>Received</th><th>Expenses</th><th>Mgmt fee</th><th>Net</th></tr></thead><tbody>' +
-    p.series.map((x) => '<tr' + (x.month === p.month ? ' class="tot"' : '') + '><td class="l">' + esc(mShort(x.month)) + '</td><td>' + money(x.received) + '</td><td>' + money(x.expenses) + '</td><td>' + money(x.fee) + '</td><td>' + money(x.net) + '</td></tr>').join('') + '</tbody></table>';
-  return '<h3 style="font-size:17px">' + esc(p.address) + '</h3>' + sum + exp + tc + tr;
+  return '<h3 style="font-size:17px">' + esc(p.address) + '</h3>' + cardsHtml(p, p.compare, '') + '<h3>Expenses by vendor <span class="muted tiny noprint">(click a vendor for its bills)</span></h3>' + vendorRows(p, internal) + tc + '<h3>Last 12 months</h3>' + trendTable(p.series, p.month);
 }
 function stRender() {
   const d = st.data, internal = st.view === 'internal', el = $('#stBody');
   if (!d) return;
   if (d.error) { el.innerHTML = '<span class="neg">' + esc(d.error) + '</span>'; return; }
-  const t = d.totals, multi = d.properties.length > 1;
-  let h = '<h2>' + (d.singleHome ? 'Home statement' : 'Owner statement') + ' &middot; ' + esc(mLabel(d.month)) + '</h2><div class="muted" style="margin-bottom:8px">' + esc(d.ownerName) + ' &middot; compared with ' + esc(mLabel(d.compareMonth)) + '</div>';
-  if (multi) {
-    h += '<h3>All ' + d.properties.length + ' homes</h3><table><thead><tr><th class="l"></th><th>' + esc(mLabel(d.month)) + '</th><th>' + esc(mLabel(d.compareMonth)) + '</th><th>Change</th></tr></thead><tbody>' +
-      [['Money received', 'received'], ['Expenses', 'expenses'], ['Management fee', 'fee'], ['Net for the month', 'net'], ['Paid to owner', 'paidOut']].map(([l, k]) => '<tr' + (k === 'net' ? ' class="tot"' : '') + '><td class="l">' + l + '</td><td>' + money(t[k]) + '</td><td>' + money(t.compare[k]) + '</td><td>' + delta(t[k], t.compare[k]) + '</td></tr>').join('') + '</tbody></table>' +
-      '<h3>Last 12 months, all homes</h3><table><thead><tr><th class="l">Month</th><th>Received</th><th>Expenses</th><th>Mgmt fee</th><th>Net</th></tr></thead><tbody>' + d.series.map((x) => '<tr' + (x.month === d.month ? ' class="tot"' : '') + '><td class="l">' + esc(mShort(x.month)) + '</td><td>' + money(x.received) + '</td><td>' + money(x.expenses) + '</td><td>' + money(x.fee) + '</td><td>' + money(x.net) + '</td></tr>').join('') + '</tbody></table>';
-  }
-  h += d.properties.map((p) => '<div style="break-before:auto">' + stHome(p, internal) + '</div>').join('<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">');
+  const multi = d.properties.length > 1;
+  const single = d.properties[0];
+  let h = '<h2>' + (d.singleHome ? 'Home statement' : 'Owner statement') + ' &middot; ' + esc(mLabel(d.month)) + '</h2><div class="muted" style="margin-bottom:6px">' + esc(d.ownerName) + (multi ? ' &middot; ' + d.properties.length + ' homes' : ' &middot; ' + esc(single.address)) + ' &middot; compared with ' + esc(mLabel(d.compareMonth)) + '</div>';
+  const t = multi ? d.totals : single;
+  h += cardsHtml(multi ? d.totals : t, multi ? d.totals.compare : single.compare, !d.singleHome && d.reserve ? 'Reserve held ' + money(d.reserve) : '');
+  h += '<div class="expl"><h3>Your ' + esc(MN[Number(d.month.slice(5, 7)) - 1]) + ', explained</h3><div>' + esc(d.explained) + '</div><div class="qchips noprint">' + d.qa.map((x, i) => '<button data-qa="' + i + '">' + esc(x.q) + '</button>').join('') + '</div><div id="qaOut"></div></div>';
+  if (multi) h += '<h3>Last 12 months, all homes</h3>' + trendTable(d.series, d.month);
+  h += (multi ? d.properties.map((p) => '<div style="break-before:auto"><h3 style="font-size:17px;margin-top:22px">' + esc(p.address) + '</h3><h3>Expenses by vendor</h3>' + vendorRows(p, internal) + '</div>').join('<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">') : '<h3>Expenses by vendor <span class="muted tiny noprint">(click a vendor for its bills)</span></h3>' + vendorRows(single, internal) + (internal && single.tenantCharged > 0 ? '<div class="muted tiny">Also billed to the tenant (not owner money): ' + money(single.tenantCharged) + '</div>' : '') + '<h3>Last 12 months</h3>' + trendTable(single.series, single.month));
   if (d.warnings && d.warnings.length && internal) h += '<div class="muted tiny noprint">Note: ' + esc(d.warnings.join('; ')) + '</div>';
   h += '<div class="muted tiny" style="margin-top:10px">Money received comes from Rentvine settlements; expenses are bills posted in the month. As of ' + esc(new Date(d.asOf).toLocaleString()) + '.</div>';
   el.innerHTML = h;
+  for (const b of el.querySelectorAll('button[data-qa]')) b.onclick = () => { $('#qaOut').innerHTML = '<div class="qa"><b>' + esc(d.qa[b.dataset.qa].q) + '</b><div>' + esc(d.qa[b.dataset.qa].a) + '</div></div>'; };
 }
 async function stLoad() {
   $('#stBody').textContent = 'Loading from Rentvine (a few seconds)...'; st.data = null;

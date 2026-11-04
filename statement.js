@@ -25,7 +25,7 @@ function indexBills(bills) {
     if (truthy(b.isVoided)) continue;
     const ym = ymOf(b.datePosted); if (!ym) continue;
     const v = (idx[ym] ||= {})[vendorKey(b)] ||= { items: [], total: 0, tenantCharged: truthy(b.isSuppressed) };
-    v.items.push({ date: iso(b.datePosted), account: b.chargeAccountName || '', desc: b.description || '', amount: cents(num(b.amount)), paid: truthy(b.isPaid), fee: num(b.chargeAccountID) === FEE_ACCOUNT, tenantCharged: truthy(b.isSuppressed) });
+    v.items.push({ billID: b.billID ?? '', date: iso(b.datePosted), account: b.chargeAccountName || '', desc: b.description || '', amount: cents(num(b.amount)), paid: truthy(b.isPaid), fee: num(b.chargeAccountID) === FEE_ACCOUNT, tenantCharged: truthy(b.isSuppressed) });
     v.total = cents(v.total + num(b.amount));
   }
   return idx;
@@ -95,5 +95,42 @@ export function buildStatement({ ownerName, properties, bills, settle, month, co
   const sum = (k) => cents(props.reduce((s, p) => s + p[k], 0));
   const csum = (k) => cents(props.reduce((s, p) => s + p.compare[k], 0));
   const series = monthsAround(month).map((m, i) => ({ month: m, received: cents(props.reduce((s, p) => s + p.series[i].received, 0)), expenses: cents(props.reduce((s, p) => s + p.series[i].expenses, 0)), fee: cents(props.reduce((s, p) => s + p.series[i].fee, 0)), net: cents(props.reduce((s, p) => s + p.series[i].net, 0)), paidOut: cents(props.reduce((s, p) => s + p.series[i].paidOut, 0)) }));
-  return { ownerName, month, compareMonth: cm, properties: props, totals: { received: sum('received'), expenses: sum('expenses'), fee: sum('fee'), net: sum('net'), paidOut: sum('paidOut'), tenantCharged: sum('tenantCharged'), compare: { received: csum('received'), expenses: csum('expenses'), fee: csum('fee'), net: cents(props.reduce((s, p) => s + p.compare.net, 0)), paidOut: csum('paidOut') } }, series };
+  const out = { ownerName, month, compareMonth: cm, properties: props, totals: { received: sum('received'), expenses: sum('expenses'), fee: sum('fee'), net: sum('net'), paidOut: sum('paidOut'), tenantCharged: sum('tenantCharged'), compare: { received: csum('received'), expenses: csum('expenses'), fee: csum('fee'), net: cents(props.reduce((s, p) => s + p.compare.net, 0)), paidOut: csum('paidOut') } }, series };
+  return { ...out, ...explain(out) };
+}
+
+// ---- plain-language explanation, written from the numbers (no AI, so nothing is invented) ----
+const MN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+export const monthName = (ym) => MN[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(0, 4);
+const $ = (n) => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const upDown = (d) => (d >= 0 ? $(d) + ' higher' : $(-d) + ' lower');
+export function explain(st) {
+  const t = st.totals, c = t.compare, M = monthName(st.month), C = monthName(st.compareMonth);
+  const scope = st.properties.length > 1 ? 'across your ' + st.properties.length + ' homes' : 'for this home';
+  // vendors across homes
+  const byV = {};
+  for (const p of st.properties) for (const g of p.groups) { const v = (byV[g.vendor] ||= { vendor: g.vendor, total: 0, compare: 0, flags: new Set() }); v.total = cents(v.total + g.total); v.compare = cents(v.compare + g.compare); v.flags.add(g.flag); }
+  const vendors = Object.values(byV);
+  const oneTime = vendors.filter((v) => v.total > 0 && v.flags.has('extra') && !v.flags.has('jump') && !v.flags.has('normal'));
+  const changed = vendors.filter((v) => v.flags.has('jump'));
+  const missing = vendors.filter((v) => v.total === 0 && v.flags.has('missing'));
+  const nothingYet = t.received === 0 && t.expenses === 0 && t.fee === 0;
+  let text = nothingYet ? 'Nothing has been posted yet for ' + M + ' ' + scope + '.' : 'In ' + M + ' ' + scope + ', ' + (t.received > 0 ? $(t.received) + ' of rent and other money was received' : 'no money has settled yet') + ', with ' + $(t.expenses) + ' in expenses and ' + $(t.fee) + ' in management fee, for a net of ' + $(t.net) + '.';
+  if (!nothingYet) text += ' That is ' + upDown(cents(t.net - c.net)) + ' than ' + C + '.';
+  const lst = (a) => a.slice(0, 3).map((v) => v.vendor + ' ' + $(v.total)).join(', ') + (a.length > 3 ? ' and ' + (a.length - 3) + ' more' : '');
+  if (oneTime.length) text += ' One-time bills this month: ' + lst(oneTime) + '.';
+  if (changed.length) text += ' Regular bills that changed amount: ' + changed.slice(0, 3).map((v) => v.vendor + ' (' + $(v.total) + ', was ' + $(v.compare) + ')').join(', ') + '.';
+  if (missing.length) text += ' Regular bills not posted yet: ' + missing.slice(0, 3).map((v) => v.vendor).join(', ') + '.';
+  // question answers
+  const dR = cents(t.received - c.received), dE = cents(t.expenses - c.expenses), dF = cents(t.fee - c.fee);
+  const parts = [];
+  if (dR !== 0) parts.push('money received is ' + upDown(dR) + ' (' + $(t.received) + ' vs ' + $(c.received) + ')');
+  if (dE !== 0) { const big = vendors.map((v) => ({ v, d: cents(v.total - v.compare) })).sort((a, b) => Math.abs(b.d) - Math.abs(a.d))[0]; parts.push('expenses are ' + upDown(dE) + (big && big.d !== 0 ? ', mostly ' + big.v.vendor + ' (' + (big.d > 0 ? '+' : '-') + $(Math.abs(big.d)) + ')' : '')); }
+  if (dF !== 0) parts.push('the management fee is ' + upDown(dF));
+  const dN = cents(t.net - c.net);
+  const why = dN === 0 && !parts.length ? 'The net is the same as ' + C + '.' : 'The net is ' + upDown(dN) + ' than ' + C + ' because ' + (parts.length ? parts.join('; ') : 'of timing') + '.' + (t.received === 0 ? ' No rent has settled yet this month, which usually explains a low net early in the month.' : '');
+  const unusual = [oneTime.length ? 'One-time bills: ' + lst(oneTime) + '.' : '', changed.length ? 'Amount changed: ' + changed.slice(0, 3).map((v) => v.vendor + ' ' + $(v.total) + ' (usually about ' + $(v.compare) + ')').join(', ') + '.' : '', missing.length ? 'Regular bills not posted yet: ' + missing.slice(0, 3).map((v) => v.vendor).join(', ') + '.' : ''].filter(Boolean).join(' ') || 'Nothing unusual. Every bill this month is from a vendor that bills this home regularly.';
+  const top = vendors.filter((v) => v.total > 0).sort((a, b) => b.total - a.total)[0];
+  const biggest = top ? 'The biggest expense was ' + top.vendor + ' at ' + $(top.total) + (top.compare ? ' (' + $(top.compare) + ' in ' + C + ')' : ' (nothing from them in ' + C + ')') + '.' : 'There are no expenses this month.';
+  return { explained: text, qa: [{ q: 'Why is the net different from ' + C + '?', a: why }, { q: 'Is anything unusual this month?', a: unusual }, { q: 'What was the biggest expense?', a: biggest }] };
 }

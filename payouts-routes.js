@@ -689,7 +689,7 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       let data = stCache.get(key);
       if (!data || Date.now() - data.at > 10 * 60 * 1000) { data = { at: Date.now(), v: await loadStatementData(rvFetch, o.properties.map((p) => p.propertyID), o.portfolioID || o.ownerID, month) }; stCache.set(key, data); if (stCache.size > 40) stCache.delete(stCache.keys().next().value); }
       const st = buildStatement({ ownerName: o.name, properties: props, bills: data.v.bills, settle: data.v.settle, month, compare });
-      res.json({ ...st, asOf: new Date(data.at).toISOString(), warnings: data.v.warnings, singleHome: !!only });
+      res.json({ ...st, reserve: o.reserve ?? 0, asOf: new Date(data.at).toISOString(), warnings: data.v.warnings, singleHome: !!only });
     } catch (e) { console.error('payouts statement', e); res.status(502).json({ error: String(e.message || e).slice(0, 300) }); }
   });
 
