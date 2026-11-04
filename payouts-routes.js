@@ -564,7 +564,18 @@ export async function loadStatementData(rvFetch, propertyIDs, portfolioID, ym) {
     catch (e) { warnings.push('payments filter ' + (f ? f.name : 'date only') + ': ' + String(e.message || e).slice(0, 120)); }
   }
   if (!bills || !settle) throw new Error('Rentvine could not be read for this statement (' + warnings.join('; ') + ')');
-  return { bills, settle, warnings };
+  // tenant payments toward non-owner charges (admin fees etc.), so they are not counted as owner money; optional
+  let other = [];
+  const OCOLS = ['leaseID', 'propertyID', 'chargeAccountID', 'amountPaid', 'isVoided', 'datePosted'];
+  for (const f of [{ name: 'propertyID', comparator: 'in', values: [...ids] }, null]) {
+    try {
+      let rows = await allPages(rvFetch, 'lease-charges', { displayColumns: OCOLS, filters: [dateF('datePosted'), ...(f ? [f] : [])] }, { fields: OCOLS, max: f ? 40 : 80 });
+      if (!f) rows = rows.filter((x) => ids.has(String(x.propertyID)));
+      other = rows.filter((c) => !truthy(c.isVoided) && !LATE_RENT_ACCOUNTS.includes(num(c.chargeAccountID)) && num(c.amountPaid) > 0 && c.propertyID !== undefined && c.propertyID !== '').map((c) => ({ propertyID: String(c.propertyID), datePosted: toISO(c.datePosted), amount: num(c.amountPaid) }));
+      break;
+    } catch (e) { if (!f) warnings.push('tenant fee split unavailable (admin and other fees may be counted as rent): ' + String(e.message || e).slice(0, 100)); }
+  }
+  return { bills, settle, other, warnings };
 }
 
 // Lease history and rent changes for the statements (occupancy, rent by lease, increases). Each read is optional: a failure only removes that part of the statement.
@@ -707,7 +718,7 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       const key = o.ownerID + '|' + month;
       let data = stCache.get(key);
       if (!data || Date.now() - data.at > 10 * 60 * 1000) { const ids = o.properties.map((p) => p.propertyID); const [sd, lh] = await Promise.all([loadStatementData(rvFetch, ids, o.portfolioID || o.ownerID, month), loadStatementLeases(rvFetch, ids).catch((e) => ({ leases: [], changes: [], warnings: ['lease history: ' + String(e.message || e).slice(0, 100)] }))]); data = { at: Date.now(), v: { ...sd, leases: lh.leases, changes: lh.changes, warnings: [...sd.warnings, ...lh.warnings] } }; stCache.set(key, data); if (stCache.size > 40) stCache.delete(stCache.keys().next().value); }
-      const st = buildStatement({ ownerName: o.name, properties: props, bills: data.v.bills, settle: data.v.settle, month, compare });
+      const st = buildStatement({ ownerName: o.name, properties: props, bills: data.v.bills, settle: data.v.settle, month, compare, otherRows: data.v.other || [] });
       // occupancy and rent history per home (only when the lease read worked)
       const todayISO = today(); let agg = null;
       if ((data.v.leases || []).length) {

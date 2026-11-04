@@ -32,12 +32,16 @@ function indexBills(bills) {
 }
 const monthsAround = (ym) => Array.from({ length: 12 }, (_, i) => addMonths(ym, i - 11));
 
-export function buildPropertyStatement({ propertyID, address }, bills, settle, ym, compareYm) {
+export function buildPropertyStatement({ propertyID, address }, bills, settle, ym, compareYm, otherRows = []) {
   const mine = bills.filter((b) => String(b.propertyID) === String(propertyID));
   const mset = settle.filter((s) => String(s.propertyID) === String(propertyID) && (s.bankAccountID === undefined || s.bankAccountID === '' || num(s.bankAccountID) === TRUST));
   const idx = indexBills(mine);
   const received = {}, paidOut = {};
   for (const s of mset) { const m = ymOf(s.settlementDate || s.datePosted); if (!m) continue; const a = num(s.amount); if (a > 0) received[m] = cents((received[m] || 0) + a); else if (a < 0) paidOut[m] = cents((paidOut[m] || 0) + -a); }
+  // tenant payments toward charges that are not owner money (admin fees, resident benefit package, ...): settled with the rent but not the owner's
+  const other = {};
+  for (const r of otherRows) { if (String(r.propertyID) !== String(propertyID)) continue; const m = ymOf(r.datePosted); if (m) other[m] = cents((other[m] || 0) + num(r.amount)); }
+  for (const m of Object.keys(received)) { const o = Math.min(other[m] || 0, received[m]); other[m] = o; received[m] = cents(received[m] - o); }
   // first month with any activity in the loaded data (so a new home is not judged against months it did not exist)
   const active = [...new Set([...Object.keys(idx), ...Object.keys(received)])].sort();
   const first = active[0] || ym;
@@ -76,11 +80,11 @@ export function buildPropertyStatement({ propertyID, address }, bills, settle, y
   groups.sort((a, b) => b.total - a.total || a.vendor.localeCompare(b.vendor));
   const rec = received[ym] || 0, cr = received[compareYm] || 0;
   const net = (r, s) => cents(r - s.expenses - s.fee);
-  const series = monthsAround(ym).map((m) => { const s = splitC(m); return { month: m, received: received[m] || 0, expenses: s.expenses, fee: s.fee, net: net(received[m] || 0, s), paidOut: paidOut[m] || 0 }; });
+  const series = monthsAround(ym).map((m) => { const s = splitC(m); return { month: m, received: received[m] || 0, other: other[m] || 0, expenses: s.expenses, fee: s.fee, net: net(received[m] || 0, s), paidOut: paidOut[m] || 0 }; });
   return {
     propertyID, address, month: ym, compareMonth: compareYm, newHome: !prior.length,
-    received: rec, expenses: cur.expenses, fee: cur.fee, tenantCharged: cur.tenantCharged, net: net(rec, cur), paidOut: paidOut[ym] || 0,
-    compare: { received: cr, expenses: cmp.expenses, fee: cmp.fee, net: net(cr, cmp), paidOut: paidOut[compareYm] || 0 },
+    received: rec, other: other[ym] || 0, expenses: cur.expenses, fee: cur.fee, tenantCharged: cur.tenantCharged, net: net(rec, cur), paidOut: paidOut[ym] || 0,
+    compare: { received: cr, other: other[compareYm] || 0, expenses: cmp.expenses, fee: cmp.fee, net: net(cr, cmp), paidOut: paidOut[compareYm] || 0 },
     groups, series,
   };
 }
@@ -89,13 +93,13 @@ export function resolveCompare(ym, compare) {
   if (/^\d{4}-\d{2}$/.test(String(compare))) return compare;
   return compare === 'year' ? addMonths(ym, -12) : addMonths(ym, -1);
 }
-export function buildStatement({ ownerName, properties, bills, settle, month, compare = 'prev' }) {
+export function buildStatement({ ownerName, properties, bills, settle, month, compare = 'prev', otherRows = [] }) {
   const cm = resolveCompare(month, compare);
-  const props = properties.map((p) => buildPropertyStatement(p, bills, settle, month, cm));
+  const props = properties.map((p) => buildPropertyStatement(p, bills, settle, month, cm, otherRows));
   const sum = (k) => cents(props.reduce((s, p) => s + p[k], 0));
   const csum = (k) => cents(props.reduce((s, p) => s + p.compare[k], 0));
   const series = monthsAround(month).map((m, i) => ({ month: m, received: cents(props.reduce((s, p) => s + p.series[i].received, 0)), expenses: cents(props.reduce((s, p) => s + p.series[i].expenses, 0)), fee: cents(props.reduce((s, p) => s + p.series[i].fee, 0)), net: cents(props.reduce((s, p) => s + p.series[i].net, 0)), paidOut: cents(props.reduce((s, p) => s + p.series[i].paidOut, 0)) }));
-  const out = { ownerName, month, compareMonth: cm, properties: props, totals: { received: sum('received'), expenses: sum('expenses'), fee: sum('fee'), net: sum('net'), paidOut: sum('paidOut'), tenantCharged: sum('tenantCharged'), compare: { received: csum('received'), expenses: csum('expenses'), fee: csum('fee'), net: cents(props.reduce((s, p) => s + p.compare.net, 0)), paidOut: csum('paidOut') } }, series };
+  const out = { ownerName, month, compareMonth: cm, properties: props, totals: { received: sum('received'), other: sum('other'), expenses: sum('expenses'), fee: sum('fee'), net: sum('net'), paidOut: sum('paidOut'), tenantCharged: sum('tenantCharged'), compare: { received: csum('received'), other: csum('other'), expenses: csum('expenses'), fee: csum('fee'), net: cents(props.reduce((s, p) => s + p.compare.net, 0)), paidOut: csum('paidOut') } }, series };
   return { ...out, ...explain(out) };
 }
 
@@ -115,8 +119,9 @@ export function explain(st) {
   const changed = vendors.filter((v) => v.flags.has('jump'));
   const missing = vendors.filter((v) => v.total === 0 && v.flags.has('missing'));
   const nothingYet = t.received === 0 && t.expenses === 0 && t.fee === 0;
-  let text = nothingYet ? 'Nothing has been posted yet for ' + M + ' ' + scope + '.' : 'In ' + M + ' ' + scope + ', ' + (t.received > 0 ? $(t.received) + ' of rent and other money was received' : 'no money has settled yet') + ', with ' + $(t.expenses) + ' in expenses and ' + $(t.fee) + ' in management fee, for a net of ' + $(t.net) + '.';
+  let text = nothingYet ? 'Nothing has been posted yet for ' + M + ' ' + scope + '.' : 'In ' + M + ' ' + scope + ', ' + (t.received > 0 ? $(t.received) + ' of rent and other owner money was received' : 'no money has settled yet') + ', with ' + $(t.expenses) + ' in expenses and ' + $(t.fee) + ' in management fee, for a net of ' + $(t.net) + '.';
   if (!nothingYet) text += ' That is ' + upDown(cents(t.net - c.net)) + ' than ' + C + '.';
+  if ((t.other || 0) > 0) text += ' The tenant also paid ' + $(t.other) + ' in admin and other fees, which are not owner money and are not counted above.';
   const lst = (a) => a.slice(0, 3).map((v) => v.vendor + ' ' + $(v.total)).join(', ') + (a.length > 3 ? ' and ' + (a.length - 3) + ' more' : '');
   if (oneTime.length) text += ' One-time bills this month: ' + lst(oneTime) + '.';
   if (changed.length) text += ' Regular bills that changed amount: ' + changed.slice(0, 3).map((v) => v.vendor + ' (' + $(v.total) + ', was ' + $(v.compare) + ')').join(', ') + '.';

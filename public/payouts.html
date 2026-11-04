@@ -405,8 +405,8 @@ const CHIP = {
 };
 function stChip(g) { const c = CHIP[g.flag]; return c ? '<span class="chip ' + g.flag + '" title="' + esc(g.note || c[1]) + '">' + c[0] + '</span>' : ''; }
 function cardsHtml(t, c, extra, occ) {
-  const card = (k, v, cv, hl, note) => '<div class="card' + (hl ? ' hl' : '') + '"><div class="k">' + k + '</div><div class="v">' + money(v) + '</div><div class="d">' + (note || (cv === undefined ? '' : delta(v, cv) + ' vs ' + esc(mShort(st.data.compareMonth)))) + '</div></div>';
-  return '<div class="cards">' + card('Money received', t.received, c.received) + card('Expenses', t.expenses, c.expenses) + card('Management fee', t.fee, c.fee) + card('Net for the month', t.net, c.net, true) + card('Paid to owner', t.paidOut, c.paidOut, false, extra) + (occ && occ.pct != null ? '<div class="card"><div class="k">Occupied</div><div class="v">' + occ.pct + '%</div><div class="d">' + occ.occupied + ' of ' + occ.days + ' days' + (occ.vacant ? ' &middot; ' + occ.vacant + ' vacant' : '') + '</div></div>' : '') + '</div>';
+  const card = (k, v, cv, hl, note, sub) => '<div class="card' + (hl ? ' hl' : '') + '"><div class="k">' + k + '</div><div class="v">' + money(v) + '</div><div class="d">' + (note || (cv === undefined ? '' : delta(v, cv) + ' vs ' + esc(mShort(st.data.compareMonth)))) + (sub ? '<br><span class="tiny">' + sub + '</span>' : '') + '</div></div>';
+  return '<div class="cards">' + card('Money received', t.received, c.received, false, undefined, t.other > 0 ? 'Excludes ' + money(t.other) + ' tenant fees' : '') + card('Expenses', t.expenses, c.expenses) + card('Management fee', t.fee, c.fee) + card('Net for the month', t.net, c.net, true) + card('Paid to owner', t.paidOut, c.paidOut, false, extra) + (occ && occ.pct != null ? '<div class="card"><div class="k">Occupied</div><div class="v">' + occ.pct + '%</div><div class="d">' + occ.occupied + ' of ' + occ.days + ' days' + (occ.vacant ? ' &middot; ' + occ.vacant + ' vacant' : '') + '</div></div>' : '') + '</div>';
 }
 function vendorRows(p, internal) {
   if (!p.groups.length) return '<div class="muted">No expenses this month.</div>';
@@ -437,6 +437,7 @@ function stRender() {
   const single = d.properties[0];
   let h = '<h2>' + (d.singleHome ? 'Home statement' : 'Owner statement') + ' &middot; ' + esc(mLabel(d.month)) + '</h2><div class="muted" style="margin-bottom:6px">' + esc(d.ownerName) + (multi ? ' &middot; ' + d.properties.length + ' homes' : ' &middot; ' + esc(single.address)) + ' &middot; compared with ' + esc(mLabel(d.compareMonth)) + '</div>';
   const t = multi ? d.totals : single;
+  if (d.month === nowMonth()) h += '<div class="muted" style="background:#fff7e0;border:1px solid #f0dca0;border-radius:8px;padding:8px 12px;margin:6px 0"><b>This month is still in progress.</b> It shows only what has been received so far, and the owner payout for it has not been made yet. Last month is the complete picture.</div>';
   h += cardsHtml(multi ? d.totals : t, multi ? d.totals.compare : single.compare, !d.singleHome && d.reserve ? 'Reserve held ' + money(d.reserve) : '', d.occupancy && d.occupancy.month);
   h += '<div class="expl"><h3>Your ' + esc(MN[Number(d.month.slice(5, 7)) - 1]) + ', explained</h3><div>' + esc(d.explained) + '</div><div class="qchips noprint">' + d.qa.map((x, i) => '<button data-qa="' + i + '">' + esc(x.q) + '</button>').join('') + '</div><div id="qaOut"></div></div>';
   if (multi) h += '<h3>Last 12 months, all homes</h3>' + trendTable(d.series, d.month, d.occupancy && d.occupancy.series);
@@ -456,7 +457,7 @@ async function stLoad() {
   stRender();
 }
 function stOpen(oid, pid) {
-  st.oid = oid; st.pid = pid || ''; st.month = st.month || nowMonth();
+  st.oid = oid; st.pid = pid || ''; st.month = st.month || addM(nowMonth(), -1);
   $('#stMonth').value = st.month; $('#stMonth').max = nowMonth(); $('#stm').hidden = false; stLoad();
 }
 document.addEventListener('click', (e) => { const a = e.target.closest('.stl'); if (!a) return; e.preventDefault(); e.stopPropagation(); stOpen(a.dataset.oid, a.dataset.pid); });
