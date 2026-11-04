@@ -63,7 +63,7 @@ export function parseSetup(rawRows, props) {
   return { byProperty: items, unmatched, used, fields };
 }
 // Merge Rentvine's recurring list into the history-based expected bills (expected = { propertyID: {pool, pest, landscaping, ownerAdmin, hoa} }).
-// Rentvine's list wins for pool / pest / landscaping / HOA. Other bills go to .extra. Steady vendor-invoiced bills from history are added to .extra too (labelled "from invoices"), unless Rentvine already lists that vendor.
+// Rentvine's list wins for pool / pest / landscaping / HOA. Other bills set up in Rentvine go to .extra. (Pool / landscaping / owner admin charge that come by vendor invoice are covered by the billing history; other kinds of bills are trends, not recurring.)
 export function mergeSetup(expected, setup, historyRows) {
   const out = JSON.parse(JSON.stringify(expected || {}));
   for (const [id, list] of Object.entries(setup.byProperty || {})) {
@@ -73,13 +73,6 @@ export function mergeSetup(expected, setup, historyRows) {
       else if (it.category === 'hoa') e.hoa = { amount: it.amount, accountID: null, vendor: it.payee, label: 'HOA dues', source: 'rentvine' };
       else (e.extra ||= []).push({ key: 'rb:' + it.payee + ':' + (it.memo || it.reference) + ':' + it.amount, label: it.memo || it.reference || it.payee, vendor: it.payee, amount: it.amount, source: 'rentvine' });
     }
-  }
-  const SKIP = /pool|landscap|pest|owner\s*admin|hoa/i;
-  for (const r of historyRows || []) {
-    if (r.cadence !== 'every month' || !r.steady || SKIP.test(r.account || '')) continue;
-    const id = String(r.propertyID), listed = (out[id] && out[id].extra) || [];
-    if (listed.some((x) => (r.vendors || []).some((v) => String(v).toLowerCase() === String(x.vendor).toLowerCase()))) continue;
-    const e = (out[id] ||= {}); (e.extra ||= []).push({ key: 'inv:' + r.account + ':' + (r.vendors || []).join('/'), label: r.account, vendor: (r.vendors || [])[0] || '', amount: r.typical, source: 'invoices', accountID: Number(r.accountID) });
   }
   return out;
 }

@@ -80,8 +80,6 @@ tr.dup td{background:var(--amberbg)}tr.old td{color:var(--mute)}
   <div class="note" id="unm" hidden></div>
   <details class="note" id="hu"><summary><b>Owner heads-up emails</b> - owners who will get less than usual, or need to send money, because of bills <span class="muted" id="huSum"></span></summary>
     <div id="huBody" class="tiny" style="margin-top:8px">Open this to load. It only reads Rentvine. Nothing is created until you press a Create button.</div></details>
-  <details class="note" id="rc"><summary><b>Recurring bills</b> - homes that get the same type of bill month after month, same vendor or not <span class="muted" id="rcSum"></span></summary>
-    <div id="rcBody" class="tiny" style="margin-top:8px">Open this to load (about a minute). It only reads Rentvine bills from the last 6 full months. Tenant-charged and voided bills are left out.</div></details>
   <table id="t"><thead><tr id="head"></tr></thead><tbody id="body"></tbody></table>
 </main>
 <script>
@@ -331,33 +329,6 @@ $('#hu').addEventListener('click', async (e) => {
 $('#refresh').addEventListener('click', () => load(true));
 head();
 load();
-// ---- Recurring bills finder (reads Rentvine only)
-let rcData = null;
-async function rcLoad(refresh) {
-  $('#rcBody').textContent = 'Loading six months of bills...';
-  try {
-    const r = await fetch('/api/payouts/recurring' + (refresh ? '?refresh=1' : ''), {credentials: 'same-origin'});
-    const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
-    rcData = j; rcRender();
-  } catch (err) { $('#rcBody').innerHTML = '<span class="neg">' + esc(err.message) + '</span>'; }
-}
-function rcCsv(rows) {
-  const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-  const head = ['Owner', 'Property', 'Charge account', 'Vendor(s)', 'Months seen', 'Cadence', 'Typical amount', 'Low', 'High', 'Same amount each time', 'Last posted', 'Last amount', 'Posted this month', 'Example description'];
-  return [head.map(q).join(',')].concat(rows.map((r) => [r.owner, r.address, r.account, r.vendors.join('; '), r.monthsSeen + ' of ' + r.monthsOf, r.cadence, r.typical.toFixed(2), r.low.toFixed(2), r.high.toFixed(2), r.steady ? 'yes' : 'no', r.last, r.lastAmount.toFixed(2), r.thisMonth ? 'yes' : 'no', r.sample].map(q).join(','))).join('\n');
-}
-function rcRender() {
-  const j = rcData; if (!j) return;
-  $('#rcSum').textContent = '- ' + j.rows.length + ' recurring lines in ' + j.summary.length + ' charge types';
-  const sum = j.summary.map((s) => '<tr><td class="l">' + esc(s.account) + '</td><td>' + s.homes + '</td><td>' + s.vendors + '</td><td>' + s.steady + ' of ' + s.lines + '</td></tr>').join('');
-  const rows = j.rows.map((r) => '<tr><td class="l">' + esc(r.owner) + '</td><td class="l">' + esc(r.address) + '</td><td class="l">' + esc(r.account) + '</td><td class="l">' + esc(r.vendors.join(', ')) + '</td><td>' + r.monthsSeen + ' of ' + r.monthsOf + '<div class="muted tiny">' + esc(r.cadence) + '</div></td><td>' + money(r.typical) + (r.steady ? '' : '<div class="muted tiny">' + money(r.low) + ' - ' + money(r.high) + '</div>') + '</td><td>' + esc(mdy(r.last)) + '</td></tr>').join('');
-  $('#rcBody').innerHTML = '<div style="margin-bottom:6px"><button id="rcCsv">Download CSV</button> <button id="rcRef">Reload</button> <span class="muted">' + j.billsRead + ' bills read &middot; window ' + esc(j.window.months[0]) + ' to ' + esc(j.window.months[j.window.months.length - 1]) + '</span></div>' +
-    '<table><thead><tr><th class="l">Charge type</th><th>Homes</th><th>Vendors</th><th>Same amount</th></tr></thead><tbody>' + sum + '</tbody></table>' +
-    '<div style="max-height:420px;overflow:auto;margin-top:8px"><table><thead><tr><th class="l">Owner</th><th class="l">Property</th><th class="l">Charge type</th><th class="l">Vendor(s)</th><th>Months</th><th>Typical</th><th>Last posted</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
-  $('#rcCsv').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rcCsv(j.rows)], {type: 'text/csv'})); a.download = 'recurring-bills.csv'; a.click(); };
-  $('#rcRef').onclick = () => rcLoad(true);
-}
-$('#rc').addEventListener('toggle', (e) => { if (e.target.open && !rcData) rcLoad(false); });
 </script>
 <script src="/hub-shell.js">
 </script>
