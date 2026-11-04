@@ -55,3 +55,23 @@ export function recurringCsv(rows) {
   const head = ['Owner', 'Property', 'Charge account', 'Vendor(s)', 'Months seen', 'Cadence', 'Typical amount', 'Low', 'High', 'Same amount each time', 'Last posted', 'Last amount', 'Posted this month', 'Example description'];
   return [head.map(q).join(',')].concat(rows.map((r) => [r.owner, r.address, r.account, r.vendors.join('; '), r.monthsSeen + ' of ' + r.monthsOf, r.cadence, r.typical.toFixed(2), r.low.toFixed(2), r.high.toFixed(2), r.steady ? 'yes' : 'no', r.last, r.lastAmount.toFixed(2), r.thisMonth ? 'yes' : 'no', r.sample].map(q).join(','))).join('\n');
 }
+
+// Expected recurring bills per home, built from the finder rows. Only bills that came EVERY month are expected.
+//   pool / landscaping / pest : the owner-responsible services (typical amount); the page only adds them where the property says Landlord Responsibility
+//   ownerAdmin                : Owner Administrative Charge, wherever it recurs
+//   hoa                       : HOA dues, but ONLY for homes whose address matches hoaAddress (833 Baylor is the only one Aloe pays)
+export const SERVICE_ACCOUNTS = { pool: 83, landscaping: 79, pest: 77 };
+export function expectedFromHistory(rows, { hoaAddress = /\b833\b.*\bbaylor/i } = {}) {
+  const out = {};
+  for (const r of rows || []) {
+    if (r.cadence !== 'every month') continue;
+    const e = (out[r.propertyID] ||= {});
+    const id = Number(r.accountID);
+    const svc = Object.keys(SERVICE_ACCOUNTS).find((k) => SERVICE_ACCOUNTS[k] === id);
+    if (svc) e[svc] = r.typical;
+    else if (/owner\s*admin/i.test(r.account)) e.ownerAdmin = { amount: r.typical, accountID: id, label: r.account };
+    else if (/hoa/i.test(r.account) && hoaAddress.test(r.address || '')) e.hoa = { amount: r.lastAmount, accountID: id, label: r.account };   // HOA dues are the same amount every time
+  }
+  for (const k of Object.keys(out)) if (!Object.keys(out[k]).length) delete out[k];
+  return out;
+}

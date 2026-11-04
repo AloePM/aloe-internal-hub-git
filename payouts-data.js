@@ -59,7 +59,8 @@ export function ownerRow(o, opts = {}) {
   // Rentvine already counts the deposit even when the page's own settled-money list does not show it yet, so for the Rentvine amount the whole tenant payment comes off (no cap)
   const nonOwnerTotal = sum('nonOwnerRaw');
   const unpostedFee = rows.reduce((t, r) => t + (!r.feePosted && cents(r.fee) > 0 ? cents(r.fee) : 0), 0);
-  const amountToPay = rvOK ? cents(o.rentvine.distributable) - nonOwnerTotal - unpostedFee : pageAmount;
+  const recurringC = sum('recurringTotal');   // expected recurring bills (pool, landscaping, owner admin charge, HOA...) not posted yet - Rentvine cannot know about them
+  const amountToPay = rvOK ? cents(o.rentvine.distributable) - nonOwnerTotal - unpostedFee - recurringC : pageAmount;
   // what the owner should normally get each month: rent minus the management fee (the posted fee, else the plan fee), homes with a tenant only
   const live = rows.filter((r) => !r.vacant && cents(r.rent) > 0);
   const monthlyRent = live.reduce((t, r) => t + cents(r.rent), 0);

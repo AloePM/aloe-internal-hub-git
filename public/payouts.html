@@ -120,6 +120,7 @@ async function load(refresh) {
     if (data.lateRentError) $('#sub').textContent += ' - LATE RENT CHECK DID NOT RUN: ' + data.lateRentError;
     if (data.feeCheckError) $('#sub').textContent += ' - PLACEMENT FEE CHECK DID NOT RUN: ' + data.feeCheckError;
     if (data.tenantChargesError) $('#sub').textContent += ' - TENANT CHARGES COULD NOT BE READ (Resident Benefit Package etc. are NOT taken out): ' + data.tenantChargesError;
+    if (data.recurringError) $('#sub').textContent += ' - EXPECTED RECURRING AMOUNTS NOT LOADED (' + data.recurringError + ')';
     if (data.balancesError) $('#sub').textContent += ' - RENTVINE BALANCES COULD NOT BE READ (Amount to pay is the page math): ' + data.balancesError;
     $('#stor').hidden = !!data.decisionsSaved;
     const um = data.unmatchedContributions || [];
@@ -234,7 +235,7 @@ function detail(o, d) {
   }).join('');
   return '<tr class="detail"><td colspan="10"><div class="inner">' +
     '<div class="tiny" style="margin-bottom:6px"><b>Expected each month:</b> ' + money(o.expectedMonthly) + ' (rent ' + money(o.monthlyRent) + ' &minus; management fee ' + money(o.monthlyFee) + ')' + (o.amountSource === 'rentvine' ? ' &middot; Amount to pay is Rentvine\'s Distributable Amount' + (Math.abs(o.pageAmount - o.amountToPay) > 1 ? ' (page math says ' + money(o.pageAmount) + ')' : '') : ' &middot; Amount to pay is the page math (no Rentvine balance found)') + '</div>' +
-    ((o.nonOwnerPaid > 0 || o.unpostedFee > 0) && o.amountSource === 'rentvine' ? '<div class="tiny muted" style="margin-bottom:6px">Rentvine ' + money(o.rentvineRaw) + (o.nonOwnerPaid > 0 ? ' &minus; ' + money(o.nonOwnerPaid) + ' tenant charges that are not owner money (Resident Benefit Package etc.)' : '') + (o.unpostedFee > 0 ? ' &minus; ' + money(o.unpostedFee) + ' management fee not posted yet' : '') + ' = ' + money(o.amountToPay) + '</div>' : '') +
+    ((o.nonOwnerPaid > 0 || o.unpostedFee > 0 || o.recurringTotal > 0) && o.amountSource === 'rentvine' ? '<div class="tiny muted" style="margin-bottom:6px">Rentvine ' + money(o.rentvineRaw) + (o.nonOwnerPaid > 0 ? ' &minus; ' + money(o.nonOwnerPaid) + ' tenant charges that are not owner money (Resident Benefit Package etc.)' : '') + (o.unpostedFee > 0 ? ' &minus; ' + money(o.unpostedFee) + ' management fee not posted yet' : '') + (o.recurringTotal > 0 ? ' &minus; ' + money(o.recurringTotal) + ' expected recurring bills not posted yet' : '') + ' = ' + money(o.amountToPay) + '</div>' : '') +
     (flags ? '<ul class="flags">' + flags + '</ul>' : '') + contrib + props +
     '<div class="dec" data-id="' + esc(o.ownerID) + '"><button data-a="approve">Approve</button><button data-a="hold">Hold</button><button data-a="ask_owner">Ask owner</button>' +
     '<input type="text" maxlength="500" placeholder="Note (optional)" value="' + esc(d ? d.note : '') + '"></div></div></td></tr>';

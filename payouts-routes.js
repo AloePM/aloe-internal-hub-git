@@ -5,7 +5,7 @@
 //   const { installPayouts } = await import('./payouts-routes.js'); installPayouts(app, rvFetch);
 import { portfolio, recurringExpected, FLAG_TEXT } from './payouts-data.js';
 import { buildPreview, runBatch } from './headsup.js';
-import { findRecurring, recurringWindow } from './recurring.js';
+import { findRecurring, recurringWindow, expectedFromHistory } from './recurring.js';
 import { sessionOk } from './maintenance-routes.js';
 
 export const TRUST_BANK_ACCOUNT_ID = 129;
@@ -326,7 +326,7 @@ export function parseContributions(rowsIn, todayISO = today()) {
 
 // Turn raw report rows into the owner list the math module expects. `rents` = { propertyID: monthlyRent }.
 // Owners are grouped by PORTFOLIO. A portfolio can have several owner contacts; a payout to any of them counts as that portfolio's payout.
-export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], contribRows = [], fee: feeData = {}, late: lateData = {}, tcharges: tcData = {}, typical = {}, reserve = 0 }, rents = {}, expectedBill = new Set(), leaseInfo = {}, todayISO = today()) {
+export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], contribRows = [], fee: feeData = {}, late: lateData = {}, tcharges: tcData = {}, typical = {}, reserve = 0, recExp = {} }, rents = {}, expectedBill = new Set(), leaseInfo = {}, todayISO = today()) {
   const trust = settle.filter((r) => r.bankAccountID === undefined || num(r.bankAccountID) === TRUST_BANK_ACCOUNT_ID);
   const payoutsByContact = {};
   for (const r of trust) {
@@ -417,7 +417,13 @@ export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], c
         settledIn: inn, nonOwnerPaid, feePosted: feeBills.length > 0, bills: expense,
         // an expected recurring bill is dropped once the real bill for it has already been posted in this window
         planFee: plan.fee, planFeeKnown: plan.known,
-        recurring: recurringExpected({ pool: p.property_text_61, pest: p.property_text_62, landscaping: p.property_text_63 }, typical).filter((r) => !counted.some((b) => num(b.chargeAccountID) === RECURRING_ACCOUNTS[r.key])),
+        // expected recurring bills (not posted yet): the owner-responsible services use the amount that home was really billed; Owner Administrative Charge and the one HOA Aloe pays are added too
+        recurring: (() => {
+          const h = recExp[id] || {}, posted = (acct) => counted.some((b) => num(b.chargeAccountID) === acct);
+          const list = recurringExpected({ pool: p.property_text_61, pest: p.property_text_62, landscaping: p.property_text_63 }, { ...typical, ...Object.fromEntries(['pool', 'pest', 'landscaping'].filter((k) => h[k] > 0).map((k) => [k, h[k]])) }).filter((r) => !posted(RECURRING_ACCOUNTS[r.key]));
+          for (const [k, label] of [['ownerAdmin', 'Owner administrative charge'], ['hoa', 'HOA dues']]) if (h[k] && h[k].amount > 0 && !posted(h[k].accountID)) list.push({ key: k, label, amount: h[k].amount, known: true });
+          return list;
+        })(),
         billExpected: expectedBill.has(id),
       };
     });
@@ -551,12 +557,34 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
     return balInflight;
   }
 
+  // Six months of bills -> recurring bills per home. Slow (about a minute), so it is cached for 6 hours and shared by the Recurring bills panel and the expected-bill amounts.
+  // Property addresses/owners come from the property list (props) so this never waits for the main list.
+  let recCache = { at: 0, v: null }, recInflight = null;
+  const REC_TTL = 6 * 60 * 60 * 1000;
+  async function getRecurring(fresh) {
+    if (!fresh && recCache.v && Date.now() - recCache.at < REC_TTL) return recCache.v;
+    if (!recInflight) recInflight = (async () => {
+      const t = today();
+      const [bills, props] = await Promise.all([loadRecurringBills(rvFetch, t), allPages(rvFetch, 'property', { displayColumns: ['propertyID', 'propertyAddress', 'propertyCity', 'portfolioName'], filters: [] }, { fields: ['propertyID', 'propertyAddress', 'propertyCity', 'portfolioName'], max: 10 })]);
+      const info = {}; for (const p of props) info[String(p.propertyID)] = { address: [p.propertyAddress, p.propertyCity].filter(Boolean).join(', '), owner: p.portfolioName || '' };
+      const found = findRecurring(bills, info, { todayISO: t, skipAccounts: [MGMT_FEE_ACCOUNT_ID] });
+      recCache = { at: Date.now(), v: { asOf: new Date().toISOString(), billsRead: bills.length, ...found, expected: expectedFromHistory(found.rows) } };
+      return recCache.v;
+    })().finally(() => { recInflight = null; });
+    return recInflight;
+  }
+
   app.get('/payouts', (req, res) => res.sendFile(new URL('./public/payouts.html', import.meta.url).pathname));
 
   async function getList(fresh) {
     if (!fresh && cache.v && Date.now() - cache.at < TTL) return cache.v;
     if (!inflight) inflight = (async () => {
       const raw = await loadPayoutData(rvFetch, { typical, reserve });
+      // expected recurring amounts come from what each home was really billed; if that is slow or fails the page still loads (amounts then show as unknown)
+      let recErr = '';
+      try { raw.recExp = (await Promise.race([getRecurring(false), new Promise((_, rej) => setTimeout(() => rej(new Error('still loading - refresh in a minute')), 90000))])).expected || {}; }
+      catch (e) { recErr = String(e.message || e); raw.recExp = {}; }
+      raw.recErr = recErr;
       const li = getRents ? { rents: await getRents(rvFetch), info: {} } : await getLeaseInfo(rvFetch);
       const rents = li.rents;
       const owners = shapeOwners(raw, rents, await getExpectedBills(rvFetch), li.info);
@@ -566,7 +594,7 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
         asOf: new Date().toISOString(), scope: 'Rental Trust (bank account ' + TRUST_BANK_ACCOUNT_ID + ')', reserve,
         decisionsSaved: !!decisions.persistent, flagText: FLAG_TEXT,
         counts: { properties: raw.props.length, payments: raw.settle.length, payouts: raw.checks.length, bills: raw.bills.length, rents: Object.keys(rents).length, vacant: raw.vacancy.length, contributions: raw.contribRows.length, moveIns: (raw.fee.moves || []).length, feeBills: (raw.fee.feeBills || []).length, latePayments: (raw.late.rows || []).length },
-        feeCheckError: raw.fee.error || '', lateRentError: raw.late.error || '', tenantChargesError: (raw.tcharges && raw.tcharges.error) || '', balancesError: bals.err || '', balancesLoaded: Object.keys(bals.v || {}).length,
+        feeCheckError: raw.fee.error || '', lateRentError: raw.late.error || '', tenantChargesError: (raw.tcharges && raw.tcharges.error) || '', recurringError: raw.recErr || '', balancesError: bals.err || '', balancesLoaded: Object.keys(bals.v || {}).length,
         windows: { payoutDays: PAYOUT_DAYS, billDays: BILL_DAYS, contributionDays: CONTRIB_DAYS },
         unmatchedContributions: owners.unmatchedContributions || [],
         owners: portfolio(owners, {}), decisions: await decisions.get(),
@@ -600,19 +628,10 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
     return v;
   }
   // Recurring bills: homes that get the same type of bill month after month (same vendor or not). Loaded only when asked for; cached 30 minutes.
-  let recCache = { at: 0, v: null };
   app.get('/api/payouts/recurring', async (req, res) => {
     if (!guard(req, res)) return;
-    try {
-      if (req.query.refresh !== '1' && recCache.v && Date.now() - recCache.at < 30 * 60 * 1000) return res.json(recCache.v);
-      const t = today();
-      const bills = await loadRecurringBills(rvFetch, t);
-      const list = await getList(false);
-      const info = {}; for (const o of list.owners || []) for (const p of o.properties || []) info[String(p.propertyID)] = { address: p.address, owner: o.name };
-      const out = { asOf: new Date().toISOString(), billsRead: bills.length, ...findRecurring(bills, info, { todayISO: t, skipAccounts: [MGMT_FEE_ACCOUNT_ID] }) };
-      recCache = { at: Date.now(), v: out };
-      res.json(out);
-    } catch (e) { console.error('payouts recurring', e); res.status(500).json({ error: String(e.message || e).slice(0, 300) }); }
+    try { res.json(await getRecurring(req.query.refresh === '1')); }
+    catch (e) { console.error('payouts recurring', e); res.status(500).json({ error: String(e.message || e).slice(0, 300) }); }
   });
 
   app.get('/api/payouts/heads-up', async (req, res) => {
