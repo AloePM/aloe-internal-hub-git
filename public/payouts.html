@@ -404,9 +404,9 @@ const CHIP = {
   new: ['New home', 'Not enough history to call this normal'],
 };
 function stChip(g) { const c = CHIP[g.flag]; return c ? '<span class="chip ' + g.flag + '" title="' + esc(g.note || c[1]) + '">' + c[0] + '</span>' : ''; }
-function cardsHtml(t, c, extra) {
+function cardsHtml(t, c, extra, occ) {
   const card = (k, v, cv, hl, note) => '<div class="card' + (hl ? ' hl' : '') + '"><div class="k">' + k + '</div><div class="v">' + money(v) + '</div><div class="d">' + (note || (cv === undefined ? '' : delta(v, cv) + ' vs ' + esc(mShort(st.data.compareMonth)))) + '</div></div>';
-  return '<div class="cards">' + card('Money received', t.received, c.received) + card('Expenses', t.expenses, c.expenses) + card('Management fee', t.fee, c.fee) + card('Net for the month', t.net, c.net, true) + card('Paid to owner', t.paidOut, c.paidOut, false, extra) + '</div>';
+  return '<div class="cards">' + card('Money received', t.received, c.received) + card('Expenses', t.expenses, c.expenses) + card('Management fee', t.fee, c.fee) + card('Net for the month', t.net, c.net, true) + card('Paid to owner', t.paidOut, c.paidOut, false, extra) + (occ && occ.pct != null ? '<div class="card"><div class="k">Occupied</div><div class="v">' + occ.pct + '%</div><div class="d">' + occ.occupied + ' of ' + occ.days + ' days' + (occ.vacant ? ' &middot; ' + occ.vacant + ' vacant' : '') + '</div></div>' : '') + '</div>';
 }
 function vendorRows(p, internal) {
   if (!p.groups.length) return '<div class="muted">No expenses this month.</div>';
@@ -414,9 +414,16 @@ function vendorRows(p, internal) {
     p.groups.map((g) => '<details class="vrow"><summary><span><b>' + esc(g.vendor) + '</b>' + (internal ? stChip(g) : '') + '</span><span>' + (g.total ? money(g.total) : '&ndash;') + '</span><span>' + (g.compare ? money(g.compare) : '&ndash;') + '</span><span>' + delta(g.total, g.compare) + '</span></summary>' +
       '<div class="vitems">' + (g.items.length ? g.items.map((i) => '<div><span>' + esc(mdy(i.date)) + ' &middot; ' + esc(i.desc || i.account) + (i.billID ? ' &middot; bill #' + esc(i.billID) : '') + (internal && !i.paid ? ' <span class="mark">unpaid</span>' : '') + '</span><span>' + money(i.amount) + '</span></div>').join('') : '<div><span>Not billed yet this month</span><span></span></div>') + '</div></details>').join('');
 }
-function trendTable(series, month) {
-  return '<table><thead><tr><th class="l">Month</th><th>Received</th><th>Expenses</th><th>Mgmt fee</th><th>Net</th></tr></thead><tbody>' +
-    series.map((x) => '<tr' + (x.month === month ? ' class="tot"' : '') + '><td class="l">' + esc(mShort(x.month)) + '</td><td>' + money(x.received) + '</td><td>' + money(x.expenses) + '</td><td>' + money(x.fee) + '</td><td>' + money(x.net) + '</td></tr>').join('') + '</tbody></table>';
+function trendTable(series, month, occ) {
+  const o = (m) => (occ || []).find((x) => x.month === m);
+  return '<table><thead><tr><th class="l">Month</th><th>Received</th><th>Expenses</th><th>Mgmt fee</th><th>Net</th>' + (occ ? '<th>Occupied</th>' : '') + '</tr></thead><tbody>' +
+    series.map((x) => '<tr' + (x.month === month ? ' class="tot"' : '') + '><td class="l">' + esc(mShort(x.month)) + '</td><td>' + money(x.received) + '</td><td>' + money(x.expenses) + '</td><td>' + money(x.fee) + '</td><td>' + money(x.net) + '</td>' + (occ ? '<td>' + (o(x.month) && o(x.month).pct != null ? o(x.month).pct + '%' : '&ndash;') + '</td>' : '') + '</tr>').join('') + '</tbody></table>';
+}
+function rentTable(p) {
+  const h = p.rentHistory || []; if (!h.length) return '';
+  const chg = (c, pct) => c == null ? '<span class="muted">first lease</span>' : (c === 0 ? '<span class="muted">no change</span>' : (c > 0 ? '+' : '-') + money(Math.abs(c)) + ' (' + (pct > 0 ? '+' : '') + pct + '%)');
+  return '<h3>Rent history <span class="muted tiny noprint">(by lease)</span></h3><table><thead><tr><th class="l">Lease started</th><th class="l">Ended</th><th>Rent</th><th>Change from previous lease</th><th class="l">Increases during the lease</th></tr></thead><tbody>' +
+    h.slice().reverse().map((x) => '<tr><td class="l">' + esc(mdy(x.start)) + '</td><td class="l">' + (x.end ? esc(mdy(x.end)) : '<span class="muted">current</span>') + '</td><td>' + money(x.startRent) + (x.endRent !== x.startRent ? ' &rarr; ' + money(x.endRent) : '') + '</td><td>' + chg(x.changeFromPrevious, x.pctFromPrevious) + '</td><td class="l">' + (x.increases.length ? x.increases.map((i) => esc(mdy(i.date)) + ': ' + money(i.from) + ' &rarr; ' + money(i.to) + ' (' + (i.pct > 0 ? '+' : '') + i.pct + '%)').join('<br>') : '<span class="muted">none recorded</span>') + '</td></tr>').join('') + '</tbody></table>';
 }
 function stHome(p, internal) {
   const tc = internal && p.tenantCharged > 0 ? '<div class="muted tiny">Also billed to the tenant (not owner money): ' + money(p.tenantCharged) + '</div>' : '';
@@ -430,12 +437,12 @@ function stRender() {
   const single = d.properties[0];
   let h = '<h2>' + (d.singleHome ? 'Home statement' : 'Owner statement') + ' &middot; ' + esc(mLabel(d.month)) + '</h2><div class="muted" style="margin-bottom:6px">' + esc(d.ownerName) + (multi ? ' &middot; ' + d.properties.length + ' homes' : ' &middot; ' + esc(single.address)) + ' &middot; compared with ' + esc(mLabel(d.compareMonth)) + '</div>';
   const t = multi ? d.totals : single;
-  h += cardsHtml(multi ? d.totals : t, multi ? d.totals.compare : single.compare, !d.singleHome && d.reserve ? 'Reserve held ' + money(d.reserve) : '');
+  h += cardsHtml(multi ? d.totals : t, multi ? d.totals.compare : single.compare, !d.singleHome && d.reserve ? 'Reserve held ' + money(d.reserve) : '', d.occupancy && d.occupancy.month);
   h += '<div class="expl"><h3>Your ' + esc(MN[Number(d.month.slice(5, 7)) - 1]) + ', explained</h3><div>' + esc(d.explained) + '</div><div class="qchips noprint">' + d.qa.map((x, i) => '<button data-qa="' + i + '">' + esc(x.q) + '</button>').join('') + '</div><div id="qaOut"></div></div>';
-  if (multi) h += '<h3>Last 12 months, all homes</h3>' + trendTable(d.series, d.month);
-  h += (multi ? d.properties.map((p) => '<div style="break-before:auto"><h3 style="font-size:17px;margin-top:22px">' + esc(p.address) + '</h3><h3>Expenses by vendor</h3>' + vendorRows(p, internal) + '</div>').join('<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">') : '<h3>Expenses by vendor <span class="muted tiny noprint">(click a vendor for its bills)</span></h3>' + vendorRows(single, internal) + (internal && single.tenantCharged > 0 ? '<div class="muted tiny">Also billed to the tenant (not owner money): ' + money(single.tenantCharged) + '</div>' : '') + '<h3>Last 12 months</h3>' + trendTable(single.series, single.month));
+  if (multi) h += '<h3>Last 12 months, all homes</h3>' + trendTable(d.series, d.month, d.occupancy && d.occupancy.series);
+  h += (multi ? d.properties.map((p) => '<div style="break-before:auto"><h3 style="font-size:17px;margin-top:22px">' + esc(p.address) + '</h3><h3>Expenses by vendor</h3>' + vendorRows(p, internal) + (p.occupancy && p.occupancy.month.pct != null ? '<div class="muted" style="margin-top:6px">Occupied ' + p.occupancy.month.pct + '% (' + p.occupancy.month.occupied + ' of ' + p.occupancy.month.days + ' days)</div>' : '') + rentTable(p) + '</div>').join('<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">') : '<h3>Expenses by vendor <span class="muted tiny noprint">(click a vendor for its bills)</span></h3>' + vendorRows(single, internal) + (internal && single.tenantCharged > 0 ? '<div class="muted tiny">Also billed to the tenant (not owner money): ' + money(single.tenantCharged) + '</div>' : '') + '<h3>Last 12 months</h3>' + trendTable(single.series, single.month, single.occupancy && single.occupancy.series) + rentTable(single));
   if (d.warnings && d.warnings.length && internal) h += '<div class="muted tiny noprint">Note: ' + esc(d.warnings.join('; ')) + '</div>';
-  h += '<div class="muted tiny" style="margin-top:10px">Money received comes from Rentvine settlements; expenses are bills posted in the month. As of ' + esc(new Date(d.asOf).toLocaleString()) + '.</div>';
+  h += '<div class="muted tiny" style="margin-top:10px">Occupancy and rent history come from lease dates and amounts in Rentvine. Money received comes from Rentvine settlements; expenses are bills posted in the month. As of ' + esc(new Date(d.asOf).toLocaleString()) + '.</div>';
   el.innerHTML = h;
   for (const b of el.querySelectorAll('button[data-qa]')) b.onclick = () => { $('#qaOut').innerHTML = '<div class="qa"><b>' + esc(d.qa[b.dataset.qa].q) + '</b><div>' + esc(d.qa[b.dataset.qa].a) + '</div></div>'; };
 }

@@ -8,6 +8,7 @@ import { buildPreview, runBatch } from './headsup.js';
 import { findRecurring, recurringWindow, expectedFromHistory } from './recurring.js';
 import { parseSetup, mergeSetup } from './recurring-setup.js';
 import { buildStatement, addMonths, LOOKBACK_MONTHS } from './statement.js';
+import { leaseIntervals, monthOccupancy, occupancySeries, rentHistory, rentChangesFrom } from './occupancy.js';
 import { sessionOk } from './maintenance-routes.js';
 
 export const TRUST_BANK_ACCOUNT_ID = 129;
@@ -566,6 +567,24 @@ export async function loadStatementData(rvFetch, propertyIDs, portfolioID, ym) {
   return { bills, settle, warnings };
 }
 
+// Lease history and rent changes for the statements (occupancy, rent by lease, increases). Each read is optional: a failure only removes that part of the statement.
+const LEASE_HIST_COLS = ['leaseID', 'propertyID', 'rentAmount', 'leaseStatusName', 'moveInDate', 'moveOutDate', 'expectedMoveOutDate'];
+export async function loadStatementLeases(rvFetch, propertyIDs) {
+  const ids = new Set(propertyIDs.map(String)), warnings = [];
+  for (const f of [{ name: 'propertyID', comparator: 'in', values: [...ids] }, null]) {
+    try { let rows = await allPages(rvFetch, 'lease', { displayColumns: LEASE_HIST_COLS, filters: f ? [f] : [] }, { fields: LEASE_HIST_COLS, max: f ? 10 : 30 }); if (!f) rows = rows.filter((r) => ids.has(String(r.propertyID))); return { leases: rows, changes: await loadRentChanges(rvFetch, ids, warnings), warnings }; }
+    catch (e) { warnings.push('lease history ' + (f ? 'filter' : 'all') + ': ' + String(e.message || e).slice(0, 100)); }
+  }
+  return { leases: [], changes: [], warnings };
+}
+async function loadRentChanges(rvFetch, ids, warnings) {
+  try {
+    const rows = await allPages(rvFetch, 'lease-recurring-charges', { filters: [{ name: 'propertyID', comparator: 'in', values: [...ids] }] }, { max: 10 });
+    const byLeaseProp = rows.filter((r) => r.propertyID === undefined || ids.has(String(r.propertyID)));
+    return rentChangesFrom(byLeaseProp);
+  } catch (e) { warnings.push('rent changes: ' + String(e.message || e).slice(0, 100)); return []; }
+}
+
 // Rentvine's own Recurring Bills list (bills already set up to post monthly). Failure-tolerant: the caller falls back to billing history.
 export async function loadRecurringSetup(rvFetch) {
   return allPages(rvFetch, 'recurring-bills-detail', { filters: [] }, { max: 10 });
@@ -687,10 +706,36 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       if (!props.length) return res.status(404).json({ error: 'Property not found for this owner.' });
       const key = o.ownerID + '|' + month;
       let data = stCache.get(key);
-      if (!data || Date.now() - data.at > 10 * 60 * 1000) { data = { at: Date.now(), v: await loadStatementData(rvFetch, o.properties.map((p) => p.propertyID), o.portfolioID || o.ownerID, month) }; stCache.set(key, data); if (stCache.size > 40) stCache.delete(stCache.keys().next().value); }
+      if (!data || Date.now() - data.at > 10 * 60 * 1000) { const ids = o.properties.map((p) => p.propertyID); const [sd, lh] = await Promise.all([loadStatementData(rvFetch, ids, o.portfolioID || o.ownerID, month), loadStatementLeases(rvFetch, ids).catch((e) => ({ leases: [], changes: [], warnings: ['lease history: ' + String(e.message || e).slice(0, 100)] }))]); data = { at: Date.now(), v: { ...sd, leases: lh.leases, changes: lh.changes, warnings: [...sd.warnings, ...lh.warnings] } }; stCache.set(key, data); if (stCache.size > 40) stCache.delete(stCache.keys().next().value); }
       const st = buildStatement({ ownerName: o.name, properties: props, bills: data.v.bills, settle: data.v.settle, month, compare });
-      res.json({ ...st, reserve: o.reserve ?? 0, asOf: new Date(data.at).toISOString(), warnings: data.v.warnings, singleHome: !!only });
+      // occupancy and rent history per home (only when the lease read worked)
+      const todayISO = today(); let agg = null;
+      if ((data.v.leases || []).length) {
+        agg = { days: 0, occupied: 0, series: Array.from({ length: 12 }, (_, i) => ({ month: addMonths(month, i - 11), days: 0, occupied: 0 })) };
+        for (const p of st.properties) {
+          const mine = data.v.leases.filter((l) => String(l.propertyID) === String(p.propertyID));
+          const iv = leaseIntervals(mine, todayISO), cur = monthOccupancy(iv, month, todayISO), ser = occupancySeries(iv, month, todayISO);
+          p.occupancy = { month: cur, series: ser };
+          p.rentHistory = rentHistory(iv, data.v.changes.filter((c) => mine.some((l) => String(l.leaseID) === String(c.leaseID))));
+          agg.days += cur.days; agg.occupied += cur.occupied; ser.forEach((x, i) => { agg.series[i].days += x.days; agg.series[i].occupied += x.occupied; });
+        }
+        const pc = (o2) => ({ ...o2, vacant: o2.days - o2.occupied, pct: o2.days ? Math.round((o2.occupied / o2.days) * 1000) / 10 : null });
+        agg = { month: pc(agg), series: agg.series.map(pc) };
+      }
+      res.json({ ...st, occupancy: agg, reserve: o.reserve ?? 0, asOf: new Date(data.at).toISOString(), warnings: data.v.warnings, singleHome: !!only });
     } catch (e) { console.error('payouts statement', e); res.status(502).json({ error: String(e.message || e).slice(0, 300) }); }
+  });
+
+  // Read-only look at the SHAPE of a Rentvine response (field names only, never values), to find out how bills expose their invoice files.
+  app.get('/api/payouts/probe', async (req, res) => {
+    if (!guard(req, res)) return;
+    const path = String(req.query.path || '');
+    if (!/^\/(accounting\/bills\/\d+|bills\/\d+|reports\/[a-z-]+)$/.test(path)) return res.status(400).json({ error: 'Only /accounting/bills/<id>, /bills/<id> or /reports/<name> can be probed.' });
+    try {
+      const shape = (v, d = 0) => Array.isArray(v) ? { array: v.length, item: v.length && d < 3 ? shape(v[0], d + 1) : null } : (v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).slice(0, 60).map((k) => [k, d < 3 ? shape(v[k], d + 1) : typeof v[k]])) : (v === null ? 'null' : typeof v));
+      const r = await rvFetch(path, path.startsWith('/reports/') ? { exportTypeID: 1, json: JSON.stringify({ filters: [] }), page: 1, pageSize: 1 } : {});
+      res.json({ path, shape: shape(r) });
+    } catch (e) { res.status(502).json({ error: String(e.message || e).slice(0, 300) }); }
   });
 
   app.get('/api/payouts/recurring', async (req, res) => {
