@@ -8,7 +8,7 @@ import { buildPreview, runBatch } from './headsup.js';
 import { findRecurring, recurringWindow, expectedFromHistory } from './recurring.js';
 import { parseSetup, mergeSetup } from './recurring-setup.js';
 import { buildStatement, addMonths, LOOKBACK_MONTHS } from './statement.js';
-import { leaseIntervals, monthOccupancy, occupancySeries, rentHistory, rentChangesFrom, rentChangeExplain } from './occupancy.js';
+import { leaseIntervals, monthOccupancy, occupancySeries, rentHistory, rentChangesFrom, rentChangeExplain, rentLevels, levelEvents, explainEvents } from './occupancy.js';
 import { sessionOk } from './maintenance-routes.js';
 
 export const TRUST_BANK_ACCOUNT_ID = 129;
@@ -575,7 +575,17 @@ export async function loadStatementData(rvFetch, propertyIDs, portfolioID, ym) {
       break;
     } catch (e) { if (!f) warnings.push('tenant fee split unavailable (admin and other fees may be counted as rent): ' + String(e.message || e).slice(0, 100)); }
   }
-  return { bills, settle, other, warnings };
+  // rent actually charged each month (rent account 10) over the last 3 years: gives every home its rent history and rent increases
+  let rentRows = [];
+  const RCOLS = ['leaseID', 'propertyID', 'chargeAccountID', 'amount', 'isVoided', 'datePosted'], RFROM = addMonths(ym, -35) + '-01', RTO = addMonths(ym, 2) + '-01';
+  for (const cols of [RCOLS, RCOLS.filter((c) => c !== 'amount').concat('amountPaid')]) {
+    try {
+      const rows = await allPages(rvFetch, 'lease-charges', { displayColumns: cols, filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: RFROM, endDate: RTO }, { name: 'chargeAccountID', comparator: 'in', values: ['10'] }, { name: 'propertyID', comparator: 'in', values: [...ids] }] }, { fields: cols, max: 40 });
+      rentRows = rows.filter((c) => !truthy(c.isVoided) && num(c.chargeAccountID) === 10 && ids.has(String(c.propertyID))).map((c) => ({ propertyID: String(c.propertyID), datePosted: toISO(c.datePosted), amount: num(c.amount !== undefined ? c.amount : c.amountPaid) }));
+      break;
+    } catch (e) { if (cols !== RCOLS) warnings.push('rent charges unavailable (rent history falls back to lease records): ' + String(e.message || e).slice(0, 100)); }
+  }
+  return { bills, settle, other, rentRows, warnings };
 }
 
 // Lease history and rent changes for the statements (occupancy, rent by lease, increases). Each read is optional: a failure only removes that part of the statement.
@@ -728,7 +738,8 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
           const iv = leaseIntervals(mine, todayISO), cur = monthOccupancy(iv, month, todayISO), ser = occupancySeries(iv, month, todayISO);
           p.occupancy = { month: cur, series: ser };
           p.rentHistory = rentHistory(iv, data.v.changes.filter((c) => mine.some((l) => String(l.leaseID) === String(c.leaseID))));
-          p.rentChange = rentChangeExplain(p.rentHistory, month);
+          p.rentLevels = rentLevels(data.v.rentRows || [], p.propertyID);
+          p.rentChange = p.rentLevels.length > 1 ? explainEvents(levelEvents(p.rentLevels), month) : rentChangeExplain(p.rentHistory, month);
           agg.days += cur.days; agg.occupied += cur.occupied; ser.forEach((x, i) => { agg.series[i].days += x.days; agg.series[i].occupied += x.occupied; });
         }
         const pc = (o2) => ({ ...o2, vacant: o2.days - o2.occupied, pct: o2.days ? Math.round((o2.occupied / o2.days) * 1000) / 10 : null });

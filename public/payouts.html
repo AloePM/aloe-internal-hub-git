@@ -421,6 +421,12 @@ function trendTable(series, month, occ) {
 }
 function rentNote(p) { return p.rentChange ? '<div class="expl" style="margin-top:10px"><h3>Rent change</h3><div>' + esc(p.rentChange.text) + '</div></div>' : ''; }
 function rentTable(p) {
+  const lv = p.rentLevels || [];
+  if (lv.length) {
+    const chg = (x) => x.change == null ? '<span class="muted">starting rent</span>' : (x.change > 0 ? '+' : '-') + money(Math.abs(x.change)) + ' (' + (x.pct > 0 ? '+' : '') + x.pct + '%)';
+    return '<h3>Rent history <span class="muted tiny noprint">(rent charged to the tenant)</span></h3><table><thead><tr><th class="l">From</th><th class="l">Through</th><th>Monthly rent</th><th>Change</th></tr></thead><tbody>' +
+      lv.slice().reverse().map((x) => '<tr><td class="l">' + esc(mdy(x.from)) + (x.prorated ? ' <span class="muted tiny">(prorated ' + esc(MN[Number(x.prorated.month.slice(5, 7)) - 1]) + ')</span>' : '') + '</td><td class="l">' + (x.to ? esc(mdy(x.to)) : '<span class="muted">current</span>') + '</td><td>' + money(x.rent) + '</td><td>' + chg(x) + '</td></tr>').join('') + '</tbody></table>';
+  }
   const h = p.rentHistory || []; if (!h.length) return '';
   const chg = (c, pct) => c == null ? '<span class="muted">first lease</span>' : (c === 0 ? '<span class="muted">no change</span>' : (c > 0 ? '+' : '-') + money(Math.abs(c)) + ' (' + (pct > 0 ? '+' : '') + pct + '%)');
   return '<h3>Rent history <span class="muted tiny noprint">(by lease)</span></h3><table><thead><tr><th class="l">Lease started</th><th class="l">Ended</th><th>Rent</th><th>Change from previous lease</th><th class="l">Increases during the lease</th></tr></thead><tbody>' +
