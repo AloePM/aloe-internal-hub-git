@@ -6,6 +6,7 @@
 import { portfolio, recurringExpected, FLAG_TEXT } from './payouts-data.js';
 import { buildPreview, runBatch } from './headsup.js';
 import { findRecurring, recurringWindow, expectedFromHistory } from './recurring.js';
+import { parseSetup, mergeSetup } from './recurring-setup.js';
 import { sessionOk } from './maintenance-routes.js';
 
 export const TRUST_BANK_ACCOUNT_ID = 129;
@@ -421,7 +422,14 @@ export function shapeOwners({ props, settle, checks = [], bills, vacancy = [], c
         recurring: (() => {
           const h = recExp[id] || {}, posted = (acct) => counted.some((b) => num(b.chargeAccountID) === acct);
           const list = recurringExpected({ pool: p.property_text_61, pest: p.property_text_62, landscaping: p.property_text_63 }, { ...typical, ...Object.fromEntries(['pool', 'pest', 'landscaping'].filter((k) => h[k] > 0).map((k) => [k, h[k]])) }).filter((r) => !posted(RECURRING_ACCOUNTS[r.key]));
-          for (const [k, label] of [['ownerAdmin', 'Owner administrative charge'], ['hoa', 'HOA dues']]) if (h[k] && h[k].amount > 0 && !posted(h[k].accountID)) list.push({ key: k, label, amount: h[k].amount, known: true });
+          const postedHoa = () => counted.some((b) => /hoa/i.test(String(b.chargeAccountName || '')) || /hoa/i.test(String(b.description || '')));
+          for (const [k, label] of [['ownerAdmin', 'Owner administrative charge'], ['hoa', 'HOA dues']]) if (h[k] && h[k].amount > 0 && !(h[k].accountID ? posted(h[k].accountID) : postedHoa())) list.push({ key: k, label, amount: h[k].amount, known: true });
+          // other recurring bills: set up in Rentvine, or the same vendor every month by invoice. Dropped once that vendor's bill (about that amount) is already posted.
+          const nv = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          for (const x of h.extra || []) {
+            const done = counted.some((b) => (x.accountID && num(b.chargeAccountID) === x.accountID) || (x.vendor && nv(b.contactName) === nv(x.vendor) && Math.abs(num(b.amount) - x.amount) < 0.51));
+            if (!done && x.amount > 0) list.push({ key: x.key, label: x.label + (x.source === 'invoices' ? ' (from invoices)' : ''), amount: x.amount, known: true });
+          }
           return list;
         })(),
         billExpected: expectedBill.has(id),
@@ -535,6 +543,11 @@ export function makeSlackNotifier(env = process.env, fetchImpl = (...a) => fetch
 }
 // Bills posted in the last six full months, in a small column set, for the recurring-bill finder
 const RBILL_COLS = ['propertyID', 'chargeAccountID', 'chargeAccountName', 'datePosted', 'amount', 'isVoided', 'isSuppressed', 'description', 'contactName'];
+// Rentvine's own Recurring Bills list (bills already set up to post monthly). Failure-tolerant: the caller falls back to billing history.
+export async function loadRecurringSetup(rvFetch) {
+  return allPages(rvFetch, 'recurring-bills-detail', { filters: [] }, { max: 10 });
+}
+
 export async function loadRecurringBills(rvFetch, todayISO = today()) {
   const { from } = recurringWindow(todayISO, 6);
   return allPages(rvFetch, 'payables', { displayColumns: RBILL_COLS, filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: from, endDate: todayISO }] }, { fields: RBILL_COLS, max: 60 });
@@ -568,7 +581,14 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       const [bills, props] = await Promise.all([loadRecurringBills(rvFetch, t), allPages(rvFetch, 'property', { displayColumns: ['propertyID', 'propertyAddress', 'propertyCity', 'portfolioName'], filters: [] }, { fields: ['propertyID', 'propertyAddress', 'propertyCity', 'portfolioName'], max: 10 })]);
       const info = {}; for (const p of props) info[String(p.propertyID)] = { address: [p.propertyAddress, p.propertyCity].filter(Boolean).join(', '), owner: p.portfolioName || '' };
       const found = findRecurring(bills, info, { todayISO: t, skipAccounts: [MGMT_FEE_ACCOUNT_ID] });
-      recCache = { at: Date.now(), v: { asOf: new Date().toISOString(), billsRead: bills.length, ...found, expected: expectedFromHistory(found.rows) } };
+      let expected = expectedFromHistory(found.rows), setupInfo = { used: 0, unmatched: [], error: '' };
+      try {
+        const sraw = await loadRecurringSetup(rvFetch);
+        const setup = parseSetup(sraw, props);
+        expected = mergeSetup(expected, setup, found.rows);
+        setupInfo = { used: setup.used, unmatched: setup.unmatched, error: setup.used ? '' : (sraw.length ? 'Rentvine recurring list was read (' + sraw.length + ' rows) but no home could be matched' : 'Rentvine recurring list came back empty'), fields: setup.fields || null, rowsRead: sraw.length };
+      } catch (e) { setupInfo = { used: 0, unmatched: [], error: String(e.message || e) }; expected = mergeSetup(expected, { byProperty: {} }, found.rows); }
+      recCache = { at: Date.now(), v: { asOf: new Date().toISOString(), billsRead: bills.length, ...found, expected, setup: setupInfo } };
       return recCache.v;
     })().finally(() => { recInflight = null; });
     return recInflight;
@@ -582,7 +602,7 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       const raw = await loadPayoutData(rvFetch, { typical, reserve });
       // expected recurring amounts come from what each home was really billed; if that is slow or fails the page still loads (amounts then show as unknown)
       let recErr = '';
-      try { raw.recExp = (await Promise.race([getRecurring(false), new Promise((_, rej) => setTimeout(() => rej(new Error('still loading - refresh in a minute')), 90000))])).expected || {}; }
+      try { const rc = await Promise.race([getRecurring(false), new Promise((_, rej) => setTimeout(() => rej(new Error('still loading - refresh in a minute')), 90000))]); raw.recExp = rc.expected || {}; if (rc.setup && rc.setup.error) recErr = 'Rentvine recurring bills list: ' + rc.setup.error + ' (using billing history instead)'; }
       catch (e) { recErr = String(e.message || e); raw.recExp = {}; }
       raw.recErr = recErr;
       const li = getRents ? { rents: await getRents(rvFetch), info: {} } : await getLeaseInfo(rvFetch);

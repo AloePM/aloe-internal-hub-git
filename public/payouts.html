@@ -120,7 +120,7 @@ async function load(refresh) {
     if (data.lateRentError) $('#sub').textContent += ' - LATE RENT CHECK DID NOT RUN: ' + data.lateRentError;
     if (data.feeCheckError) $('#sub').textContent += ' - PLACEMENT FEE CHECK DID NOT RUN: ' + data.feeCheckError;
     if (data.tenantChargesError) $('#sub').textContent += ' - TENANT CHARGES COULD NOT BE READ (Resident Benefit Package etc. are NOT taken out): ' + data.tenantChargesError;
-    if (data.recurringError) $('#sub').textContent += ' - EXPECTED RECURRING AMOUNTS NOT LOADED (' + data.recurringError + ')';
+    if (data.recurringError) $('#sub').textContent += ' - RECURRING BILLS NOTE: ' + data.recurringError;
     if (data.balancesError) $('#sub').textContent += ' - RENTVINE BALANCES COULD NOT BE READ (Amount to pay is the page math): ' + data.balancesError;
     $('#stor').hidden = !!data.decisionsSaved;
     const um = data.unmatchedContributions || [];

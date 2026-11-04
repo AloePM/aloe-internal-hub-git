@@ -59,9 +59,9 @@ export function recurringCsv(rows) {
 // Expected recurring bills per home, built from the finder rows. Only bills that came EVERY month are expected.
 //   pool / landscaping / pest : the owner-responsible services (typical amount); the page only adds them where the property says Landlord Responsibility
 //   ownerAdmin                : Owner Administrative Charge, wherever it recurs
-//   hoa                       : HOA dues, but ONLY for homes whose address matches hoaAddress (833 Baylor is the only one Aloe pays)
+//   hoa                       : HOA dues, but ONLY for homes whose address matches hoaAddress (4111 E Baylor Ln is the only one Aloe pays)
 export const SERVICE_ACCOUNTS = { pool: 83, landscaping: 79, pest: 77 };
-export function expectedFromHistory(rows, { hoaAddress = /\b833\b.*\bbaylor/i } = {}) {
+export function expectedFromHistory(rows, { hoaAddress = /\b4111\b.*\bbaylor/i } = {}) {
   const out = {};
   for (const r of rows || []) {
     if (r.cadence !== 'every month') continue;
