@@ -96,8 +96,10 @@ const COLS = [
   ['recurringTotal', 'Recurring'], ['reserve', 'Reserve'], ['lastPayout', 'Last payout'], ['status', 'Status', 'l'],
 ];
 function amountNote(o) {
-  if (o.amountSource !== 'rentvine') return '<div class="tiny muted" title="Rentvine had no balance for this owner, so this is the page\'s own math">page math</div>';
-  if (Math.abs((o.pageAmount || 0) - (o.amountToPay || 0)) > 1) return '<div class="tiny" style="color:#b45309" title="Rentvine Distributable Amount differs from the page\'s own math by more than $1">Rentvine &middot; page math ' + money(o.pageAmount) + '</div>';
+  // no wording in the cell - just a small (i) that explains on hover
+  const tip = (t, color) => ' <span class="tiny" style="color:' + color + ';cursor:help" title="' + t.replace(/"/g, '&quot;') + '">&#9432;</span>';
+  if (o.amountSource !== 'rentvine') return tip("Rentvine had no balance for this owner, so this amount is worked out from the payments and bills on this page.", '#6b7280');
+  if (Math.abs((o.pageAmount || 0) - (o.amountToPay || 0)) > 1) return tip('Rentvine and this page add things up differently for this owner (this page would say ' + money(o.pageAmount) + '). Worth a quick look before paying.', '#b45309');
   return '';
 }
 function head() {
