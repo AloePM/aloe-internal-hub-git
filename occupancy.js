@@ -55,3 +55,36 @@ export function rentChangesFrom(rows) {
   }
   return out;
 }
+
+// Plain-language explanation of a rent change that affects the statement month (proration in the month of the change, full new rent after it).
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const money2 = (n) => '$' + (Math.round(n * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const mdLabel = (d) => MONTHS[Number(d.slice(5, 7)) - 1].slice(0, 3) + ' ' + Number(d.slice(8, 10));
+export function rentEvents(history) {
+  const ev = [];
+  (history || []).forEach((l, i) => {
+    const prev = i > 0 ? history[i - 1] : null;
+    if (prev && l.start && Math.abs(l.startRent - prev.endRent) > 0.005) ev.push({ date: l.start, from: prev.endRent, to: l.startRent });
+    for (const x of l.increases || []) ev.push({ date: x.date, from: x.from, to: x.to });
+  });
+  return ev.filter((e) => e.date).sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+export function rentChangeExplain(history, ym) {
+  const ev = rentEvents(history), y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7));
+  const prevYm = m === 1 ? (y - 1) + '-12' : y + '-' + String(m - 1).padStart(2, '0');
+  const mn = MONTHS[m - 1], pn = MONTHS[(m + 10) % 12], dim = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const inMonth = ev.filter((e) => e.date.slice(0, 7) === ym), inPrev = ev.filter((e) => e.date.slice(0, 7) === prevYm);
+  const parts = [];
+  for (const e of inMonth) {
+    const d = Number(e.date.slice(8, 10)), up = e.to > e.from, diff = Math.round(Math.abs(e.to - e.from) * 100) / 100;
+    const head = 'The rent ' + (up ? 'increased' : 'decreased') + ' from ' + money2(e.from) + ' to ' + money2(e.to) + ' on ' + mdLabel(e.date) + ' (' + money2(diff) + ' ' + (up ? 'more' : 'less') + ' per month).';
+    if (d <= 1) { parts.push(head + ' ' + mn + ' is the first month at the new rent.'); continue; }
+    const dOld = d - 1, dNew = dim - dOld, a = Math.round(e.from * dOld / dim * 100) / 100, b = Math.round(e.to * dNew / dim * 100) / 100;
+    parts.push(head + ' So ' + mn + ' rent is prorated: ' + dOld + ' days at ' + money2(e.from) + ' (' + money2(a) + ') plus ' + dNew + ' days at ' + money2(e.to) + ' (' + money2(b) + ') = ' + money2(a + b) + '.');
+  }
+  for (const e of inPrev) {
+    const d = Number(e.date.slice(8, 10)), up = e.to > e.from, diff = Math.round(Math.abs(e.to - e.from) * 100) / 100;
+    parts.push((d > 1 ? pn + ' rent was prorated because the rent ' + (up ? 'increased' : 'decreased') + ' on ' + mdLabel(e.date) + ' (from ' + money2(e.from) + ' to ' + money2(e.to) + '). ' : '') + mn + ' is the first full month at ' + money2(e.to) + ', which is ' + money2(diff) + ' ' + (up ? 'more' : 'less') + ' per month than before (' + money2(diff * 12) + ' a year).');
+  }
+  return parts.length ? { text: parts.join(' '), events: [...inMonth, ...inPrev] } : null;
+}

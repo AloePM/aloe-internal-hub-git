@@ -119,9 +119,8 @@ export function explain(st) {
   const changed = vendors.filter((v) => v.flags.has('jump'));
   const missing = vendors.filter((v) => v.total === 0 && v.flags.has('missing'));
   const nothingYet = t.received === 0 && t.expenses === 0 && t.fee === 0;
-  let text = nothingYet ? 'Nothing has been posted yet for ' + M + ' ' + scope + '.' : 'In ' + M + ' ' + scope + ', ' + (t.received > 0 ? $(t.received) + ' of rent and other owner money was received' : 'no money has settled yet') + ', with ' + $(t.expenses) + ' in expenses and ' + $(t.fee) + ' in management fee, for a net of ' + $(t.net) + '.';
+  let text = nothingYet ? 'Nothing has been posted yet for ' + M + ' ' + scope + '.' : 'In ' + M + ' ' + scope + ', ' + (t.received > 0 ? $(t.received) + ' of rent was received' : 'no money has settled yet') + ', with ' + $(t.expenses) + ' in expenses and ' + $(t.fee) + ' in management fee, for a net of ' + $(t.net) + '.';
   if (!nothingYet) text += ' That is ' + upDown(cents(t.net - c.net)) + ' than ' + C + '.';
-  if ((t.other || 0) > 0) text += ' The tenant also paid ' + $(t.other) + ' in admin and other fees, which are not owner money and are not counted above.';
   const lst = (a) => a.slice(0, 3).map((v) => v.vendor + ' ' + $(v.total)).join(', ') + (a.length > 3 ? ' and ' + (a.length - 3) + ' more' : '');
   if (oneTime.length) text += ' One-time bills this month: ' + lst(oneTime) + '.';
   if (changed.length) text += ' Regular bills that changed amount: ' + changed.slice(0, 3).map((v) => v.vendor + ' (' + $(v.total) + ', was ' + $(v.compare) + ')').join(', ') + '.';

@@ -8,7 +8,7 @@ import { buildPreview, runBatch } from './headsup.js';
 import { findRecurring, recurringWindow, expectedFromHistory } from './recurring.js';
 import { parseSetup, mergeSetup } from './recurring-setup.js';
 import { buildStatement, addMonths, LOOKBACK_MONTHS } from './statement.js';
-import { leaseIntervals, monthOccupancy, occupancySeries, rentHistory, rentChangesFrom } from './occupancy.js';
+import { leaseIntervals, monthOccupancy, occupancySeries, rentHistory, rentChangesFrom, rentChangeExplain } from './occupancy.js';
 import { sessionOk } from './maintenance-routes.js';
 
 export const TRUST_BANK_ACCOUNT_ID = 129;
@@ -728,6 +728,7 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
           const iv = leaseIntervals(mine, todayISO), cur = monthOccupancy(iv, month, todayISO), ser = occupancySeries(iv, month, todayISO);
           p.occupancy = { month: cur, series: ser };
           p.rentHistory = rentHistory(iv, data.v.changes.filter((c) => mine.some((l) => String(l.leaseID) === String(c.leaseID))));
+          p.rentChange = rentChangeExplain(p.rentHistory, month);
           agg.days += cur.days; agg.occupied += cur.occupied; ser.forEach((x, i) => { agg.series[i].days += x.days; agg.series[i].occupied += x.occupied; });
         }
         const pc = (o2) => ({ ...o2, vacant: o2.days - o2.occupied, pct: o2.days ? Math.round((o2.occupied / o2.days) * 1000) / 10 : null });
