@@ -5,6 +5,7 @@
 //   const { installPayouts } = await import('./payouts-routes.js'); installPayouts(app, rvFetch);
 import { portfolio, recurringExpected, FLAG_TEXT } from './payouts-data.js';
 import { buildPreview, runBatch } from './headsup.js';
+import { findRecurring, recurringWindow } from './recurring.js';
 import { sessionOk } from './maintenance-routes.js';
 
 export const TRUST_BANK_ACCOUNT_ID = 129;
@@ -526,6 +527,12 @@ export function makeSlackNotifier(env = process.env, fetchImpl = (...a) => fetch
     const d = await r.json().catch(() => ({})); if (!d.ok) throw new Error('Slack: ' + (d.error || r.status));
   };
 }
+// Bills posted in the last six full months, in a small column set, for the recurring-bill finder
+const RBILL_COLS = ['propertyID', 'chargeAccountID', 'chargeAccountName', 'datePosted', 'amount', 'isVoided', 'isSuppressed', 'description', 'contactName'];
+export async function loadRecurringBills(rvFetch, todayISO = today()) {
+  const { from } = recurringWindow(todayISO, 6);
+  return allPages(rvFetch, 'payables', { displayColumns: RBILL_COLS, filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: from, endDate: todayISO }] }, { fields: RBILL_COLS, max: 60 });
+}
 export const MIN_PROPERTIES_FOR_DRAFTS = 300;   // same idea as the vacancy job's "500 leads" check: refuse to draft from a half-loaded list
 
 export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionStore(), getRents = null, getLeaseInfo = defaultLeaseInfo, getExpectedBills = async () => new Set(), typical = {}, reserve = 0, env = process.env, createDraft = null, notify = null } = {}) {
@@ -592,6 +599,22 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
     huCache = { at: Date.now(), list, v };
     return v;
   }
+  // Recurring bills: homes that get the same type of bill month after month (same vendor or not). Loaded only when asked for; cached 30 minutes.
+  let recCache = { at: 0, v: null };
+  app.get('/api/payouts/recurring', async (req, res) => {
+    if (!guard(req, res)) return;
+    try {
+      if (req.query.refresh !== '1' && recCache.v && Date.now() - recCache.at < 30 * 60 * 1000) return res.json(recCache.v);
+      const t = today();
+      const bills = await loadRecurringBills(rvFetch, t);
+      const list = await getList(false);
+      const info = {}; for (const o of list.owners || []) for (const p of o.properties || []) info[String(p.propertyID)] = { address: p.address, owner: o.name };
+      const out = { asOf: new Date().toISOString(), billsRead: bills.length, ...findRecurring(bills, info, { todayISO: t, skipAccounts: [MGMT_FEE_ACCOUNT_ID] }) };
+      recCache = { at: Date.now(), v: out };
+      res.json(out);
+    } catch (e) { console.error('payouts recurring', e); res.status(500).json({ error: String(e.message || e).slice(0, 300) }); }
+  });
+
   app.get('/api/payouts/heads-up', async (req, res) => {
     if (!guard(req, res)) return;
     try {
