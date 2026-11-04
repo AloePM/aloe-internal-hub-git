@@ -48,6 +48,22 @@ tr.dup td{background:var(--amberbg)}tr.old td{color:var(--mute)}
 #hu .acts input[type=text]{padding:6px 9px;border:1px solid var(--line);border-radius:8px;min-width:200px}
 #hu .res{margin:8px 0;padding:8px 12px;border-radius:8px;background:#fff;border:1px solid var(--line)}
 #hu button.go{background:var(--tealdk);color:#fff;border-color:var(--tealdk)}
+
+.modal{position:fixed;inset:0;background:rgba(27,43,52,.5);z-index:50;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px}
+.modal[hidden]{display:none}
+.stbox{background:#fff;border-radius:12px;max-width:1000px;width:100%;padding:18px 22px 26px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.sthead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.sthead select,.sthead input{padding:6px 8px;border:1px solid var(--line);border-radius:8px;font:inherit}
+.stbox h2{margin:0;color:var(--tealdk);font-size:20px}.stbox h3{margin:16px 0 6px;font-size:15px;color:var(--tealdk)}
+.stbox table{width:100%;border-collapse:collapse;margin:4px 0 10px}
+.stbox th{background:var(--tealbg);color:var(--tealdk);font-size:12px;text-transform:uppercase;letter-spacing:.03em;padding:6px 8px;text-align:right}
+.stbox td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right}
+.stbox th.l,.stbox td.l{text-align:left}
+.stbox tr.tot td{font-weight:700;border-top:2px solid var(--line)}
+.chip{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:1px 8px;margin-left:6px;cursor:help}
+.chip.normal{background:#e3f4e6;color:#1f6b33}.chip.extra{background:#fbeccb;color:#8a5a06}.chip.jump{background:#f9dcdc;color:#9b2222}.chip.missing{background:#eef2f2;color:#4a5f64}.chip.new{background:#e4f6fb;color:#167a93}
+.stitem td{font-size:12px;color:var(--mute);padding-top:2px;padding-bottom:2px;border-bottom:none}
+@media print{body>*:not(#stm){display:none!important}#stm{position:static;background:none;padding:0;display:block!important}.stbox{box-shadow:none;max-width:none;padding:0}.sthead,.noprint{display:none!important}.stbox h3{break-after:avoid}.stbox table{break-inside:avoid}}
 </style></head>
 <body>
 <main>
@@ -82,6 +98,15 @@ tr.dup td{background:var(--amberbg)}tr.old td{color:var(--mute)}
     <div id="huBody" class="tiny" style="margin-top:8px">Open this to load. It only reads Rentvine. Nothing is created until you press a Create button.</div></details>
   <table id="t"><thead><tr id="head"></tr></thead><tbody id="body"></tbody></table>
 </main>
+<div class="modal" id="stm" hidden><div class="stbox">
+  <div class="sthead">
+    <button id="stPrev" title="Previous month">&larr;</button><input type="month" id="stMonth"><button id="stNext" title="Next month">&rarr;</button>
+    <label class="tiny">Compare with <select id="stCmp"><option value="prev">Previous month</option><option value="year">Same month last year</option></select></label>
+    <label class="tiny">View <select id="stView"><option value="internal">Internal (flags)</option><option value="owner">Owner (clean)</option></select></label>
+    <button id="stPrint" title="Print, or choose Save as PDF">Print / PDF</button><button id="stClose" style="margin-left:auto">Close</button>
+  </div>
+  <div id="stBody" class="tiny">Loading...</div>
+</div></div>
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -228,12 +253,13 @@ function detail(o, d) {
   const contrib = (o.contributions || []).length ? '<div class="prop"><div class="ph"><div><span class="addr">Owner contributions in the last 30 days</span><div class="muted tiny">Make sure this money is not sent back to the owner in the payout.</div></div><div class="nums"><span>Total <b>' + money(o.contribTotal) + '</b></span></div></div><table><thead><tr><th class="l">Date</th><th>Amount</th><th class="l g">Note</th></tr></thead><tbody>' + o.contributions.map((c) => '<tr class="dup"><td class="l">' + esc(mdy(c.date)) + '</td><td>' + money(c.amount) + '</td><td class="l g">' + esc(c.desc) + '</td></tr>').join('') + '</tbody></table></div>' : '';
   const props = o.properties.map((p) => {
     const rec = p.recurring.map((r) => esc(r.label) + ' ' + (r.amount ? money(r.amount) : '<span class="mark">amount?</span>')).join(', ');
-    return '<div class="prop"><div class="ph"><div><span class="addr">' + esc(p.address) + '</span>' + (p.billExpected ? ' <span class="mark" title="Open work order, bill expected">&#9873; bill expected</span>' : '') +
+    return '<div class="prop"><div class="ph"><div><a href="#" class="addr stl" data-oid="' + esc(o.ownerID) + '" data-pid="' + esc(p.propertyID) + '" title="Open this home\'s statement" style="text-decoration:underline dotted">' + esc(p.address) + '</a>' + (p.billExpected ? ' <span class="mark" title="Open work order, bill expected">&#9873; bill expected</span>' : '') +
       '<div class="muted tiny">' + esc(p.feePlan) + (rec ? ' &middot; expected: ' + rec : '') + '</div><div>' + propTags(p) + '</div></div>' +
       '<div class="nums"><span>Rent <b>' + money(p.rent) + '</b></span><span>Fee <b>' + money(p.fee) + '</b></span><span>Settled in <b>' + money(p.settledIn) + '</b></span>' + (p.nonOwnerRaw > 0 ? '<span title="Paid by the tenant toward charges that are not owner money, already taken out">Tenant charges <b>' + money(p.nonOwnerRaw) + '</b></span>' : '') + '<span>Net <b class="' + (p.net < 0 ? 'neg' : '') + '">' + money(p.net) + '</b></span></div></div>' +
       feeTable(p) + billTable(p) + '</div>';
   }).join('');
   return '<tr class="detail"><td colspan="10"><div class="inner">' +
+    '<div style="float:right"><button class="stl" data-oid="' + esc(o.ownerID) + '" title="Month-by-month statement for all of this owner\'s homes">Statement - all homes</button></div>' +
     '<div class="tiny" style="margin-bottom:6px"><b>Expected each month:</b> ' + money(o.expectedMonthly) + ' (rent ' + money(o.monthlyRent) + ' &minus; management fee ' + money(o.monthlyFee) + ')' + (o.amountSource === 'rentvine' ? ' &middot; Amount to pay is Rentvine\'s Distributable Amount' + (Math.abs(o.pageAmount - o.amountToPay) > 1 ? ' (page math says ' + money(o.pageAmount) + ')' : '') : ' &middot; Amount to pay is the page math (no Rentvine balance found)') + '</div>' +
     ((o.nonOwnerPaid > 0 || o.unpostedFee > 0 || o.recurringTotal > 0) && o.amountSource === 'rentvine' ? '<div class="tiny muted" style="margin-bottom:6px">Rentvine ' + money(o.rentvineRaw) + (o.nonOwnerPaid > 0 ? ' &minus; ' + money(o.nonOwnerPaid) + ' tenant charges that are not owner money (Resident Benefit Package etc.)' : '') + (o.unpostedFee > 0 ? ' &minus; ' + money(o.unpostedFee) + ' management fee not posted yet' : '') + (o.recurringTotal > 0 ? ' &minus; ' + money(o.recurringTotal) + ' expected recurring bills not posted yet' : '') + ' = ' + money(o.amountToPay) + '</div>' : '') +
     (flags ? '<ul class="flags">' + flags + '</ul>' : '') + contrib + props +
@@ -329,6 +355,74 @@ $('#hu').addEventListener('click', async (e) => {
 $('#refresh').addEventListener('click', () => load(true));
 head();
 load();
+
+// ---- Statements (click an address, or "Statement - all homes"). Read-only. Addresses only, never tenant names.
+let st = { oid: '', pid: '', month: '', cmp: 'prev', view: 'internal', data: null };
+const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const mLabel = (m) => MN[Number(m.slice(5, 7)) - 1] + ' ' + m.slice(0, 4);
+const mShort = (m) => MN[Number(m.slice(5, 7)) - 1].slice(0, 3) + ' ' + m.slice(2, 4);
+const nowMonth = () => new Date().toLocaleDateString('en-CA', {timeZone: 'America/Phoenix'}).slice(0, 7);
+const addM = (m, n) => { let y = Number(m.slice(0, 4)), k = Number(m.slice(5, 7)) - 1 + n; y += Math.floor(k / 12); k = ((k % 12) + 12) % 12; return y + '-' + String(k + 1).padStart(2, '0'); };
+const delta = (a, b) => { const d = Math.round((a - b) * 100) / 100; return d === 0 ? '<span class="muted">&ndash;</span>' : (d > 0 ? '+' : '') + money(d); };
+const CHIP = {
+  normal: ['Normal', 'Same vendor billed this home in each of the last 3 months'],
+  extra: ['Extra', 'Not billed every month'],
+  jump: ['Amount changed', ''],
+  missing: ['Not billed yet', 'Billed every month, not billed yet this month'],
+  new: ['New home', 'Not enough history to call this normal'],
+};
+function stChip(g) { const c = CHIP[g.flag]; return c ? '<span class="chip ' + g.flag + '" title="' + esc(g.note || c[1]) + '">' + c[0] + '</span>' : ''; }
+function stHome(p, internal) {
+  const rows = (lab, a, b, bold) => '<tr' + (bold ? ' class="tot"' : '') + '><td class="l">' + lab + '</td><td>' + money(a) + '</td><td>' + money(b) + '</td><td>' + delta(a, b) + '</td></tr>';
+  const sum = '<table><thead><tr><th class="l"></th><th>' + esc(mLabel(p.month)) + '</th><th>' + esc(mLabel(p.compareMonth)) + '</th><th>Change</th></tr></thead><tbody>' +
+    rows('Money received', p.received, p.compare.received) + rows('Expenses', p.expenses, p.compare.expenses) + rows('Management fee', p.fee, p.compare.fee) + rows('Net for the month', p.net, p.compare.net, true) +
+    (p.paidOut || p.compare.paidOut ? rows('Paid to owner', p.paidOut, p.compare.paidOut) : '') + '</tbody></table>';
+  const gr = p.groups.map((g) => '<tr><td class="l"><b>' + esc(g.vendor) + '</b>' + (internal ? stChip(g) : '') + '</td><td>' + (g.total ? money(g.total) : '&ndash;') + '</td><td>' + (g.compare ? money(g.compare) : '&ndash;') + '</td><td>' + delta(g.total, g.compare) + '</td></tr>' +
+    g.items.map((i) => '<tr class="stitem"><td class="l">&nbsp;&nbsp;' + esc(mdy(i.date)) + ' &middot; ' + esc(i.desc || i.account) + (internal && !i.paid ? ' <span class="mark">unpaid</span>' : '') + '</td><td>' + money(i.amount) + '</td><td></td><td></td></tr>').join('')).join('');
+  const exp = '<h3>Expenses by vendor</h3>' + (gr ? '<table><thead><tr><th class="l">Vendor</th><th>' + esc(mShort(p.month)) + '</th><th>' + esc(mShort(p.compareMonth)) + '</th><th>Change</th></tr></thead><tbody>' + gr + '</tbody></table>' : '<div class="muted">No expenses this month.</div>');
+  const tc = internal && p.tenantCharged > 0 ? '<div class="muted tiny">Also billed to the tenant (not owner money): ' + money(p.tenantCharged) + '</div>' : '';
+  const tr = '<h3>Last 12 months</h3><table><thead><tr><th class="l">Month</th><th>Received</th><th>Expenses</th><th>Mgmt fee</th><th>Net</th></tr></thead><tbody>' +
+    p.series.map((x) => '<tr' + (x.month === p.month ? ' class="tot"' : '') + '><td class="l">' + esc(mShort(x.month)) + '</td><td>' + money(x.received) + '</td><td>' + money(x.expenses) + '</td><td>' + money(x.fee) + '</td><td>' + money(x.net) + '</td></tr>').join('') + '</tbody></table>';
+  return '<h3 style="font-size:17px">' + esc(p.address) + '</h3>' + sum + exp + tc + tr;
+}
+function stRender() {
+  const d = st.data, internal = st.view === 'internal', el = $('#stBody');
+  if (!d) return;
+  if (d.error) { el.innerHTML = '<span class="neg">' + esc(d.error) + '</span>'; return; }
+  const t = d.totals, multi = d.properties.length > 1;
+  let h = '<h2>' + (d.singleHome ? 'Home statement' : 'Owner statement') + ' &middot; ' + esc(mLabel(d.month)) + '</h2><div class="muted" style="margin-bottom:8px">' + esc(d.ownerName) + ' &middot; compared with ' + esc(mLabel(d.compareMonth)) + '</div>';
+  if (multi) {
+    h += '<h3>All ' + d.properties.length + ' homes</h3><table><thead><tr><th class="l"></th><th>' + esc(mLabel(d.month)) + '</th><th>' + esc(mLabel(d.compareMonth)) + '</th><th>Change</th></tr></thead><tbody>' +
+      [['Money received', 'received'], ['Expenses', 'expenses'], ['Management fee', 'fee'], ['Net for the month', 'net'], ['Paid to owner', 'paidOut']].map(([l, k]) => '<tr' + (k === 'net' ? ' class="tot"' : '') + '><td class="l">' + l + '</td><td>' + money(t[k]) + '</td><td>' + money(t.compare[k]) + '</td><td>' + delta(t[k], t.compare[k]) + '</td></tr>').join('') + '</tbody></table>' +
+      '<h3>Last 12 months, all homes</h3><table><thead><tr><th class="l">Month</th><th>Received</th><th>Expenses</th><th>Mgmt fee</th><th>Net</th></tr></thead><tbody>' + d.series.map((x) => '<tr' + (x.month === d.month ? ' class="tot"' : '') + '><td class="l">' + esc(mShort(x.month)) + '</td><td>' + money(x.received) + '</td><td>' + money(x.expenses) + '</td><td>' + money(x.fee) + '</td><td>' + money(x.net) + '</td></tr>').join('') + '</tbody></table>';
+  }
+  h += d.properties.map((p) => '<div style="break-before:auto">' + stHome(p, internal) + '</div>').join('<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">');
+  if (d.warnings && d.warnings.length && internal) h += '<div class="muted tiny noprint">Note: ' + esc(d.warnings.join('; ')) + '</div>';
+  h += '<div class="muted tiny" style="margin-top:10px">Money received comes from Rentvine settlements; expenses are bills posted in the month. As of ' + esc(new Date(d.asOf).toLocaleString()) + '.</div>';
+  el.innerHTML = h;
+}
+async function stLoad() {
+  $('#stBody').textContent = 'Loading from Rentvine (a few seconds)...'; st.data = null;
+  try {
+    const q = new URLSearchParams({ownerID: st.oid, month: st.month, compare: st.cmp}); if (st.pid) q.set('propertyID', st.pid);
+    const r = await fetch('/api/payouts/statement?' + q, {credentials: 'same-origin'});
+    st.data = await r.json(); if (!r.ok) st.data = {error: st.data.error || ('Error ' + r.status)};
+  } catch (err) { st.data = {error: err.message}; }
+  stRender();
+}
+function stOpen(oid, pid) {
+  st.oid = oid; st.pid = pid || ''; st.month = st.month || nowMonth();
+  $('#stMonth').value = st.month; $('#stMonth').max = nowMonth(); $('#stm').hidden = false; stLoad();
+}
+document.addEventListener('click', (e) => { const a = e.target.closest('.stl'); if (!a) return; e.preventDefault(); e.stopPropagation(); stOpen(a.dataset.oid, a.dataset.pid); });
+$('#stClose').onclick = () => { $('#stm').hidden = true; };
+$('#stm').addEventListener('click', (e) => { if (e.target.id === 'stm') $('#stm').hidden = true; });
+$('#stMonth').onchange = (e) => { if (/^\d{4}-\d{2}$/.test(e.target.value) && e.target.value <= nowMonth()) { st.month = e.target.value; stLoad(); } };
+$('#stPrev').onclick = () => { st.month = addM(st.month, -1); $('#stMonth').value = st.month; stLoad(); };
+$('#stNext').onclick = () => { if (addM(st.month, 1) <= nowMonth()) { st.month = addM(st.month, 1); $('#stMonth').value = st.month; stLoad(); } };
+$('#stCmp').onchange = (e) => { st.cmp = e.target.value; stLoad(); };
+$('#stView').onchange = (e) => { st.view = e.target.value; stRender(); };
+$('#stPrint').onclick = () => { const was = st.view; if (was !== 'owner' && !confirm('Print the internal view (with flags)? Choose Owner (clean) to print one to send to the owner.')) return; window.print(); };
 </script>
 <script src="/hub-shell.js">
 </script>

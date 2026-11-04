@@ -7,6 +7,7 @@ import { portfolio, recurringExpected, FLAG_TEXT } from './payouts-data.js';
 import { buildPreview, runBatch } from './headsup.js';
 import { findRecurring, recurringWindow, expectedFromHistory } from './recurring.js';
 import { parseSetup, mergeSetup } from './recurring-setup.js';
+import { buildStatement, addMonths, LOOKBACK_MONTHS } from './statement.js';
 import { sessionOk } from './maintenance-routes.js';
 
 export const TRUST_BANK_ACCOUNT_ID = 129;
@@ -543,6 +544,26 @@ export function makeSlackNotifier(env = process.env, fetchImpl = (...a) => fetch
 }
 // Bills posted in the last six full months, in a small column set, for the recurring-bill finder
 const RBILL_COLS = ['propertyID', 'chargeAccountID', 'chargeAccountName', 'datePosted', 'amount', 'isVoided', 'isSuppressed', 'description', 'contactName'];
+// Bills and payments for one owner's homes, 14 months back, for the statements. Read-only. Tries to let Rentvine filter by portfolio / property;
+// if a filter is refused it falls back to the next one and finally to a date-only read filtered here.
+export async function loadStatementData(rvFetch, propertyIDs, portfolioID, ym) {
+  const from = addMonths(ym, -(LOOKBACK_MONTHS - 1)) + '-01', to = new Date(Date.parse(addMonths(ym, 1) + '-01T12:00:00Z') - 864e5).toISOString().slice(0, 10);
+  const ids = new Set(propertyIDs.map(String)), warnings = [];
+  const dateF = (name) => ({ name, comparator: 'betweenDate', startDate: from, endDate: to });
+  let bills = null;
+  for (const f of [{ name: 'portfolioID', comparator: 'equals', value: String(portfolioID) }, { name: 'propertyID', comparator: 'in', values: [...ids] }, null]) {
+    try { bills = await allPages(rvFetch, 'payables', { displayColumns: BILL_COLS, filters: [dateF('datePosted'), ...(f ? [f] : [])] }, { fields: BILL_COLS, max: f ? 40 : 80 }); if (!f) bills = bills.filter((b) => ids.has(String(b.propertyID))); break; }
+    catch (e) { warnings.push('bills filter ' + (f ? f.name : 'date only') + ': ' + String(e.message || e).slice(0, 120)); }
+  }
+  let settle = null;
+  for (const f of [{ name: 'propertyID', comparator: 'in', values: [...ids] }, null]) {
+    try { settle = await allPages(rvFetch, 'settlement-detail', { displayColumns: SETTLE_COLS, filters: [dateF('settlementDate'), ...(f ? [f] : [])] }, { fields: SETTLE_COLS, max: f ? 40 : 80 }); if (!f) settle = settle.filter((x) => ids.has(String(x.propertyID))); break; }
+    catch (e) { warnings.push('payments filter ' + (f ? f.name : 'date only') + ': ' + String(e.message || e).slice(0, 120)); }
+  }
+  if (!bills || !settle) throw new Error('Rentvine could not be read for this statement (' + warnings.join('; ') + ')');
+  return { bills, settle, warnings };
+}
+
 // Rentvine's own Recurring Bills list (bills already set up to post monthly). Failure-tolerant: the caller falls back to billing history.
 export async function loadRecurringSetup(rvFetch) {
   return allPages(rvFetch, 'recurring-bills-detail', { filters: [] }, { max: 10 });
@@ -648,6 +669,28 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
     return v;
   }
   // Recurring bills: homes that get the same type of bill month after month (same vendor or not). Loaded only when asked for; cached 30 minutes.
+  // Statement for one home or one owner's homes, one month, compared with another month. Read-only, cached 10 minutes.
+  const stCache = new Map();
+  app.get('/api/payouts/statement', async (req, res) => {
+    if (!guard(req, res)) return;
+    try {
+      const month = String(req.query.month || today().slice(0, 7)), compare = String(req.query.compare || 'prev');
+      if (!/^\d{4}-\d{2}$/.test(month) || month > today().slice(0, 7)) return res.status(400).json({ error: 'Pick a month that is not in the future (YYYY-MM).' });
+      if (!['prev', 'year'].includes(compare) && !/^\d{4}-\d{2}$/.test(compare)) return res.status(400).json({ error: 'Bad compare month.' });
+      const list = await getList(false);
+      const o = list.owners.find((x) => String(x.ownerID) === String(req.query.ownerID));
+      if (!o) return res.status(404).json({ error: 'Owner not found in the current list.' });
+      const only = req.query.propertyID ? String(req.query.propertyID) : '';
+      const props = o.properties.filter((p) => !only || String(p.propertyID) === only).map((p) => ({ propertyID: p.propertyID, address: p.address }));
+      if (!props.length) return res.status(404).json({ error: 'Property not found for this owner.' });
+      const key = o.ownerID + '|' + month;
+      let data = stCache.get(key);
+      if (!data || Date.now() - data.at > 10 * 60 * 1000) { data = { at: Date.now(), v: await loadStatementData(rvFetch, o.properties.map((p) => p.propertyID), o.portfolioID || o.ownerID, month) }; stCache.set(key, data); if (stCache.size > 40) stCache.delete(stCache.keys().next().value); }
+      const st = buildStatement({ ownerName: o.name, properties: props, bills: data.v.bills, settle: data.v.settle, month, compare });
+      res.json({ ...st, asOf: new Date(data.at).toISOString(), warnings: data.v.warnings, singleHome: !!only });
+    } catch (e) { console.error('payouts statement', e); res.status(502).json({ error: String(e.message || e).slice(0, 300) }); }
+  });
+
   app.get('/api/payouts/recurring', async (req, res) => {
     if (!guard(req, res)) return;
     try { res.json(await getRecurring(req.query.refresh === '1')); }
