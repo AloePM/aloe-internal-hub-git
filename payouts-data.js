@@ -38,7 +38,7 @@ export function propertyRow(p) {
     feePosted: p.feePosted === undefined ? fee > 0 : !!p.feePosted,
     unpaidBills: dollars(billsC), bills,
     recurring: p.recurring || [], recurringTotal: dollars(recC),
-    billExpected: !!p.billExpected,
+    billExpected: !!p.billExpected, recurringVendors: p.recurringVendors || [],
     billHistory: p.billHistory || [], feeChecks: p.feeChecks || [], lateRent: p.lateRent || null, lease: p.lease || null, tags: p.tags || [], moveOutSoon: !!p.moveOutSoon, vacant: !!p.vacant, vacantDays: p.vacantDays ?? null,
     // settled money less the fee and the expenses for this property
     net: dollars(settled - fee - billsC - recC),
@@ -92,7 +92,41 @@ export function ownerRow(o, opts = {}) {
     lastPayout: last == null ? null : dollars(last), lastPayoutDate: o.lastPayoutDate || null, neverPaid: last == null, newOwner: !!o.newOwner, contributions: o.contributions || [], contribTotal: dollars((o.contributions || []).reduce((t, c) => t + cents(c.amount), 0)),
     tagCounts: Object.fromEntries(['new_move_in', 'move_out_30', 'move_out_month', 'move_out_next', 'vacant', 'no_fee', 'new_property', 'fee_missing', 'fee_check', 'fee_ok', 'fee_due', 'fee_skip', 'late_cleared', 'late_pending', 'movein_cleared', 'movein_pending', 'fee_prorate', 'fee_prorate_due'].map((k) => [k, rows.filter((r) => (r.tags || []).some((t) => t.key === k)).length])),
     flags, status: flags.length ? 'Needs a look' : 'Looks fine', needsLook,
+    ...(({ queue, reason }) => ({ queue, queueReason: reason }))(classifyQueue({ rows, flags, amountC: amountToPay, expectedC: monthlyRent - monthlyFee, recurringC })),
   };
+}
+
+// Payout queue: which bucket an owner belongs in, and a one-line reason.
+//   ready            amount equals expected rent minus fee, only the management fee bill
+//   normal_recurring only normal recurring bills (pool, landscaping, pest, owner admin charge, HOA, set-up recurring bills)
+//   extra            other bills (the reason lists them)
+//   moves            moving out soon, vacant, new owner or a new move-in
+//   needs_look       something to check first (below $0, open work order, fee problem, amount not explained...)
+const SERVICE_ACCTS = [83, 79, 77];
+const BLOCKING = ['below_zero', 'bill_expected', 'owner_contribution', 'placement_fee', 'fee_prorate', 'recurring_unknown'];
+const nv = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const m2 = (c) => '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export function classifyQueue({ rows, flags, amountC, expectedC, recurringC }) {
+  const counted = [];
+  for (const r of rows) for (const b of r.billHistory || []) if (b.counted && b.accountID !== 93) counted.push({ b, r });
+  const isNormal = ({ b, r }) => SERVICE_ACCTS.includes(Number(b.accountID)) || /owner\s*admin|hoa/i.test(b.account || '') || (r.recurringVendors || []).some((v) => nv(v) && nv(v) === nv(b.vendor));
+  const normal = counted.filter(isNormal), extra = counted.filter((x) => !isNormal(x));
+  const label = ({ b }) => (b.account || b.vendor || 'Bill') + ' ' + m2(Math.round((Number(b.amount) || 0) * 100));
+  const list = (arr) => arr.slice(0, 3).map(label).join(', ') + (arr.length > 3 ? ' +' + (arr.length - 3) + ' more' : '');
+  const normalC = normal.reduce((t, x) => t + Math.round((Number(x.b.amount) || 0) * 100), 0) + recurringC;
+  const moves = rows.some((r) => r.moveOutSoon || r.vacant) || flags.includes('new_owner') || rows.some((r) => (r.tags || []).some((t) => t.key === 'new_move_in'));
+  const blockers = flags.filter((f) => BLOCKING.includes(f));
+  const T = { below_zero: 'Below $0', bill_expected: 'Open work order, bill expected', owner_contribution: 'Owner added money recently', placement_fee: 'Placement fee to check', fee_prorate: 'Management fee should be prorated', recurring_unknown: 'A recurring bill has no amount' };
+  if (blockers.length || amountC < 0) { const t = (amountC < 0 && !blockers.includes('below_zero') ? ['Below $0'] : blockers.map((f) => T[f])); return { queue: 'needs_look', reason: t.slice(0, 2).join(' · ') + (t.length > 2 ? ' +' + (t.length - 2) + ' more' : '') }; }
+  if (moves) {
+    const parts = []; if (rows.some((r) => r.moveOutSoon)) parts.push('Moving out soon'); if (rows.some((r) => r.vacant)) parts.push('Vacant home'); if (flags.includes('new_owner')) parts.push('New owner'); if (rows.some((r) => (r.tags || []).some((t) => t.key === 'new_move_in'))) parts.push('New move-in');
+    return { queue: 'moves', reason: parts.join(' · ') };
+  }
+  if (extra.length) return { queue: 'extra', reason: list(extra) };
+  const diff = amountC - (expectedC - normalC);
+  if (Math.abs(diff) > 100) return { queue: 'needs_look', reason: 'Amount ' + m2(amountC) + ', expected ' + m2(expectedC - normalC) + ' - not explained by bills' };
+  if (normalC > 0) return { queue: 'normal_recurring', reason: normal.length ? list(normal) + (recurringC > 0 ? ' + expected ' + m2(recurringC) : '') : 'Expected recurring ' + m2(recurringC) };
+  return { queue: 'ready', reason: 'Equals expected rent minus fee' };
 }
 
 export function portfolio(owners, opts) {

@@ -70,6 +70,16 @@ tr.dup td{background:var(--amberbg)}tr.old td{color:var(--mute)}
   <h1>Owner Payouts</h1>
   <p class="sub" id="sub">Loading from Rentvine...</p>
   <div class="note" id="stor" hidden>Decisions are not being saved yet. They will clear when you reload.</div>
+  <div class="bar" id="qbar" title="Payout queue">
+    <b class="tiny" style="color:var(--mute)">Payout queue</b>
+    <button data-q="all" class="on">All</button>
+    <button data-q="ready" title="Amount equals expected rent minus fee, and the only bill is the management fee">Ready to pay <b></b></button>
+    <button data-q="normal_recurring" title="Only normal recurring bills (pool, landscaping, pest, owner admin charge, HOA, set-up recurring bills)">Normal recurring only <b></b></button>
+    <button data-q="extra" title="Other bills this period. The reason under the owner's name lists them">Extra bills <b></b></button>
+    <button data-q="moves" title="Moving out soon, vacant, new owner or new move-in">Moves <b></b></button>
+    <button data-q="needs_look" title="Something to check first: below $0, open work order, fee problem, or an amount bills do not explain">Needs a look <b></b></button>
+    <button id="qCsv" title="Download the owners shown below as a list" style="margin-left:auto">Download list</button>
+  </div>
   <div class="bar">
     <input type="search" id="q" placeholder="Search owner or address">
     <button id="fAll" class="on">All</button><button id="fLook">Needs a look</button><button id="fOk">Looks fine</button><button id="fReady" title="Late rent has cleared since the last payout">Ready to pay now <b id="readyN"></b></button>
@@ -112,7 +122,7 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = (n) => (n < 0 ? '-' : '') + '$' + Math.abs(Number(n) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const mdy = (iso) => iso ? iso.slice(5, 7) + '/' + iso.slice(8, 10) + '/' + iso.slice(0, 4) : '';
-let data = null, filter = 'all', paid = 'all', ten = 'all', alertSel = 'all', open = new Set(), sortKey = null, sortDir = 1;
+let data = null, queue = 'all', filter = 'all', paid = 'all', ten = 'all', alertSel = 'all', open = new Set(), sortKey = null, sortDir = 1;
 
 const COLS = [
   ['name', 'Owner', 'l'], ['expectedMonthly', 'Expected / month'], ['amountToPay', 'Amount to pay'], ['unpaidBills', 'Unpaid bills'], ['fees', 'Mgmt fees'], ['settledIn', 'Settled in'],
@@ -203,8 +213,10 @@ function sortVal(o, k) {
 
 function render() {
   { const n = data.owners.filter((o) => (o.tagCounts || {}).late_cleared > 0).length; $('#readyN').textContent = n ? '(' + n + ')' : ''; }
+  for (const b of document.querySelectorAll('#qbar button[data-q]')) { const k = b.dataset.q; if (k !== 'all') b.querySelector('b').textContent = '(' + data.owners.filter((o) => o.queue === k).length + ')'; }
   const q = $('#q').value.trim().toLowerCase();
   let rows = data.owners.filter((o) => {
+    if (queue !== 'all' && o.queue !== queue) return false;
     if (filter === 'look' && !o.flags.length) return false;
     if (filter === 'ok' && o.flags.length) return false;
     if (filter === 'ready' && !((o.tagCounts || {}).late_cleared > 0)) return false;
@@ -223,7 +235,7 @@ function render() {
   if (sortKey) rows = rows.slice().sort((a, b) => { const x = sortVal(a, sortKey), y = sortVal(b, sortKey); return (x < y ? -1 : x > y ? 1 : 0) * sortDir; });
   $('#body').innerHTML = rows.map((o) => {
     const d = data.decisions[o.ownerID];
-    const main = '<tr class="owner" data-id="' + esc(o.ownerID) + '"><td>' + ownerDot(o) + esc(o.name) + ' <span class="muted tiny">(' + o.properties.length + ')</span>' + (d ? ' <span class="pill ok">' + esc(d.action.replace('_', ' ')) + '</span>' : '') + '<div>' + ownerTags(o) + '</div></td>' +
+    const main = '<tr class="owner" data-id="' + esc(o.ownerID) + '"><td>' + ownerDot(o) + esc(o.name) + ' <span class="muted tiny">(' + o.properties.length + ')</span>' + (d ? ' <span class="pill ok">' + esc(d.action.replace('_', ' ')) + '</span>' : '') + (o.queueReason ? '<div class="muted tiny">' + esc(o.queueReason) + '</div>' : '') + '<div>' + ownerTags(o) + '</div></td>' +
       '<td title="Rent minus management fee, per month">' + money(o.expectedMonthly) + '</td>' +
       '<td class="' + (o.amountToPay < 0 ? 'neg' : '') + '"' + (o.amountToPay < 0 ? ' title="Below $0 - expenses are more than cleared money"' : '') + '><b>' + money(o.amountToPay) + '</b>' + amountNote(o) + '</td>' +
       '<td>' + money(o.unpaidBills) + '</td><td>' + money(o.fees) + '</td><td>' + money(o.settledIn) + '</td><td>' + money(o.recurringTotal) + '</td><td>' + money(o.reserve) + '</td><td>' + (o.lastPayout == null ? (isNewish(o) ? '<span class="muted">1st payout *</span>' : '<span class="muted">none in 3 months</span>') : money(o.lastPayout) + '<div class="muted tiny">' + esc(mdy(o.lastPayoutDate)) + '</div>') + '</td><td class="l">' + statusPill(o) + '</td></tr>';
@@ -284,6 +296,17 @@ $('#selPaid').addEventListener('change', (e) => { paid = e.target.value; if (dat
 $('#selAlert').addEventListener('change', (e) => { alertSel = e.target.value; if (data) render(); });
 $('#selTen').addEventListener('change', (e) => { ten = e.target.value; if (data) render(); });
 for (const [id, f] of [['fAll', 'all'], ['fLook', 'look'], ['fOk', 'ok'], ['fReady', 'ready']]) $('#' + id).addEventListener('click', () => { filter = f; for (const x of ['fAll', 'fLook', 'fOk', 'fReady']) $('#' + x).classList.toggle('on', x === id); if (data) render(); });
+
+for (const b of document.querySelectorAll('#qbar button[data-q]')) b.addEventListener('click', () => { queue = b.dataset.q; for (const x of document.querySelectorAll('#qbar button[data-q]')) x.classList.toggle('on', x === b); if (data) render(); });
+const QN = { ready: 'Ready to pay', normal_recurring: 'Normal recurring only', extra: 'Extra bills', moves: 'Moves', needs_look: 'Needs a look' };
+$('#qCsv').addEventListener('click', () => {
+  if (!data) return;
+  const qs = $('#q').value.trim().toLowerCase();
+  const list = data.owners.filter((o) => (queue === 'all' || o.queue === queue) && (!qs || o.name.toLowerCase().includes(qs) || o.properties.some((p) => p.address.toLowerCase().includes(qs))));
+  const c = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const csv = [['Owner', 'Homes', 'Amount to pay', 'Expected / month', 'Queue', 'Reason'].map(c).join(',')].concat(list.map((o) => [o.name, o.properties.length, o.amountToPay.toFixed(2), o.expectedMonthly.toFixed(2), QN[o.queue] || o.queue, o.queueReason].map(c).join(','))).join('\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); a.download = 'payout-queue-' + (queue === 'all' ? 'all' : queue) + '.csv'; a.click();
+});
 
 // ---- Owner heads-up emails (drafts in Aptly; nothing is ever sent from here) ----
 let hu = null; const huSel = new Set(), huOpen = new Set(); let huRes = '';
