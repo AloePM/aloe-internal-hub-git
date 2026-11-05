@@ -13,6 +13,7 @@ button{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink
 .card b{display:block;font-size:20px}.card.h b{color:var(--amber)}.card.o b{color:var(--tealdk)}.card.a b{color:var(--red)}
 .note{background:var(--amberbg);border:1px solid #ecd9a6;border-radius:8px;padding:8px 12px;margin:0 0 12px;color:#6b4a0c}.note.err{background:var(--redbg);border-color:#e8b4ad;color:var(--red)}
 table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th.s{cursor:pointer;user-select:none}th.s:hover{background:#d3eff8}
 th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--tealdk);background:var(--tealbg)}
 td.r,th.r{text-align:right;white-space:nowrap}.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600}.hold{background:var(--amberbg);color:var(--amber)}.ok{background:var(--tealbg);color:var(--tealdk)}.bad{background:var(--redbg);color:var(--red)}
 .small{font-size:12px;color:var(--mute)}.empty{padding:16px;color:var(--mute);background:#fff;border:1px solid var(--line);border-radius:10px}
@@ -31,7 +32,10 @@ let D=null;const $=id=>document.getElementById(id);
 const money=n=>(n<0?'-':'')+'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function filtered(rows){const q=$('q').value.toLowerCase().trim(),a=$('acct').value;return rows.filter(r=>(!a||r.account===a)&&(!q||[r.tenant,r.address,r.portfolio,r.account].join(' ').toLowerCase().includes(q)));}
-function tbl(rows,cols,emptyMsg){if(!rows.length)return '<div class="empty">'+emptyMsg+'</div>';return '<table><thead><tr>'+cols.map(c=>'<th class="'+(c.r?'r':'')+'">'+c.h+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td class="'+(c.r?'r':'')+'">'+c.f(r)+'</td>').join('')+'</tr>').join('')+'</tbody></table>';}
+const SORT={};const cmp=(a,b)=>typeof a==='number'&&typeof b==='number'?a-b:String(a==null?'':a).localeCompare(String(b==null?'':b),undefined,{sensitivity:'base',numeric:true});
+function sortBy(id,i){const c=SORT[id]||{};SORT[id]={i,d:c.i===i?-(c.d||1):1};render();}
+function tbl(id,rows,cols,emptyMsg){if(!rows.length)return '<div class="empty">'+emptyMsg+'</div>';const st=SORT[id];if(st&&cols[st.i]&&cols[st.i].k)rows=rows.slice().sort((a,b)=>st.d*cmp(cols[st.i].k(a),cols[st.i].k(b))||cmp(a.portfolio,b.portfolio)||cmp(a.tenant,b.tenant));
+ return '<table><thead><tr>'+cols.map((c,i)=>'<th class="'+(c.r?'r':'')+(c.k?' s':'')+'"'+(c.k?' onclick="sortBy(\''+id+'\','+i+')"':'')+'>'+c.h+(st&&st.i===i?(st.d>0?' ▲':' ▼'):'')+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td class="'+(c.r?'r':'')+'">'+c.f(r)+'</td>').join('')+'</tr>').join('')+'</tbody></table>';}
 const who=r=>'<b>'+esc(r.tenant||'(tenant unknown)')+'</b><div class="small">'+esc(r.address)+'</div>';
 function render(){
  if(!D)return;const st=D.totals;
@@ -39,14 +43,14 @@ function render(){
  $('msg').innerHTML=(D.warnings||[]).map(w=>'<div class="note">'+esc(w)+'</div>').join('');
  $('cards').innerHTML='<div class="card h"><b>'+st.hold+' / '+money(st.holdAmount)+'</b>On hold</div><div class="card o"><b>'+st.ok+' / '+money(st.okAmount)+'</b>OK to post</div><div class="card"><b>'+st.posted+'</b>Already posted</div><div class="card a"><b>'+(st.alerts+st.early)+'</b>To check</div>';
  const hold=filtered(D.rows.filter(r=>r.state==='hold')),ok=filtered(D.rows.filter(r=>r.state==='ok'));
- const base=[{h:'Tenant / home',f:who},{h:'Portfolio',f:r=>esc(r.portfolio)},{h:'Fee',f:r=>esc(r.account)+'<div class="small">charged '+esc(r.feeDate)+'</div>'},{h:'Paid by tenant',r:1,f:r=>money(r.paid)}];
- $('hold').innerHTML=tbl(hold,base.concat([{h:'Waiting to settle',f:r=>r.pending.map(p=>esc(p.date)+' '+money(p.amount)).join('<br>')},{h:'',f:r=>'<span class="pill hold">Hold</span>'}]),'Nothing on hold.');
- $('ok').innerHTML=tbl(ok,base.concat([{h:'Returned payments',f:r=>r.returned.length?'<span class="pill bad">'+r.returned.map(p=>esc(p.date)+' '+money(p.amount)).join(', ')+'</span>':''},{h:'',f:r=>'<span class="pill ok">OK to post</span>'}]),'Nothing is ready to post.');
+ const base=[{h:'Tenant / home',k:r=>r.tenant,f:who},{h:'Portfolio',k:r=>r.portfolio,f:r=>esc(r.portfolio)},{h:'Fee',k:r=>r.account,f:r=>esc(r.account)+'<div class="small">charged '+esc(r.feeDate)+'</div>'},{h:'Paid by tenant',r:1,k:r=>r.paid,f:r=>money(r.paid)}];
+ $('hold').innerHTML=tbl('hold',hold,base.concat([{h:'Waiting to settle',k:r=>r.pendingTotal,f:r=>r.pending.map(p=>esc(p.date)+' '+money(p.amount)).join('<br>')},{h:'',f:r=>'<span class="pill hold">Hold</span>'}]),'Nothing on hold.');
+ $('ok').innerHTML=tbl('ok',ok,base.concat([{h:'Returned payments',f:r=>r.returned.length?'<span class="pill bad">'+r.returned.map(p=>esc(p.date)+' '+money(p.amount)).join(', ')+'</span>':''},{h:'',f:r=>'<span class="pill ok">OK to post</span>'}]),'Nothing is ready to post.');
  const early=D.rows.filter(r=>r.early).map(r=>({tenant:r.tenant,address:r.address,portfolio:r.portfolio,account:r.account,msg:'Fee bill is already posted but this lease still has money waiting to settle ('+money(r.pendingTotal)+'). Watch it.',amt:r.paid}));
  const al=D.alerts.map(a=>({tenant:a.tenant,address:a.address,portfolio:a.portfolio,account:a.account,msg:'Billed '+money(a.billed)+' but the tenant has paid '+money(a.tenantPaid)+'. Reverse '+money(a.reverse)+'?',amt:a.reverse}));
- $('alerts').innerHTML=tbl(filtered(al.concat(early)),[{h:'Tenant / home',f:who},{h:'Portfolio',f:r=>esc(r.portfolio)},{h:'Fee',f:r=>esc(r.account)},{h:'What to check',f:r=>esc(r.msg)}],'Nothing to check.');
+ $('alerts').innerHTML=tbl('alerts',filtered(al.concat(early)),[{h:'Tenant / home',k:r=>r.tenant,f:who},{h:'Portfolio',k:r=>r.portfolio,f:r=>esc(r.portfolio)},{h:'Fee',k:r=>r.account,f:r=>esc(r.account)},{h:'What to check',f:r=>esc(r.msg)}],'Nothing to check.');
 }
-function csv(){const rows=filtered(D.rows),h=['Status','Tenant','Address','Portfolio','Fee account','Fee charged','Fee amount','Paid by tenant','Waiting payments','Waiting total'];
+function csv(){const rows=filtered(D.rows).slice().sort((a,b)=>cmp(a.portfolio,b.portfolio)||cmp(a.account,b.account)||cmp(a.tenant,b.tenant)),h=['Status','Tenant','Address','Portfolio','Fee account','Fee charged','Fee amount','Paid by tenant','Waiting payments','Waiting total'];
  const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
  const lines=[h.map(q).join(',')].concat(rows.map(r=>[r.state==='hold'?'Hold':r.state==='ok'?'OK to post':'Already posted',r.tenant,r.address,r.portfolio,r.account,r.feeDate,r.amount,r.paid,r.pending.map(p=>p.date+' '+p.amount).join('; '),r.pendingTotal].map(q).join(',')));
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));a.download='fee-hold-'+new Date().toISOString().slice(0,10)+'.csv';a.click();}
@@ -54,5 +58,5 @@ async function load(fresh){$('msg').innerHTML='<div class="note">Loading from Re
  try{const r=await fetch('/api/payouts/fee-hold'+(fresh?'?refresh=1':''),{credentials:'same-origin'});const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);D=j;
   const accts=[...new Set(D.rows.map(r=>r.account))].sort();$('acct').innerHTML='<option value="">All fee types</option>'+accts.map(a=>'<option>'+esc(a)+'</option>').join('');render();}
  catch(e){$('msg').innerHTML='<div class="note err">Could not load: '+esc(e.message)+'</div>';}}
-['q','acct'].forEach(i=>$(i).addEventListener('input',render));$('refresh').onclick=()=>load(true);$('csv').onclick=()=>D&&csv();load(false);
+['q','acct'].forEach(i=>$(i).addEventListener('input',render));$('refresh').onclick=()=>load(true);$('csv').onclick=()=>D&&csv();SORT.hold={i:1,d:1};SORT.ok={i:1,d:1};SORT.alerts={i:1,d:1};load(false);
 </script></body></html>
