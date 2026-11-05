@@ -8,7 +8,7 @@ import { buildPreview, runBatch } from './headsup.js';
 import { findRecurring, recurringWindow, expectedFromHistory } from './recurring.js';
 import { parseSetup, mergeSetup } from './recurring-setup.js';
 import { buildStatement, addMonths, LOOKBACK_MONTHS } from './statement.js';
-import { leaseIntervals, monthOccupancy, occupancySeries, rentHistory, rentChangesFrom, rentChangeExplain, rentLevels, levelEvents, explainEvents } from './occupancy.js';
+import { leaseIntervals, monthOccupancy, occupancySeries, rentHistory, rentChangesFrom, rentChangeExplain, rentLevels, levelEvents, explainEvents, leaseRentRows, rentGrowth } from './occupancy.js';
 import { sessionOk } from './maintenance-routes.js';
 
 export const TRUST_BANK_ACCOUNT_ID = 129;
@@ -730,7 +730,7 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       if (!data || Date.now() - data.at > 10 * 60 * 1000) { const ids = o.properties.map((p) => p.propertyID); const [sd, lh] = await Promise.all([loadStatementData(rvFetch, ids, o.portfolioID || o.ownerID, month), loadStatementLeases(rvFetch, ids).catch((e) => ({ leases: [], changes: [], warnings: ['lease history: ' + String(e.message || e).slice(0, 100)] }))]); data = { at: Date.now(), v: { ...sd, leases: lh.leases, changes: lh.changes, warnings: [...sd.warnings, ...lh.warnings] } }; stCache.set(key, data); if (stCache.size > 40) stCache.delete(stCache.keys().next().value); }
       const st = buildStatement({ ownerName: o.name, properties: props, bills: data.v.bills, settle: data.v.settle, month, compare, otherRows: data.v.other || [] });
       // occupancy and rent history per home (only when the lease read worked)
-      const todayISO = today(); let agg = null;
+      const todayISO = today(); let agg = null, allGrowth = null;
       if ((data.v.leases || []).length) {
         agg = { days: 0, occupied: 0, series: Array.from({ length: 12 }, (_, i) => ({ month: addMonths(month, i - 11), days: 0, occupied: 0 })) };
         for (const p of st.properties) {
@@ -738,14 +738,22 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
           const iv = leaseIntervals(mine, todayISO), cur = monthOccupancy(iv, month, todayISO), ser = occupancySeries(iv, month, todayISO);
           p.occupancy = { month: cur, series: ser };
           p.rentHistory = rentHistory(iv, data.v.changes.filter((c) => mine.some((l) => String(l.leaseID) === String(c.leaseID))));
-          p.rentLevels = rentLevels(data.v.rentRows || [], p.propertyID);
+          p.rentLevels = rentLevels(data.v.rentRows || [], p.propertyID, { starts: iv.map((l) => l.start), ends: iv.map((l) => l.end).filter(Boolean) });
+          p.leaseRent = leaseRentRows(iv, p.rentLevels); p.rentGrowth = rentGrowth(p.rentLevels, data.v.rentRows || [], p.propertyID, month);
           p.rentChange = p.rentLevels.length > 1 ? explainEvents(levelEvents(p.rentLevels), month) : rentChangeExplain(p.rentHistory, month);
           agg.days += cur.days; agg.occupied += cur.occupied; ser.forEach((x, i) => { agg.series[i].days += x.days; agg.series[i].occupied += x.occupied; });
+        }
+        // all homes together: only homes that have a rent on both dates are compared
+        const gh = st.properties.map((p) => p.rentGrowth).filter(Boolean);
+        if (gh.length) {
+          const ago = [1, 2, 3].map((y) => { const hs = st.properties.filter((p) => p.rentGrowth && p.rentGrowth.ago.some((x) => x.years === y)); if (!hs.length) return null; const now = hs.reduce((s, p) => s + p.rentGrowth.now, 0), then = hs.reduce((s, p) => s + p.rentGrowth.ago.find((x) => x.years === y).rent, 0); return { years: y, rent: Math.round(then * 100) / 100, change: Math.round((now - then) * 100) / 100, pct: then ? Math.round(((now - then) / then) * 1000) / 10 : null, homes: hs.length }; }).filter(Boolean);
+          const cb = gh.filter((g) => g.charged.last12 != null && g.charged.prev12 != null), l12 = cb.reduce((s, g) => s + g.charged.last12, 0), p12 = cb.reduce((s, g) => s + g.charged.prev12, 0);
+          allGrowth = { now: Math.round(gh.reduce((s, g) => s + g.now, 0) * 100) / 100, homes: gh.length, ago, charged: cb.length ? { last12: Math.round(l12 * 100) / 100, prev12: Math.round(p12 * 100) / 100, change: Math.round((l12 - p12) * 100) / 100 } : null };
         }
         const pc = (o2) => ({ ...o2, vacant: o2.days - o2.occupied, pct: o2.days ? Math.round((o2.occupied / o2.days) * 1000) / 10 : null });
         agg = { month: pc(agg), series: agg.series.map(pc) };
       }
-      res.json({ ...st, occupancy: agg, reserve: o.reserve ?? 0, asOf: new Date(data.at).toISOString(), warnings: data.v.warnings, singleHome: !!only });
+      res.json({ ...st, occupancy: agg, rentGrowth: allGrowth, reserve: o.reserve ?? 0, asOf: new Date(data.at).toISOString(), warnings: data.v.warnings, singleHome: !!only });
     } catch (e) { console.error('payouts statement', e); res.status(502).json({ error: String(e.message || e).slice(0, 300) }); }
   });
 

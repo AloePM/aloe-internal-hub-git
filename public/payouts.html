@@ -417,11 +417,25 @@ function vendorRows(p, internal) {
 function trendTable(series, month, occ) {
   const o = (m) => (occ || []).find((x) => x.month === m);
   return '<table><thead><tr><th class="l">Month</th><th>Received</th><th>Expenses</th><th>Mgmt fee</th><th>Net</th>' + (occ ? '<th>Occupied</th>' : '') + '</tr></thead><tbody>' +
-    series.map((x) => '<tr' + (x.month === month ? ' class="tot"' : '') + '><td class="l">' + esc(mShort(x.month)) + '</td><td>' + money(x.received) + '</td><td>' + money(x.expenses) + '</td><td>' + money(x.fee) + '</td><td>' + money(x.net) + '</td>' + (occ ? '<td>' + (o(x.month) && o(x.month).pct != null ? o(x.month).pct + '%' : '&ndash;') + '</td>' : '') + '</tr>').join('') + '</tbody></table>';
+    series.slice().reverse().map((x) => '<tr' + (x.month === month ? ' class="tot"' : '') + '><td class="l">' + esc(mShort(x.month)) + '</td><td>' + money(x.received) + '</td><td>' + money(x.expenses) + '</td><td>' + money(x.fee) + '</td><td>' + money(x.net) + '</td>' + (occ ? '<td>' + (o(x.month) && o(x.month).pct != null ? o(x.month).pct + '%' : '&ndash;') + '</td>' : '') + '</tr>').join('') + '</tbody></table>';
+}
+function growthHtml(g) {
+  if (!g) return '';
+  const chg = (x) => (x.change >= 0 ? '+' : '-') + money(Math.abs(x.change)) + (x.pct != null ? ' (' + (x.pct >= 0 ? '+' : '') + x.pct + '%)' : '');
+  const card = (k, v, d) => '<div class="card"><div class="k">' + k + '</div><div class="v">' + v + '</div><div class="d">' + d + '</div></div>';
+  let h = '<h3>Rent over time</h3><div class="cards">' + card('Monthly rent today', money(g.now), g.homes ? 'across ' + g.homes + ' home' + (g.homes > 1 ? 's' : '') : '');
+  for (const x of g.ago) h += card(x.years === 1 ? 'A year ago' : x.years + ' years ago', money(x.rent), chg(x) + (x.change > 0 ? ' &middot; ' + money(x.change * 12) + ' more per year' : ''));
+  if (g.charged && g.charged.change != null) h += card('Rent charged, last 12 months', money(g.charged.last12), chg({ change: g.charged.change, pct: g.charged.prev12 ? Math.round((g.charged.change / g.charged.prev12) * 1000) / 10 : null }) + ' vs the 12 months before');
+  return h + '</div>';
 }
 function rentNote(p) { return p.rentChange ? '<div class="expl" style="margin-top:10px"><h3>Rent change</h3><div>' + esc(p.rentChange.text) + '</div></div>' : ''; }
 function rentTable(p) {
-  const lv = p.rentLevels || [];
+  const lv = p.rentLevels || [], ls = p.leaseRent || [];
+  if (ls.length) {
+    const chg = (c, pct) => c == null ? '<span class="muted">first lease</span>' : (c === 0 ? '<span class="muted">no change</span>' : (c > 0 ? '+' : '-') + money(Math.abs(c)) + (pct != null ? ' (' + (pct > 0 ? '+' : '') + pct + '%)' : ''));
+    return '<h3>Lease history <span class="muted tiny noprint">(rent charged during each lease)</span></h3><table><thead><tr><th class="l">Lease started</th><th class="l">Ended</th><th>Rent</th><th>Change from previous lease</th><th class="l">Increases during the lease</th></tr></thead><tbody>' +
+      ls.slice().reverse().map((x) => '<tr><td class="l">' + esc(mdy(x.start)) + '</td><td class="l">' + (x.end ? esc(mdy(x.end)) : '<span class="muted">current</span>') + '</td><td>' + money(x.startRent) + (x.endRent !== x.startRent ? ' &rarr; ' + money(x.endRent) : '') + '</td><td>' + chg(x.changeFromPrevious, x.pctFromPrevious) + '</td><td class="l">' + (x.increases.length ? x.increases.map((i) => esc(mdy(i.date)) + ': ' + money(i.from) + ' &rarr; ' + money(i.to) + (i.pct != null ? ' (' + (i.pct > 0 ? '+' : '') + i.pct + '%)' : '')).join('<br>') : '<span class="muted">none</span>') + '</td></tr>').join('') + '</tbody></table>';
+  }
   if (lv.length) {
     const chg = (x) => x.change == null ? '<span class="muted">starting rent</span>' : (x.change > 0 ? '+' : '-') + money(Math.abs(x.change)) + ' (' + (x.pct > 0 ? '+' : '') + x.pct + '%)';
     return '<h3>Rent history <span class="muted tiny noprint">(rent charged to the tenant)</span></h3><table><thead><tr><th class="l">From</th><th class="l">Through</th><th>Monthly rent</th><th>Change</th></tr></thead><tbody>' +
@@ -447,6 +461,7 @@ function stRender() {
   if (d.month === nowMonth()) h += '<div class="muted" style="background:#fff7e0;border:1px solid #f0dca0;border-radius:8px;padding:8px 12px;margin:6px 0"><b>This month is still in progress.</b> It shows only what has been received so far, and the owner payout for it has not been made yet. Last month is the complete picture.</div>';
   h += cardsHtml(multi ? d.totals : t, multi ? d.totals.compare : single.compare, !d.singleHome && d.reserve ? 'Reserve held ' + money(d.reserve) : '', d.occupancy && d.occupancy.month, internal);
   if (!multi) h += rentNote(single);
+  h += growthHtml(multi ? d.rentGrowth : single.rentGrowth);
   h += '<div class="expl"><h3>Your ' + esc(MN[Number(d.month.slice(5, 7)) - 1]) + ', explained</h3><div>' + esc(d.explained) + '</div><div class="qchips noprint">' + d.qa.map((x, i) => '<button data-qa="' + i + '">' + esc(x.q) + '</button>').join('') + '</div><div id="qaOut"></div></div>';
   if (multi) h += '<h3>Last 12 months, all homes</h3>' + trendTable(d.series, d.month, d.occupancy && d.occupancy.series);
   h += (multi ? d.properties.map((p) => '<div style="break-before:auto"><h3 style="font-size:17px;margin-top:22px">' + esc(p.address) + '</h3><h3>Expenses by vendor</h3>' + vendorRows(p, internal) + rentNote(p) + (p.occupancy && p.occupancy.month.pct != null ? '<div class="muted" style="margin-top:6px">Occupied ' + p.occupancy.month.pct + '% (' + p.occupancy.month.occupied + ' of ' + p.occupancy.month.days + ' days)</div>' : '') + rentTable(p) + '</div>').join('<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">') : '<h3>Expenses by vendor <span class="muted tiny noprint">(click a vendor for its bills)</span></h3>' + vendorRows(single, internal) + (internal && single.tenantCharged > 0 ? '<div class="muted tiny">Also billed to the tenant (not owner money): ' + money(single.tenantCharged) + '</div>' : '') + '<h3>Last 12 months</h3>' + trendTable(single.series, single.month, single.occupancy && single.occupancy.series) + rentTable(single));

@@ -93,33 +93,66 @@ export function explainEvents(ev, ym) {
 // Rent levels from the rent actually CHARGED each month (works for every tenant, however Rentvine stores a renewal).
 // rows: [{propertyID, datePosted (ISO), amount}] for the rent account only. A month with one rent charge is a "steady" month at that rent;
 // a month with several (or an odd one right before a change) is a prorated month, and the change day is solved from the prorated total.
-export function rentLevels(rows, propertyID) {
+export function rentLevels(rows, propertyID, opts = {}) {
   const by = {};
   for (const r of rows || []) { if (String(r.propertyID) !== String(propertyID) || !r.datePosted || !(r.amount > 0)) continue; (by[r.datePosted.slice(0, 7)] ||= []).push(r.amount); }
   const months = Object.keys(by).sort();
-  const levels = []; let cur = null, pending = null, lastM = null;
+  const dimOf = (m) => new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).getUTCDate();
+  // a lease starting after the 1st, or ending before the last day, makes that month a prorated month, not a rent level
+  const startIn = (m) => (opts.starts || []).find((d) => d && d.slice(0, 7) === m && Number(d.slice(8, 10)) > 1) || '';
+  const endIn = (m) => (opts.ends || []).some((d) => d && d.slice(0, 7) === m && Number(d.slice(8, 10)) < dimOf(m));
+  const levels = []; let cur = null, pending = null;
   const nextYm = (m) => { const y = Number(m.slice(0, 4)), k = Number(m.slice(5, 7)); return k === 12 ? (y + 1) + '-01' : y + '-' + String(k + 1).padStart(2, '0'); };
   for (const m of months) {
-    const a = by[m], sum = Math.round(a.reduce((x, y) => x + y, 0) * 100) / 100;
-    if (a.length !== 1) { pending = { m, sum }; lastM = m; continue; }
+    const a = by[m], sum = Math.round(a.reduce((x, y) => x + y, 0) * 100) / 100, st = startIn(m);
+    if (a.length !== 1 || st || endIn(m)) { pending = { m, sum, start: st }; continue; }
     const amt = a[0];
-    if (!cur) { cur = { from: m + '-01', rent: amt, prorated: null }; levels.push(cur); pending = null; lastM = m; continue; }
+    if (!cur) {
+      const from = pending && pending.start && nextYm(pending.m) === m ? pending.start : m + '-01';
+      cur = { from, rent: amt, prorated: pending && pending.start && nextYm(pending.m) === m ? { month: pending.m, total: pending.sum } : null }; levels.push(cur); pending = null; continue;
+    }
     if (Math.abs(amt - cur.rent) > 0.005) {
       let date = m + '-01', prorated = null;
       if (pending && nextYm(pending.m) === m) {
-        const dim = new Date(Date.UTC(Number(pending.m.slice(0, 4)), Number(pending.m.slice(5, 7)), 0)).getUTCDate();
-        const d = Math.round(dim * (amt - pending.sum) / (amt - cur.rent));
-        if (d >= 1 && d < dim) { date = pending.m + '-' + String(d + 1).padStart(2, '0'); prorated = { month: pending.m, total: pending.sum }; }
-        else prorated = { month: pending.m, total: pending.sum };
+        if (pending.start) { date = pending.start; prorated = { month: pending.m, total: pending.sum }; }
+        else {
+          const dim = dimOf(pending.m), d = Math.round(dim * (amt - pending.sum) / (amt - cur.rent));
+          if (d >= 1 && d < dim) date = pending.m + '-' + String(d + 1).padStart(2, '0');
+          prorated = { month: pending.m, total: pending.sum };
+        }
       }
       const nl = { from: date, rent: amt, prorated }; levels.push(nl); cur = nl;
     }
-    pending = null; lastM = m;
+    pending = null;
   }
   return levels.map((l, i) => {
     const prev = i ? levels[i - 1] : null, next = levels[i + 1];
     const d = next ? new Date(Date.parse(next.from + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10) : null;
     return { from: l.from, to: d, rent: l.rent, change: prev ? Math.round((l.rent - prev.rent) * 100) / 100 : null, pct: prev && prev.rent ? Math.round(((l.rent - prev.rent) / prev.rent) * 1000) / 10 : null, prorated: l.prorated };
   });
+}
+// the rent level in effect on a date (null before the first charge)
+export const rentAt = (levels, d) => { let r = null; for (const l of levels || []) if (l.from <= d && (!l.to || l.to >= d)) r = l; return r; };
+// every lease (closed ones included) with the rent charged during it, the change from the previous lease, and increases inside the lease
+export function leaseRentRows(intervals, levels) {
+  const out = []; let prevEnd = null;
+  for (const l of intervals || []) {
+    const lv = rentAt(levels, l.start) || (levels || []).find((x) => x.from >= l.start && (!l.end || x.from <= l.end)) || null;
+    const startRent = lv ? lv.rent : (l.rent || null); if (startRent == null) continue;
+    const inc = (levels || []).filter((x) => x.change != null && x.from > l.start && (!l.end || x.from <= l.end)).map((x) => ({ date: x.from, from: x.rent - x.change, to: x.rent, pct: x.pct }));
+    const endRent = inc.length ? inc[inc.length - 1].to : startRent;
+    out.push({ start: l.start, end: l.end || '', startRent, endRent, increases: inc, changeFromPrevious: prevEnd == null ? null : Math.round((startRent - prevEnd) * 100) / 100, pctFromPrevious: prevEnd ? Math.round(((startRent - prevEnd) / prevEnd) * 1000) / 10 : null });
+    prevEnd = endRent;
+  }
+  return out;
+}
+// asset-manager view: rent today vs 1, 2 and 3 years ago, and rent charged in the last 12 months vs the 12 before
+export function rentGrowth(levels, rows, propertyID, ym) {
+  const dim = new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0)).getUTCDate();
+  const now = rentAt(levels, ym + '-' + String(dim).padStart(2, '0')); if (!now) return null;
+  const ago = [1, 2, 3].map((y) => { const r = rentAt(levels, addMonths(ym, -12 * y) + '-' + String(dim).padStart(2, '0')); return r ? { years: y, rent: r.rent, change: Math.round((now.rent - r.rent) * 100) / 100, pct: r.rent ? Math.round(((now.rent - r.rent) / r.rent) * 1000) / 10 : null } : null; }).filter(Boolean);
+  const sumWin = (a, b) => { let t = 0, any = false; for (const r of rows || []) { if (String(r.propertyID) !== String(propertyID) || !r.datePosted) continue; const m = r.datePosted.slice(0, 7); if (m >= a && m <= b) { t += r.amount; any = true; } } return any ? Math.round(t * 100) / 100 : null; };
+  const last12 = sumWin(addMonths(ym, -11), ym), prev12 = sumWin(addMonths(ym, -23), addMonths(ym, -12));
+  return { now: now.rent, ago, charged: { last12, prev12, change: last12 != null && prev12 != null ? Math.round((last12 - prev12) * 100) / 100 : null } };
 }
 export const levelEvents = (levels) => levels.filter((l) => l.change != null).map((l, i) => { const k = levels.indexOf(l); return { date: l.from, from: levels[k - 1].rent, to: l.rent }; });
