@@ -10,6 +10,7 @@ import { parseSetup, mergeSetup } from './recurring-setup.js';
 import { buildStatement, addMonths, LOOKBACK_MONTHS } from './statement.js';
 import { leaseIntervals, monthOccupancy, occupancySeries, rentHistory, rentChangesFrom, rentChangeExplain, rentLevels, levelEvents, explainEvents, leaseRentRows, rentGrowth } from './occupancy.js';
 import { sessionOk } from './maintenance-routes.js';
+import { buildFeeHold, FEE_ACCOUNT_IDS } from './feehold.js';
 
 export const TRUST_BANK_ACCOUNT_ID = 129;
 const TTL = 2 * 60 * 1000;
@@ -251,6 +252,23 @@ export async function loadTenantCharges(rvFetch, todayISO = today()) {
     }
   } catch (e) { console.error('tenant charges load', e); out.error = String(e.message || e); out.rows = []; }
   return out;
+}
+
+// ---- Tenant-paid fees waiting to settle (Accounting > Fee hold list). Read-only. Failures are reported on the page, never thrown. ----
+const FH_CHARGE_COLS = ['transactionID', 'leaseID', 'propertyID', 'portfolioName', 'chargeAccountID', 'accountNumber', 'accountName', 'amount', 'amountPaid', 'isVoided', 'datePosted', 'primaryTenantName', 'unitAddress'];
+const FH_PAY_COLS = ['transactionID', 'leaseID', 'propertyID', 'datePosted', 'amount', 'amountAllocated', 'isDepositedSettled', 'settlementDate', 'depositNumber', 'isVoided', 'isReturned'];
+const FH_BILL_COLS = ['propertyID', 'chargeAccountID', 'datePosted', 'amount', 'isVoided'];
+export const FEEHOLD_CHARGE_DAYS = 120, FEEHOLD_PAY_DAYS = 45, FEEHOLD_BILL_DAYS = 60;
+export async function loadFeeHold(rvFetch, todayISO = today()) {
+  const warnings = [];
+  const range = (days) => ({ name: 'datePosted', comparator: 'betweenDate', startDate: daysAgo(days), endDate: todayISO });
+  const acct = (name) => ({ name, comparator: 'in', values: FEE_ACCOUNT_IDS.map(String) });
+  const charges = await allPages(rvFetch, 'lease-charges', { displayColumns: FH_CHARGE_COLS, filters: [range(FEEHOLD_CHARGE_DAYS), acct('chargeAccountID')] }, { fields: FH_CHARGE_COLS, max: 15 });
+  const payments = await allPages(rvFetch, 'lease-payments', { displayColumns: FH_PAY_COLS, filters: [range(FEEHOLD_PAY_DAYS)] }, { fields: FH_PAY_COLS, max: 30 });
+  let bills = [];
+  try { bills = await allPages(rvFetch, 'payables', { displayColumns: FH_BILL_COLS, filters: [range(FEEHOLD_BILL_DAYS), acct('chargeAccountID')] }, { fields: FH_BILL_COLS, max: 12 }); }
+  catch (e) { console.error('fee hold bills', e); warnings.push('Posted fee bills could not be read, so fees you already posted may show as OK to post: ' + String(e.message || e)); }
+  return { ...buildFeeHold({ charges, payments, bills, today: todayISO }), warnings, counts: { charges: charges.length, payments: payments.length, bills: bills.length }, windows: { chargeDays: FEEHOLD_CHARGE_DAYS, paymentDays: FEEHOLD_PAY_DAYS, billDays: FEEHOLD_BILL_DAYS } };
 }
 
 const LATE_COLS = ['datePosted', 'propertyID', 'leaseID', 'amount', 'amountAllocated', 'isDepositedSettled', 'settlementDate', 'isVoided', 'isReturned'];
@@ -775,6 +793,18 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       if (r && typeof r === 'object' && typeof r.message === 'string') out.rentvineMessage = r.message.slice(0, 300);
       res.json(out);
     } catch (e) { res.status(502).json({ error: String(e.message || e).slice(0, 300) }); }
+  });
+
+  // Fee hold list: tenant-paid fees (admin, late, RBP ...) waiting for the tenant's money to settle before staff post the fee to the property. Cached 30 minutes.
+  app.get('/fee-hold', (req, res) => res.sendFile(new URL('./public/fee-hold.html', import.meta.url).pathname));
+  let fhCache = { at: 0, v: null }, fhInflight = null;
+  app.get('/api/payouts/fee-hold', async (req, res) => {
+    if (!guard(req, res)) return;
+    try {
+      if (req.query.refresh !== '1' && fhCache.v && Date.now() - fhCache.at < 30 * 60 * 1000) return res.json(fhCache.v);
+      if (!fhInflight) fhInflight = loadFeeHold(rvFetch).then((v) => { fhCache = { at: Date.now(), v: { asOf: new Date().toISOString(), ...v } }; return fhCache.v; }).finally(() => { fhInflight = null; });
+      res.json(await fhInflight);
+    } catch (e) { console.error('fee hold', e); res.status(502).json({ error: String(e.message || e) }); }
   });
 
   app.get('/api/payouts/recurring', async (req, res) => {
