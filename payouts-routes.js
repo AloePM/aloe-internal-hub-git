@@ -758,14 +758,22 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
   });
 
   // Read-only look at the SHAPE of a Rentvine response (field names only, never values), to find out how bills expose their invoice files.
+  // Staff-only, read-only diagnostic: shows the FIELD NAMES a Rentvine report or bill returns (never values), and Rentvine's error text if it refuses.
+  // /api/payouts/probe?path=/reports/lease-payments[&dateField=datePosted]   or   ?path=/reports/lease-payments/meta   or   ?path=/accounting/bills/<id>
   app.get('/api/payouts/probe', async (req, res) => {
     if (!guard(req, res)) return;
     const path = String(req.query.path || '');
-    if (!/^\/(accounting\/bills\/\d+|bills\/\d+|reports\/[a-z-]+)$/.test(path)) return res.status(400).json({ error: 'Only /accounting/bills/<id>, /bills/<id> or /reports/<name> can be probed.' });
+    if (!/^\/(accounting\/bills\/\d+|bills\/\d+|reports\/[a-z-]+(\/meta)?)$/.test(path)) return res.status(400).json({ error: 'Only /accounting/bills/<id>, /bills/<id>, /reports/<name> or /reports/<name>/meta can be probed.' });
+    const dateField = /^[A-Za-z]{3,40}$/.test(String(req.query.dateField || '')) ? String(req.query.dateField) : 'datePosted';
+    const shape = (v, d = 0) => Array.isArray(v) ? { array: v.length, item: v.length && d < 3 ? shape(v[0], d + 1) : null } : (v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).slice(0, 80).map((k) => [k, d < 3 ? shape(v[k], d + 1) : typeof v[k]])) : (v === null ? 'null' : typeof v));
     try {
-      const shape = (v, d = 0) => Array.isArray(v) ? { array: v.length, item: v.length && d < 3 ? shape(v[0], d + 1) : null } : (v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).slice(0, 60).map((k) => [k, d < 3 ? shape(v[k], d + 1) : typeof v[k]])) : (v === null ? 'null' : typeof v));
-      const r = await rvFetch(path, path.startsWith('/reports/') ? { exportTypeID: 1, json: JSON.stringify({ filters: [] }), page: 1, pageSize: 1 } : {});
-      res.json({ path, shape: shape(r) });
+      const isReport = /^\/reports\/[a-z-]+$/.test(path);
+      const filters = isReport ? [{ name: dateField, comparator: 'betweenDate', startDate: daysAgo(30), endDate: today() }] : [];
+      const r = await rvFetch(path, isReport ? { exportTypeID: 1, json: JSON.stringify({ filters }), page: 1, pageSize: 1 } : {});
+      const out = { path, dateField: isReport ? dateField : undefined, shape: shape(r) };
+      if (r && typeof r === 'object' && typeof r.error === 'string') out.rentvineError = r.error.slice(0, 300);
+      if (r && typeof r === 'object' && typeof r.message === 'string') out.rentvineMessage = r.message.slice(0, 300);
+      res.json(out);
     } catch (e) { res.status(502).json({ error: String(e.message || e).slice(0, 300) }); }
   });
 
