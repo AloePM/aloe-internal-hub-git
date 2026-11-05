@@ -6938,7 +6938,7 @@ function filterTools(q) {
 app.post('/api/five-day-notice/run', async (req, res) => {
   const dryRun = req.query.dryRun === 'true';
   const todayStr = new Date().toISOString().slice(0, 10);
-  const FIVE_DAY_CHARGE_ACCT_ID = '57';
+  const FIVE_DAY_CHARGE_ACCT_ID = '4472';
   const APTLY_AR_BOARD_UUID = 'wk228jktWTWibWNhT';
   const DELINQUENT_STAGE = 'Delinquent';
   const results = { charged: [], skipped: [], errors: [] };
