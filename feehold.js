@@ -5,7 +5,12 @@ export const FEE_ACCOUNTS = {
   40: '4405 RBP', 148: '4405-2 SN-RBP', 58: '4473 Administrative Fee', 51: '4445 MGMT Pet Fee Not Refundable', 14: '4500 Late Fee',
   57: '4472 Five Day Notice', 90: '6101 Legal', 12: '4410 Dishonored Funds Charge', 62: '4476 Lease Break Fee', 56: '4471 Transaction Fee',
 };
+// Rentvine re-issued the Five Day Notice account as ID 4472 (the hub's 5-day notice feature posts to 4472), so both 57 and 4472 are searched.
+// A row is only used if its account NUMBER (when the report gives one) is one of the fee numbers, so a stale or reused ID can never pull in another account.
+FEE_ACCOUNTS[4472] = '4472 Five Day Notice';
 export const FEE_ACCOUNT_IDS = Object.keys(FEE_ACCOUNTS).map(Number);
+export const FEE_NUMBERS = ['4405', '4473', '4445', '4500', '4472', '6101', '4410', '4476', '4471'];
+const isFee = (c) => FEE_ACCOUNT_IDS.includes(n(c.chargeAccountID)) && (!c.accountNumber || FEE_NUMBERS.some((x) => String(c.accountNumber).trim().startsWith(x)));
 const n = (v) => { if (v === null || v === undefined || v === '') return 0; const x = Number(String(v).replace(/[$,\s]/g, '')); return Number.isFinite(x) ? x : 0; };
 const t = (v) => v === true || v === 1 || v === '1' || String(v).toLowerCase() === 'true';
 const iso = (v) => (v ? String(v).slice(0, 10) : '');
@@ -14,7 +19,7 @@ const addDays = (d, k) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x
 
 export function buildFeeHold({ charges = [], payments = [], bills = [], today, showDays = 60 } = {}) {
   const cutoff = addDays(today, -showDays);
-  const fees = charges.filter((c) => !t(c.isVoided) && FEE_ACCOUNT_IDS.includes(n(c.chargeAccountID)));
+  const fees = charges.filter((c) => !t(c.isVoided) && isFee(c));
   // payments applied to charges but not settled yet (returned/voided ones are not "pending", they are alerts)
   const pendingByLease = {}, returnedByLease = {};
   for (const p of payments) {
