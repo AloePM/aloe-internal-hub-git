@@ -577,11 +577,11 @@ export async function loadStatementData(rvFetch, propertyIDs, portfolioID, ym) {
   }
   // rent actually charged each month (rent account 10) over the last 3 years: gives every home its rent history and rent increases
   let rentRows = [];
-  const RCOLS = ['leaseID', 'propertyID', 'chargeAccountID', 'amount', 'isVoided', 'datePosted'], RFROM = addMonths(ym, -35) + '-01', RTO = addMonths(ym, 2) + '-01';
-  for (const cols of [RCOLS, RCOLS.filter((c) => c !== 'amount').concat('amountPaid')]) {
+  const RCOLS = ['leaseID', 'propertyID', 'chargeAccountID', 'amount', 'amountPaid', 'isVoided', 'datePosted'], RFROM = addMonths(ym, -35) + '-01', RTO = addMonths(ym, 2) + '-01';
+  for (const cols of [RCOLS, RCOLS.filter((c) => c !== 'amount')]) {
     try {
       const rows = await allPages(rvFetch, 'lease-charges', { displayColumns: cols, filters: [{ name: 'datePosted', comparator: 'betweenDate', startDate: RFROM, endDate: RTO }, { name: 'chargeAccountID', comparator: 'in', values: ['10'] }, { name: 'propertyID', comparator: 'in', values: [...ids] }] }, { fields: cols, max: 40 });
-      rentRows = rows.filter((c) => !truthy(c.isVoided) && num(c.chargeAccountID) === 10 && ids.has(String(c.propertyID))).map((c) => ({ propertyID: String(c.propertyID), datePosted: toISO(c.datePosted), amount: num(c.amount !== undefined ? c.amount : c.amountPaid) }));
+      rentRows = rows.filter((c) => !truthy(c.isVoided) && num(c.chargeAccountID) === 10 && ids.has(String(c.propertyID))).map((c) => ({ propertyID: String(c.propertyID), datePosted: toISO(c.datePosted), amount: num(c.amount !== undefined ? c.amount : c.amountPaid), paid: num(c.amountPaid) }));
       break;
     } catch (e) { if (cols !== RCOLS) warnings.push('rent charges unavailable (rent history falls back to lease records): ' + String(e.message || e).slice(0, 100)); }
   }
@@ -728,7 +728,7 @@ export function installPayouts(app, rvFetch, { decisions = makeMemoryDecisionSto
       const key = o.ownerID + '|' + month;
       let data = stCache.get(key);
       if (!data || Date.now() - data.at > 10 * 60 * 1000) { const ids = o.properties.map((p) => p.propertyID); const [sd, lh] = await Promise.all([loadStatementData(rvFetch, ids, o.portfolioID || o.ownerID, month), loadStatementLeases(rvFetch, ids).catch((e) => ({ leases: [], changes: [], warnings: ['lease history: ' + String(e.message || e).slice(0, 100)] }))]); data = { at: Date.now(), v: { ...sd, leases: lh.leases, changes: lh.changes, warnings: [...sd.warnings, ...lh.warnings] } }; stCache.set(key, data); if (stCache.size > 40) stCache.delete(stCache.keys().next().value); }
-      const st = buildStatement({ ownerName: o.name, properties: props, bills: data.v.bills, settle: data.v.settle, month, compare, otherRows: data.v.other || [] });
+      const st = buildStatement({ ownerName: o.name, properties: props, bills: data.v.bills, settle: data.v.settle, month, compare, otherRows: data.v.other || [], paidRows: (data.v.rentRows || []).map((r) => ({ propertyID: r.propertyID, datePosted: r.datePosted, amount: r.paid || 0 })), paidBefore: today().slice(0, 7) });
       // occupancy and rent history per home (only when the lease read worked)
       const todayISO = today(); let agg = null, allGrowth = null;
       if ((data.v.leases || []).length) {

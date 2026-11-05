@@ -22,7 +22,7 @@ export function monthOccupancy(intervals, ym, todayISO) {
   const dim = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate();
   const last = todayISO.slice(0, 7) === ym ? Number(todayISO.slice(8, 10)) : (ym > todayISO.slice(0, 7) ? 0 : dim);
   let occ = 0;
-  for (let d = 1; d <= last; d++) { const day = dayOf(ym, d); if (intervals.some((l) => l.start <= day && (!l.end || day < l.end))) occ++; }
+  for (let d = 1; d <= last; d++) { const day = dayOf(ym, d); if (intervals.some((l) => l.start <= day && (!l.end || day <= l.end))) occ++; }
   return { days: last, occupied: occ, vacant: last - occ, pct: last ? Math.round((occ / last) * 1000) / 10 : null };
 }
 export function occupancySeries(intervals, ym, todayISO) {
@@ -125,6 +125,8 @@ export function rentLevels(rows, propertyID, opts = {}) {
     }
     pending = null;
   }
+  // a rent that lasts about one month and then returns to the earlier rent is a concession or credit, not a rent change
+  for (let again = true; again;) { again = false; for (let i = 1; i < levels.length - 1; i++) { if (Math.abs(levels[i + 1].rent - levels[i - 1].rent) < 0.005 && (Date.parse(levels[i + 1].from) - Date.parse(levels[i].from)) / 864e5 <= 35) { levels.splice(i, 2); again = true; break; } } }
   return levels.map((l, i) => {
     const prev = i ? levels[i - 1] : null, next = levels[i + 1];
     const d = next ? new Date(Date.parse(next.from + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10) : null;

@@ -32,7 +32,7 @@ function indexBills(bills) {
 }
 const monthsAround = (ym) => Array.from({ length: 12 }, (_, i) => addMonths(ym, i - 11));
 
-export function buildPropertyStatement({ propertyID, address }, bills, settle, ym, compareYm, otherRows = []) {
+export function buildPropertyStatement({ propertyID, address }, bills, settle, ym, compareYm, otherRows = [], paidRows = [], paidBefore = '') {
   const mine = bills.filter((b) => String(b.propertyID) === String(propertyID));
   const mset = settle.filter((s) => String(s.propertyID) === String(propertyID) && (s.bankAccountID === undefined || s.bankAccountID === '' || num(s.bankAccountID) === TRUST));
   const idx = indexBills(mine);
@@ -42,6 +42,11 @@ export function buildPropertyStatement({ propertyID, address }, bills, settle, y
   const other = {};
   for (const r of otherRows) { if (String(r.propertyID) !== String(propertyID)) continue; const m = ymOf(r.datePosted); if (m) other[m] = cents((other[m] || 0) + num(r.amount)); }
   for (const m of Object.keys(received)) { const o = Math.min(other[m] || 0, received[m]); other[m] = o; received[m] = cents(received[m] - o); }
+  // A past month where Rentvine's settlement report shows nothing (for example a previous tenant's closed lease) but the tenant did pay rent:
+  // use the rent paid on the rent charges for that month, so earlier tenants' rent is not shown as $0.
+  const paidM = {}, fromPayments = [];
+  for (const r of paidRows) { if (String(r.propertyID) !== String(propertyID)) continue; const m = ymOf(r.datePosted); if (m) paidM[m] = cents((paidM[m] || 0) + num(r.amount)); }
+  for (const m of Object.keys(paidM).sort()) if (paidM[m] > 0 && !received[m] && (!paidBefore || m < paidBefore)) { received[m] = paidM[m]; fromPayments.push(m); }
   // first month with any activity in the loaded data (so a new home is not judged against months it did not exist)
   const active = [...new Set([...Object.keys(idx), ...Object.keys(received)])].sort();
   const first = active[0] || ym;
@@ -85,7 +90,7 @@ export function buildPropertyStatement({ propertyID, address }, bills, settle, y
     propertyID, address, month: ym, compareMonth: compareYm, newHome: !prior.length,
     received: rec, other: other[ym] || 0, expenses: cur.expenses, fee: cur.fee, tenantCharged: cur.tenantCharged, net: net(rec, cur), paidOut: paidOut[ym] || 0,
     compare: { received: cr, other: other[compareYm] || 0, expenses: cmp.expenses, fee: cmp.fee, net: net(cr, cmp), paidOut: paidOut[compareYm] || 0 },
-    groups, series,
+    groups, series, receivedFromPayments: fromPayments,
   };
 }
 
@@ -93,9 +98,9 @@ export function resolveCompare(ym, compare) {
   if (/^\d{4}-\d{2}$/.test(String(compare))) return compare;
   return compare === 'year' ? addMonths(ym, -12) : addMonths(ym, -1);
 }
-export function buildStatement({ ownerName, properties, bills, settle, month, compare = 'prev', otherRows = [] }) {
+export function buildStatement({ ownerName, properties, bills, settle, month, compare = 'prev', otherRows = [], paidRows = [], paidBefore = '' }) {
   const cm = resolveCompare(month, compare);
-  const props = properties.map((p) => buildPropertyStatement(p, bills, settle, month, cm, otherRows));
+  const props = properties.map((p) => buildPropertyStatement(p, bills, settle, month, cm, otherRows, paidRows, paidBefore));
   const sum = (k) => cents(props.reduce((s, p) => s + p[k], 0));
   const csum = (k) => cents(props.reduce((s, p) => s + p.compare[k], 0));
   const series = monthsAround(month).map((m, i) => ({ month: m, received: cents(props.reduce((s, p) => s + p.series[i].received, 0)), expenses: cents(props.reduce((s, p) => s + p.series[i].expenses, 0)), fee: cents(props.reduce((s, p) => s + p.series[i].fee, 0)), net: cents(props.reduce((s, p) => s + p.series[i].net, 0)), paidOut: cents(props.reduce((s, p) => s + p.series[i].paidOut, 0)) }));
