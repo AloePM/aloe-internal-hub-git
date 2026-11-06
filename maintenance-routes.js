@@ -180,7 +180,7 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
       }
       let fu = { available: false, reason: 'error', rows: [] };
       try { fu = await store.list(); } catch (e) { console.error('[maintenance] followups', e.message); }
-      const t = buildToday(wo.rows, apt.map, foldFollowups(fu.rows), todayPhoenix());
+      const t = buildToday(wo.rows, apt.map, foldFollowups(fu.rows), todayPhoenix(), Date.now());
       res.json({ ...t, openTotal: wo.rows.length, counts: countKinds(wo.rows.map((r) => workKind((apt.map.get(String(r.number)) || {}).stage, r.stage, r.statusId))), asOf: new Date().toISOString(),
         aptly: { available: apt.available, ...(apt.available ? aptlyDiag(apt.map) : {}), notes }, followups: { available: fu.available, reason: fu.reason || '' }, canComment: !!(commenter.configured && apt.available) });
     } catch (e) { console.error('[maintenance] today', e.message); res.status(502).json({ error: 'Could not build the Today list from Rentvine.' }); }

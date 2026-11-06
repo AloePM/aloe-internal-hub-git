@@ -378,8 +378,8 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
     else if (pass.length) { var pm2 = h('div', { 'class': 'ovmore' }, [h('button', { type: 'button', text: 'Open on Today' })]); pm2.firstChild.addEventListener('click', function () { goToday('sec-passed'); }); pc.appendChild(pm2); }
     box.appendChild(h('div', { 'class': 'ov-grid' }, [sch, pc]));
 
-    var nc = h('div', { 'class': 'ovc' }, [h('h2', {}, ['Needs a nudge', h('small', { text: 'Longest without a text, email or note. 5+ days.' })])]);
-    if (!o.nudges.length) nc.appendChild(h('div', { 'class': 'note', text: 'Everyone has been contacted in the last 5 days.' }));
+    var nc = h('div', { 'class': 'ovc' }, [h('h2', {}, ['Needs a nudge', h('small', { text: 'Longest without a text, email or note. 3+ business days.' })])]);
+    if (!o.nudges.length) nc.appendChild(h('div', { 'class': 'note', text: 'Everyone has been contacted within the last 3 business days.' }));
     o.nudges.forEach(function (it) {
       var tb = h('button', { 'class': 'mini', type: 'button', text: 'Texts' }); tb.addEventListener('click', function () { openTexts(it, tb); });
       nc.appendChild(h('div', { 'class': 'ovrow' }, [h('div', {}, [addrEl(it), h('div', { 'class': 'why', style: 'font-size:12px;color:var(--muted)', text: '#' + it.number + '  ' + it.stage + (it.vendor ? '  |  ' + it.vendor : '') + '  |  ' + it.touchDays + ' days quiet' })]), tb]));

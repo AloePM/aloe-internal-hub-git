@@ -67,24 +67,48 @@ export function countKinds(kinds) {
   return c;
 }
 
+// Business time: Mon-Fri 9am-6pm Phoenix (no daylight saving, UTC-7). Emergencies are measured in clock time instead (Randi, Nov 5 2026).
+const PHX_MS = 7 * 3600000;
+export function bizHoursBetween(startMs, endMs) {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return 0;
+  const a = startMs - PHX_MS, b = endMs - PHX_MS, DAY = 86400000;
+  let hours = 0;
+  for (let d = Math.floor(a / DAY) * DAY; d <= b && d - a < 400 * DAY; d += DAY) {
+    const dow = new Date(d).getUTCDay(); if (dow === 0 || dow === 6) continue;
+    const lo = Math.max(a, d + 9 * 3600000), hi = Math.min(b, d + 18 * 3600000);
+    if (hi > lo) hours += (hi - lo) / 3600000;
+  }
+  return hours;
+}
+// Weekdays after date a up to and including date b (YYYY-MM-DD).
+export function bizDays(a, b) {
+  if (!a || !b || b <= a) return 0;
+  let n = 0; const t = new Date(a + 'T12:00:00Z');
+  for (let i = 0; i < 400; i++) { t.setUTCDate(t.getUTCDate() + 1); const d = t.toISOString().slice(0, 10); if (d > b) break; const w = t.getUTCDay(); if (w !== 0 && w !== 6) n++; }
+  return n;
+}
+const hrs = (h) => (h < 1 ? 'under 1 hour' : Math.round(h) === 1 ? '1 hour' : Math.round(h) + ' hours');
+
 const PARKED = new Set(['On Hold', 'Waiting for parts', 'Owner Maintained']);
 const NO_VENDOR_TIMER = new Set([...PARKED, 'Home Warranty', 'Troubleshooting Steps Sent', 'Internal Work Order Request', 'Unit Turn', 'Scheduled', 'Open', 'Dispatch Work Order']);
 export const SECTION_DEFS = [
   { key: 'followups', title: 'Your follow-ups due', hint: 'You set these. Today or earlier.' },
   { key: 'dispatch', title: 'Dispatch now', hint: 'Open or Dispatch Work Order, no vendor yet' },
   { key: 'vendor', title: 'Vendor assigned, waiting on a date', hint: 'Assigned, no scheduled date yet. Amber at 2 days, red at 3 days: call or text the vendor, then update the tenant. When the vendor answers, click Vendor confirmed' },
+  { key: 'warranty', title: 'Home warranty: follow up', hint: 'The home warranty company has the job. Follow up if nobody has contacted them or written a note in 2 business days' },
   { key: 'confirmed', title: 'Vendor confirmed, put the date on the card', hint: 'The vendor gave a date or said they will come. Red the day after that date passes. Put the date on the Aptly card (Scheduled stage)' },
   { key: 'nodate', title: 'Marked Scheduled, no date on the card', hint: 'The stage says Scheduled but no date is on the card. Put the date on the card, or fix the stage' },
   { key: 'passed', title: 'Scheduled date passed, still open', hint: 'Confirm the work happened' },
   { key: 'tenant', title: 'Waiting on tenant', hint: 'Troubleshooting steps sent 2+ days ago' },
   { key: 'internal', title: 'Internal work order requests', hint: 'Handled in house' },
   { key: 'parked', title: 'Parked: on hold, waiting on parts or the owner', hint: 'These are off the daily list until they go quiet. Red when nobody has contacted anyone or written a note in 7 days. Check in at least weekly' },
-  { key: 'quiet', title: 'No contact or note in 5+ days', hint: 'Nobody has texted, emailed or written a note on the card in 5 days' },
+  { key: 'quiet', title: 'No contact or note in 3+ business days', hint: 'Nobody has texted, emailed or written a note on the card in 3 business days (Mon-Fri). Make contact, or write the reason on the card' },
   { key: 'turns', title: 'Unit turns and move-outs', hint: 'Persia or Teri. Kept apart from Roberto\'s list and numbers. Amber when nobody has made contact or written a note in 5 days; red when a follow-up you set is due', muted: true },
 ];
 
 // rows = buildWorkOrderRows output; aptly = Map(number -> aptlyInfo); fu = foldFollowups output ({byWo}); today = 'YYYY-MM-DD' (Phoenix)
-export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = todayPhoenix()) {
+export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = todayPhoenix(), nowMs = null) {
+  const now = Number.isFinite(nowMs) ? nowMs : Date.parse(today + 'T19:00:00Z');
   const sections = Object.fromEntries(SECTION_DEFS.map((s) => [s.key, []]));
   let parked = 0, noAssignedDate = 0;
   const open = [];
@@ -105,12 +129,17 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
     // A person's note counts as a touch (Aptly's own Last Touch ignores comments).
     const touches = [inD, outD, noteD].filter((x) => x != null);
     const lastTouchDays = touches.length ? Math.min(...touches) : null;
+    const dts = [a && a.lastInboundAt ? phxDate(a.lastInboundAt) : '', a && a.lastOutboundAt ? phxDate(a.lastOutboundAt) : '', notesKnown && a.lastNote && a.lastNote.at ? phxDate(a.lastNote.at) : ''].filter(Boolean);
+    const touchBiz = dts.length ? Math.min(...dts.map((d) => bizDays(d, today))) : null;
+    const stageMs = a && a.stageChangedAt ? Date.parse(a.stageChangedAt) : NaN;
+    const emgNow = !!r.emergency;
+    const hoursInStage = Number.isFinite(stageMs) ? (emgNow ? Math.max(0, (now - stageMs) / 3600000) : bizHoursBetween(stageMs, now)) : null;
     const noteWhy = !notesKnown ? '' : noteD == null ? ' No note on the card yet.' : ' Last note ' + (noteD === 0 ? 'today' : noteD + (noteD === 1 ? ' day' : ' days') + ' ago') + '.';
     // Red only when it is overdue: no note for 3+ days, or no note at all on a work order that is 2+ days old (a brand-new one is not late yet).
     const staleNote = notesKnown && (noteD == null ? (r.ageDays == null || r.ageDays >= 2) : noteD >= 3);
     const f = (fu.byWo || {})[String(r.number)] || null;
     const base = { id: r.id, number: r.number, propertyId: r.propertyId, address: r.address, summary: r.summary, stage, vendor, moveOut: stage === 'Move Out' || r.moveOut || workKind(a && a.stage, r.stage, r.statusId) === 'moveout',
-      emergency: r.emergency, cardId: a && a.cardId ? a.cardId : '', daysInStage, assignedDays, lastInDays: inD, lastOutDays: outD, scheduled: sched || null,
+      emergency: r.emergency, cardId: a && a.cardId ? a.cardId : '', daysInStage, hoursInStage, touchBiz, assignedDays, lastInDays: inD, lastOutDays: outD, scheduled: sched || null,
       followUpOn: f ? f.followUpOn : null, lastNote: f && f.notes[0] ? f.notes[0] : null, noteCount: f ? f.notes.length : 0, matched: !!a,
       notesKnown, commentCount: notesKnown ? a.commentCount : 0, aptNote: a && a.lastNote ? { by: a.lastNote.by, at: a.lastNote.at, days: noteD, text: a.lastNote.text } : null, staleNote };
     const put = (key, level, why) => sections[key].push({ ...base, level, why });
@@ -123,7 +152,7 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
       continue;
     }
     open.push({ id: r.id, number: r.number, propertyId: r.propertyId, address: r.address, summary: r.summary, stage, vendor, emergency: r.emergency, cardId: base.cardId, scheduled: base.scheduled,
-      touchDays: lastTouchDays, daysInStage, matched: !!a, parked: PARKED.has(stage) });
+      touchDays: lastTouchDays, touchBiz, daysInStage, hoursInStage, matched: !!a, parked: PARKED.has(stage) });
     if (PARKED.has(stage)) {
       parked++;
       if (base.followUpOn && base.followUpOn <= today) { put('followups', 'red', 'Follow-up set for ' + base.followUpOn); continue; }
@@ -132,7 +161,12 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
       continue;
     }
     if (base.followUpOn && base.followUpOn <= today) { put('followups', 'red', 'Follow-up set for ' + base.followUpOn); continue; }
-    if (!vendor && (stage === 'Open' || stage === 'Dispatch Work Order')) { put('dispatch', (daysInStage || 0) >= 1 ? 'red' : 'amber', 'Needs a vendor assigned'); continue; }
+    if (stage === 'Home Warranty') {
+      if (touchBiz == null || touchBiz >= 2) put('warranty', 'red', 'Follow up with the home warranty company. ' + (touchBiz == null ? 'No contact or note on the card yet.' : 'No contact or note in ' + touchBiz + ' business days.'));
+      else put('warranty', 'grey', 'Home warranty has the job. Last contact or note ' + (touchBiz === 0 ? 'today' : touchBiz + ' business day' + (touchBiz === 1 ? '' : 's') + ' ago') + '.');
+      continue;
+    }
+    if (!vendor && (stage === 'Open' || stage === 'Dispatch Work Order')) { put('dispatch', 'red', 'Assign a vendor now' + (hoursInStage == null ? '' : '. ' + hrs(hoursInStage) + (emgNow ? ' (clock time, emergency)' : ' of business time') + ' without a vendor.')); continue; }
     // A "Vendor confirmed" comment written after the vendor was assigned (a reassignment makes an older one stale).
     const vc = notesKnown && a.vconfirm && (!assignedDate || phxDate(a.vconfirm.at) >= assignedDate) ? a.vconfirm : null;
     base.vendorConfirm = vc ? { by: vc.by, at: vc.at, date: vc.date || null } : null;
@@ -155,12 +189,15 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
     }
     if (stage === 'Scheduled' && !sched) { put('nodate', staleNote ? 'red' : 'amber', 'No scheduled date on the card.' + noteWhy); continue; }
     if (sched && sched < today && stage !== 'Completed') { put('passed', staleNote ? 'red' : 'amber', 'Scheduled ' + sched + ' (' + daysBetween(sched, today) + ' days ago).' + noteWhy); continue; }
-    if (stage === 'Troubleshooting Steps Sent' && (daysInStage || 0) >= 2) { put('tenant', 'amber', 'Troubleshooting sent ' + daysInStage + ' days ago'); continue; }
+    if (stage === 'Troubleshooting Steps Sent') {
+      const late = hoursInStage != null ? hoursInStage >= (emgNow ? 24 : 9) : (daysInStage || 0) >= 1;
+      if (late) { put('tenant', 'red', 'Troubleshooting sent ' + (hoursInStage != null ? hrs(hoursInStage) + (emgNow ? ' ago' : ' of business time ago') : daysInStage + ' days ago') + '. Past 1 business day: move to Dispatch Work Order or call the tenant.'); continue; }
+    }
     if (stage === 'Internal Work Order Request') { put('internal', (daysInStage || 0) >= 3 ? 'amber' : 'grey', 'Internal request, ' + (daysInStage == null ? '?' : daysInStage) + ' days in stage'); continue; }
-    if (lastTouchDays != null && lastTouchDays >= 5) put('quiet', 'amber', 'No contact or note in ' + lastTouchDays + ' days');
+    if (touchBiz != null && touchBiz >= 3) put('quiet', 'red', 'No contact or note in ' + touchBiz + ' business days. Make contact or write the reason on the card.');
   }
   const sev = { red: 0, amber: 1, grey: 2 };
-  for (const k of Object.keys(sections)) sections[k].sort((x, y) => sev[x.level] - sev[y.level] || (y.assignedDays ?? y.daysInStage ?? 0) - (x.assignedDays ?? x.daysInStage ?? 0));
+  for (const k of Object.keys(sections)) sections[k].sort((x, y) => sev[x.level] - sev[y.level] || (y.emergency ? 1 : 0) - (x.emergency ? 1 : 0) || (y.assignedDays ?? y.daysInStage ?? 0) - (x.assignedDays ?? x.daysInStage ?? 0));
   return { sections: SECTION_DEFS.map((d) => ({ ...d, items: sections[d.key] })), parked, noAssignedDate, today, overview: buildOverview(open, sections, today) };
 }
 
@@ -180,7 +217,7 @@ export function buildOverview(open, sections, today) {
   const stages = Object.entries(byStage).map(([stage, count]) => ({ stage, count })).sort((a, b) => b.count - a.count || a.stage.localeCompare(b.stage));
   const touch = { recent: 0, ok: 0, quiet: 0, cold: 0, unknown: 0 };
   for (const x of list) { const t = x.touchDays; if (t == null) touch.unknown++; else if (t <= 1) touch.recent++; else if (t <= 4) touch.ok++; else if (t <= 7) touch.quiet++; else touch.cold++; }
-  const nudges = list.filter((x) => x.touchDays != null && x.touchDays >= 5).sort((a, b) => b.touchDays - a.touchDays).slice(0, 8);
+  const nudges = list.filter((x) => x.touchBiz != null && x.touchBiz >= 3).sort((a, b) => b.touchDays - a.touchDays).slice(0, 8);
   const sec = (k) => ((sections && sections[k]) || []);
   const mine = Object.keys(sections || {}).filter((k) => k !== 'turns').flatMap((k) => sections[k]);
   const tiles = { doNow: mine.filter((x) => x.level === 'red').length, followups: sec('followups').length, today: list.filter((x) => String(x.scheduled || '').slice(0, 10) === today).length,
