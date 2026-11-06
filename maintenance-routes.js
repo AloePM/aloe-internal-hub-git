@@ -108,7 +108,7 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
   }
   app.get('/api/maintenance/workorders', async (req, res) => {
     res.set('Cache-Control', 'no-store');
-    try { const v = await getWORows(req.query.fresh === '1'); const m = await cardIdMap(); res.json({ ...v, rows: v.rows.map((r) => ({ ...r, cardId: cardOf(m, r.number), kind: workKind((m.get(String(r.number)) || {}).stage, r.stage, r.statusId) })) }); }
+    try { const v = await getWORows(req.query.fresh === '1'); const m = await cardIdMap(); res.json({ ...v, rows: v.rows.map((r) => ({ ...r, cardId: cardOf(m, r.number), aptStage: (m.get(String(r.number)) || {}).stage || '', kind: workKind((m.get(String(r.number)) || {}).stage, r.stage, r.statusId) })) }); }
     catch (e) { console.error('[maintenance] workorders', e.message); res.status(502).json({ error: 'Could not read work orders from Rentvine.' }); }
   });
 

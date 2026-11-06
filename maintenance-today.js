@@ -87,6 +87,7 @@ export const SECTION_DEFS = [
 export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = todayPhoenix()) {
   const sections = Object.fromEntries(SECTION_DEFS.map((s) => [s.key, []]));
   let parked = 0, noAssignedDate = 0;
+  const open = [];
   for (const r of rows || []) {
     const a = aptly.get(String(r.number)) || null;
     const stage = (a && a.stage) || r.stage;
@@ -121,6 +122,8 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
       else put('turns', 'grey', 'Persia / Teri');
       continue;
     }
+    open.push({ id: r.id, number: r.number, propertyId: r.propertyId, address: r.address, summary: r.summary, stage, vendor, emergency: r.emergency, cardId: base.cardId, scheduled: base.scheduled,
+      touchDays: lastTouchDays, daysInStage, matched: !!a, parked: PARKED.has(stage) });
     if (PARKED.has(stage)) {
       parked++;
       if (base.followUpOn && base.followUpOn <= today) { put('followups', 'red', 'Follow-up set for ' + base.followUpOn); continue; }
@@ -158,7 +161,31 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
   }
   const sev = { red: 0, amber: 1, grey: 2 };
   for (const k of Object.keys(sections)) sections[k].sort((x, y) => sev[x.level] - sev[y.level] || (y.assignedDays ?? y.daysInStage ?? 0) - (x.assignedDays ?? x.daysInStage ?? 0));
-  return { sections: SECTION_DEFS.map((d) => ({ ...d, items: sections[d.key] })), parked, noAssignedDate, today };
+  return { sections: SECTION_DEFS.map((d) => ({ ...d, items: sections[d.key] })), parked, noAssignedDate, today, overview: buildOverview(open, sections, today) };
+}
+
+// Overview tab numbers (pure). open = Roberto's open maintenance work orders (unit turns and move-outs are left out); sections = buildToday sections.
+// Calendar = Monday..Sunday of the week that holds today, plus the following week's jobs. A job is on a day when the card's Scheduled Start Date is that day.
+export function buildOverview(open, sections, today) {
+  const list = Array.isArray(open) ? open : [];
+  const d0 = new Date(today + 'T12:00:00Z'); const dow = (d0.getUTCDay() + 6) % 7;
+  const add = (n) => { const t = new Date(d0.getTime()); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+  const weekStart = add(-dow);
+  const days = Array.from({ length: 14 }, (_, i) => add(i - dow));
+  const jobs = list.filter((x) => x.scheduled && days.includes(String(x.scheduled).slice(0, 10)))
+    .map((x) => ({ ...x, date: String(x.scheduled).slice(0, 10) })).sort((p, q) => p.date.localeCompare(q.date) || String(p.address).localeCompare(String(q.address)));
+  const week = days.slice(0, 7).map((date, i) => ({ date, dow: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i], count: jobs.filter((j) => j.date === date).length, isToday: date === today }));
+  const nextWeek = jobs.filter((j) => j.date > days[6]).length;
+  const byStage = {}; for (const x of list) byStage[x.stage || 'Unknown'] = (byStage[x.stage || 'Unknown'] || 0) + 1;
+  const stages = Object.entries(byStage).map(([stage, count]) => ({ stage, count })).sort((a, b) => b.count - a.count || a.stage.localeCompare(b.stage));
+  const touch = { recent: 0, ok: 0, quiet: 0, cold: 0, unknown: 0 };
+  for (const x of list) { const t = x.touchDays; if (t == null) touch.unknown++; else if (t <= 1) touch.recent++; else if (t <= 4) touch.ok++; else if (t <= 7) touch.quiet++; else touch.cold++; }
+  const nudges = list.filter((x) => x.touchDays != null && x.touchDays >= 5).sort((a, b) => b.touchDays - a.touchDays).slice(0, 8);
+  const sec = (k) => ((sections && sections[k]) || []);
+  const mine = Object.keys(sections || {}).filter((k) => k !== 'turns').flatMap((k) => sections[k]);
+  const tiles = { doNow: mine.filter((x) => x.level === 'red').length, followups: sec('followups').length, today: list.filter((x) => String(x.scheduled || '').slice(0, 10) === today).length,
+    quiet: sec('quiet').length + sec('parked').filter((x) => x.level !== 'grey').length };
+  return { tiles, weekStart, week, nextWeek, jobs, stages, touch, nudges, total: list.length };
 }
 
 // Fold append-only follow-up rows (newest first) into per-work-order state.
