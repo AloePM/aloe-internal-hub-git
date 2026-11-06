@@ -445,7 +445,8 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
       var card = h('div', { 'class': 'vcard' + (v.quiet ? ' q' : '') }, [head, chips]);
       v.open.forEach(function (o) {
         var st = o.state === 'passed' ? h('span', { 'class': 'pill p-red', text: 'Date passed ' + nice(o.scheduled) }) : o.state === 'nodate' ? h('span', { 'class': 'pill p-amber', text: 'No date' }) : h('span', { 'class': 'pill p-green', text: 'Scheduled ' + nice(o.scheduled) });
-        card.appendChild(h('div', { 'class': 'vwo' }, [h('div', {}, [addrEl(o), h('div', { 'class': 'vmeta', text: '#' + o.number + '  ' + (o.summary || '') + '  |  ' + o.stage }), woLinks(o.id, o.cardId)]), st]));
+        var cb = h('button', { 'class': 'mini', type: 'button', style: 'margin-top:6px', text: 'Comments' }); cb.addEventListener('click', function () { openComments(o, cb); });
+        card.appendChild(h('div', { 'class': 'vwo' }, [h('div', {}, [addrEl(o), h('div', { 'class': 'vmeta', text: '#' + o.number + '  ' + (o.summary || '') + '  |  ' + o.stage }), woLinks(o.id, o.cardId), cb]), st]));
       });
       grid.appendChild(card);
     });
