@@ -4,7 +4,7 @@
 import { daysBetween, todayPhoenix } from './maintenance-data.js';
 import { mapComments, lastHumanNote, parseVendorConfirm } from './maintenance-comments.js';
 
-const phxDate = (iso) => { const t = Date.parse(iso); return isFinite(t) ? new Date(t - 7 * 3600000).toISOString().slice(0, 10) : ''; };
+export const phxDate = (iso) => { const t = Date.parse(iso); return isFinite(t) ? new Date(t - 7 * 3600000).toISOString().slice(0, 10) : ''; };
 const first = (...v) => { const x = v.find((y) => y != null && y !== ''); return x == null ? '' : x; };
 const nested = (o, path) => path.split('.').reduce((a, k) => (a && typeof a === 'object' ? a[k] : undefined), o);
 
@@ -152,7 +152,7 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
       continue;
     }
     open.push({ id: r.id, number: r.number, propertyId: r.propertyId, address: r.address, summary: r.summary, stage, vendor, emergency: r.emergency, cardId: base.cardId, scheduled: base.scheduled,
-      touchDays: lastTouchDays, touchBiz, daysInStage, hoursInStage, matched: !!a, parked: PARKED.has(stage) });
+      touchDays: lastTouchDays, touchBiz, daysInStage, hoursInStage, vendorId: r.vendorId || '', vendorPhones: r.vendorPhones || [], matched: !!a, parked: PARKED.has(stage) });
     if (PARKED.has(stage)) {
       parked++;
       if (base.followUpOn && base.followUpOn <= today) { put('followups', 'red', 'Follow-up set for ' + base.followUpOn); continue; }
@@ -198,7 +198,28 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
   }
   const sev = { red: 0, amber: 1, grey: 2 };
   for (const k of Object.keys(sections)) sections[k].sort((x, y) => sev[x.level] - sev[y.level] || (y.emergency ? 1 : 0) - (x.emergency ? 1 : 0) || (y.assignedDays ?? y.daysInStage ?? 0) - (x.assignedDays ?? x.daysInStage ?? 0));
-  return { sections: SECTION_DEFS.map((d) => ({ ...d, items: sections[d.key] })), parked, noAssignedDate, today, overview: buildOverview(open, sections, today) };
+  return { sections: SECTION_DEFS.map((d) => ({ ...d, items: sections[d.key] })), parked, noAssignedDate, today, overview: buildOverview(open, sections, today), vendors: buildVendors(open, today) };
+}
+
+// Vendors tab (pure). One group per vendor that has open work orders. Home warranty and parked work orders are left out (they have their own follow-up).
+// touchBiz on each work order = business days since the last text, email or note on its Aptly card.
+export function buildVendors(open, today) {
+  const groups = new Map();
+  for (const x of Array.isArray(open) ? open : []) {
+    if (!x.vendor || x.parked || x.stage === 'Home Warranty') continue;
+    const key = x.vendorId || ('n:' + String(x.vendor).toLowerCase());
+    const g = groups.get(key) || { key, vendor: x.vendor, vendorId: x.vendorId || '', phones: [], open: [], cardTouchBiz: null };
+    for (const p of x.vendorPhones || []) if (!g.phones.includes(p)) g.phones.push(p);
+    const sd = x.scheduled ? String(x.scheduled).slice(0, 10) : '';
+    const state = !sd ? 'nodate' : sd < today ? 'passed' : 'scheduled';
+    g.open.push({ id: x.id, number: x.number, propertyId: x.propertyId, address: x.address, summary: x.summary, stage: x.stage, scheduled: sd, state, emergency: !!x.emergency, cardId: x.cardId, vendor: x.vendor });
+    if (x.touchBiz != null && (g.cardTouchBiz == null || x.touchBiz < g.cardTouchBiz)) g.cardTouchBiz = x.touchBiz;
+    groups.set(key, g);
+  }
+  const rank = { passed: 0, nodate: 1, scheduled: 2 };
+  return [...groups.values()].map((g) => ({ ...g, open: g.open.sort((a, b) => rank[a.state] - rank[b.state] || String(a.address).localeCompare(String(b.address))),
+    counts: { open: g.open.length, nodate: g.open.filter((o) => o.state === 'nodate').length, passed: g.open.filter((o) => o.state === 'passed').length } }))
+    .sort((a, b) => b.counts.passed + b.counts.nodate - (a.counts.passed + a.counts.nodate) || b.counts.open - a.counts.open || a.vendor.localeCompare(b.vendor));
 }
 
 // Overview tab numbers (pure). open = Roberto's open maintenance work orders (unit turns and move-outs are left out); sections = buildToday sections.

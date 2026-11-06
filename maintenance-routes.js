@@ -8,7 +8,7 @@
 import { addrKey, extractServices, readProperty } from './moveouts-property.js';
 import { groupOpenByProperty, readCategories, applianceRows, warrantyRows, findWarrantyExpires, findNotes, buildHints, whoPays, todayPhoenix, ownerVendors, homeWarrantyInfo, mapHistory, assignCards, buildWorkOrderRows, STAGE_ORDER } from './maintenance-data.js';
 import { loadAriRows, ariForAddress } from './maintenance-ari.js';
-import { indexAptly, aptlyDiag, buildToday, foldFollowups, withNotes, workKind, countKinds } from './maintenance-today.js';
+import { indexAptly, aptlyDiag, buildToday, foldFollowups, withNotes, workKind, countKinds, bizDays, phxDate } from './maintenance-today.js';
 import { validateEntry, makeFollowupStore } from './maintenance-followups.js';
 import { makeQuoClient, mergeThreads, e164, showPhone } from './maintenance-quo.js';
 import { pickContacts } from './moveouts-property.js';
@@ -162,28 +162,74 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
   }
 
   // Roberto's daily list: sections of work orders that need a touch today, with why.
+  // Today data (shared by the Today list, Overview and Vendors). Cached 45 seconds so one page load does not repeat the Aptly comment reads.
+  let todayMemo = { at: 0, v: null };
+  async function computeToday(fresh) {
+    if (!fresh && todayMemo.v && Date.now() - todayMemo.at < 45000) return todayMemo.v;
+    const wo = await getWORows(fresh);
+    let apt = { available: false, map: new Map() };
+    try { apt = await getAptly(fresh); } catch (e) { console.error('[maintenance] aptly', e.message); }
+    let notes = { requested: 0, loaded: 0 };
+    if (apt.available) {
+      // Add each open work order's comments (read per card). The cached board map is not changed.
+      const ids = []; for (const r of wo.rows) { const a = apt.map.get(String(r.number)); if (a && a.cardId && !a.notesKnown) ids.push(a.cardId); }
+      const got = await loadNotes([...new Set(ids)]);
+      const map = new Map(apt.map);
+      for (const [k, a] of apt.map) if (a.cardId && got.has(a.cardId)) map.set(k, withNotes(a, got.get(a.cardId)));
+      apt = { ...apt, map }; notes = { requested: new Set(ids).size, loaded: got.size };
+    }
+    let fu = { available: false, reason: 'error', rows: [] };
+    try { fu = await store.list(); } catch (e) { console.error('[maintenance] followups', e.message); }
+    const t = buildToday(wo.rows, apt.map, foldFollowups(fu.rows), todayPhoenix(), Date.now());
+    const v = { t, wo, apt, fu, notes }; todayMemo = { at: Date.now(), v }; return v;
+  }
   app.get('/api/maintenance/today', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
-      const fresh = req.query.fresh === '1';
-      const wo = await getWORows(fresh);
-      let apt = { available: false, map: new Map() };
-      try { apt = await getAptly(fresh); } catch (e) { console.error('[maintenance] aptly', e.message); }
-      let notes = { requested: 0, loaded: 0 };
-      if (apt.available) {
-        // Add each open work order's comments (read per card). The cached board map is not changed.
-        const ids = []; for (const r of wo.rows) { const a = apt.map.get(String(r.number)); if (a && a.cardId && !a.notesKnown) ids.push(a.cardId); }
-        const got = await loadNotes([...new Set(ids)]);
-        const map = new Map(apt.map);
-        for (const [k, a] of apt.map) if (a.cardId && got.has(a.cardId)) map.set(k, withNotes(a, got.get(a.cardId)));
-        apt = { ...apt, map }; notes = { requested: new Set(ids).size, loaded: got.size };
-      }
-      let fu = { available: false, reason: 'error', rows: [] };
-      try { fu = await store.list(); } catch (e) { console.error('[maintenance] followups', e.message); }
-      const t = buildToday(wo.rows, apt.map, foldFollowups(fu.rows), todayPhoenix(), Date.now());
-      res.json({ ...t, openTotal: wo.rows.length, counts: countKinds(wo.rows.map((r) => workKind((apt.map.get(String(r.number)) || {}).stage, r.stage, r.statusId))), asOf: new Date().toISOString(),
+      const { t, wo, apt, fu, notes } = await computeToday(req.query.fresh === '1');
+      const { vendors, ...today } = t;
+      res.json({ ...today, openTotal: wo.rows.length, counts: countKinds(wo.rows.map((r) => workKind((apt.map.get(String(r.number)) || {}).stage, r.stage, r.statusId))), asOf: new Date().toISOString(),
         aptly: { available: apt.available, ...(apt.available ? aptlyDiag(apt.map) : {}), notes }, followups: { available: fu.available, reason: fu.reason || '' }, canComment: !!(commenter.configured && apt.available) });
     } catch (e) { console.error('[maintenance] today', e.message); res.status(502).json({ error: 'Could not build the Today list from Rentvine.' }); }
+  });
+  // Vendors tab: open work orders grouped by vendor, when we last texted them (Quo, read-only, Maintenance and Main Office lines) and who needs a check-in.
+  // A vendor needs a check-in when nothing (text, or a note on any of their cards) happened in the last 2 business days. Draft texts are written in the page.
+  const vendorPhoneCache = new Map();
+  async function vendorNumbers(g) {
+    if (g.phones.length) return g.phones.slice(0, 2);
+    if (!g.vendorId) return [];
+    const hit = vendorPhoneCache.get(g.vendorId); if (hit && Date.now() - hit.at < PHONE_TTL) return hit.v;
+    let ph = [];
+    try { const b = await rvFetch('/contacts/vendors/' + g.vendorId, {}); if (b && !b.error) ph = pickContacts(b).phones.map((p) => p.replace(/\D/g, '').slice(-10)); } catch { /* leave empty */ }
+    vendorPhoneCache.set(g.vendorId, { at: Date.now(), v: ph }); if (vendorPhoneCache.size > 400) vendorPhoneCache.delete(vendorPhoneCache.keys().next().value);
+    return ph.slice(0, 2);
+  }
+  app.get('/api/maintenance/vendors', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+      const { t } = await computeToday(req.query.fresh === '1');
+      const today = t.today, out = [];
+      const queue = [...t.vendors]; const workers = Array.from({ length: 3 }, async () => { for (let g; (g = queue.shift());) {
+        const phones = await vendorNumbers(g); const phone = phones[0] ? e164(phones[0]) : '';
+        let last = null, quoReason = '';
+        if (phone && quo.configured) {
+          for (const line of [quo.vendorLineId, quo.phoneNumberId]) {
+            const r = await quo.messagesFor(phone, 5, line);
+            if (!r.ok) { quoReason = r.reason; continue; }
+            for (const m of r.items) if (!last || m.at > last.at) last = { at: m.at, dir: m.dir, text: m.text };
+          }
+        }
+        const textBiz = last ? bizDays(phxDate(last.at), today) : null;
+        const touches = [textBiz, g.cardTouchBiz].filter((x) => x != null);
+        const contactBiz = touches.length ? Math.min(...touches) : null;
+        out.push({ key: g.key, vendor: g.vendor, vendorId: g.vendorId, phone, shown: phone ? showPhone(phone) : '', counts: g.counts, open: g.open,
+          last: last ? { at: last.at, dir: last.dir, bizDays: textBiz } : null, cardTouchBiz: g.cardTouchBiz, contactBiz, quiet: contactBiz == null || contactBiz >= 2,
+          reason: !phone ? 'no_phone' : !quo.configured ? 'not_configured' : (last ? '' : quoReason || 'no_texts') });
+      } });
+      await Promise.all(workers);
+      const order = new Map(t.vendors.map((g, i) => [g.key, i])); out.sort((a, b) => (b.quiet - a.quiet) || order.get(a.key) - order.get(b.key));
+      res.json({ vendors: out, from: quo.vendorFrom, today, quoOn: quo.configured, asOf: new Date().toISOString() });
+    } catch (e) { console.error('[maintenance] vendors', e.message); res.status(502).json({ error: 'Could not build the vendor list.' }); }
   });
 
   // Same-origin + custom-header check used by every write route, so another website cannot trigger a write.

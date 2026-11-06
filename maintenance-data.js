@@ -342,6 +342,17 @@ export function emergencyFlag(text) {
 
 // Work order "stage" names (same names Aptly's Work Orders board uses for these Rentvine statuses) and the order sections are shown in.
 export const STAGE_ORDER = ['Open', 'Estimating', 'Troubleshooting Steps Sent', 'Internal Work Order Request', 'Home Warranty', 'Requested', 'Scheduled', 'Waiting for parts', 'On Hold', 'Owner Maintained', 'HVAC Tune Ups', 'Move Out', 'Unit Turn', 'Renewal Walk Through'];
+// Phone numbers found on a vendor contact object (any field whose name has phone, mobile or cell). Digits only, 10 digits each.
+export function vendorPhonesOf(c) {
+  const found = new Set();
+  (function walk(v, key, d) {
+    if (v == null || d > 4) return;
+    if (Array.isArray(v)) { v.forEach((x) => walk(x, key, d + 1)); return; }
+    if (typeof v === 'object') { for (const k of Object.keys(v)) walk(v[k], k, d + 1); return; }
+    if (/phone|mobile|cell/i.test(key) && !/(type|id|label|extension|verified)/i.test(key)) { const dg = String(v).replace(/\D/g, ''); if (dg.length === 10 || (dg.length === 11 && dg[0] === '1')) found.add(dg.slice(-10)); }
+  })(c, '', 0);
+  return [...found];
+}
 // records = rows from Rentvine /maintenance/work-orders ({workOrder, contact, unit, property}). Open rule matches the hub Home page.
 export function buildWorkOrderRows(records, today = todayPhoenix()) {
   const out = [];
@@ -359,7 +370,7 @@ export function buildWorkOrderRows(records, today = todayPhoenix()) {
       id: String(wo.workOrderID), number: String(wo.workOrderNumber || ''), propertyId: /^\d{1,9}$/.test(pid) ? pid : '',
       address: squash((rec.unit && (rec.unit.address || rec.unit.name)) || (rec.property && rec.property.address) || wo.unitAddress || ''),
       created, ageDays: created ? daysBetween(created, today) : null, statusId: sid, stage: STATUS[sid] || (sid ? 'Status ' + sid : 'Unknown'),
-      vendor: squash(c.name), summary: summary.length > 200 ? summary.slice(0, 200) + '...' : summary,
+      vendor: squash(c.name), vendorId: /^\d{1,9}$/.test(String(c.contactID || '')) ? String(c.contactID) : '', vendorPhones: vendorPhonesOf(c), summary: summary.length > 200 ? summary.slice(0, 200) + '...' : summary,
       issue: itemOf(summary) || 'Other', emergency: emergencyFlag(summary), moveOut: sid === 23,
       team: sid === 25 ? 'Persia / Teri' : 'Roberto', scheduled: day(wo.scheduledStartDate) || null,
     });

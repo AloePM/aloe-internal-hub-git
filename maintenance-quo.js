@@ -13,11 +13,12 @@ export function makeQuoClient({ env = process.env, fetchImpl = globalThis.fetch,
   const cache = new Map(); const TTL = 3 * 60 * 1000;
   const gap = []; // simple rate limit: at most 8 calls per second
   async function slot() { for (;;) { const t = now(); while (gap.length && t - gap[0] > 1000) gap.shift(); if (gap.length < 8) { gap.push(t); return; } await new Promise((r) => setTimeout(r, 120)); } }
-  async function messagesFor(phone, max = 10) {
+  async function messagesFor(phone, max = 10, lineId = phoneNumberId) {
     const p = e164(phone); if (!p) return { ok: false, reason: 'bad_phone' };
-    const hit = cache.get(p); if (hit && now() - hit.at < TTL) return hit.v;
+    const ck = p + '|' + lineId + '|' + max;
+    const hit = cache.get(ck); if (hit && now() - hit.at < TTL) return hit.v;
     await slot();
-    const url = BASE + '/messages?phoneNumberId=' + encodeURIComponent(phoneNumberId) + '&participants=' + encodeURIComponent(p) + '&maxResults=' + max;
+    const url = BASE + '/messages?phoneNumberId=' + encodeURIComponent(lineId) + '&participants=' + encodeURIComponent(p) + '&maxResults=' + max;
     let v;
     try {
       const r = await fetchImpl(url, { headers: { Authorization: token, Accept: 'application/json' } });
@@ -26,11 +27,14 @@ export function makeQuoClient({ env = process.env, fetchImpl = globalThis.fetch,
       else if (!r.ok) v = { ok: false, reason: 'quo_error' };
       else { const b = await r.json(); v = { ok: true, items: (Array.isArray(b && b.data) ? b.data : []).map((m) => ({ at: String(m.createdAt || ''), dir: m.direction === 'incoming' ? 'in' : 'out', text: clip(m.text, 280), status: String(m.status || ''), media: Array.isArray(m.media) ? m.media.length : 0 })) }; }
     } catch (e) { v = { ok: false, reason: 'quo_error' }; }
-    if (v.ok) cache.set(p, { at: now(), v }); if (cache.size > 500) cache.delete(cache.keys().next().value);
+    if (v.ok) cache.set(ck, { at: now(), v }); if (cache.size > 500) cache.delete(cache.keys().next().value);
     return v;
   }
   const fromNumber = e164(env.QUO_FROM_NUMBER || '+16028549884'); // Main Office line, used only to pre-select the line in a Quo text link
-  return { configured: !!token, phoneNumberId, fromNumber, messagesFor };
+  // Vendors are texted from the Maintenance line (Main Office line is checked too, so a text sent from either one counts).
+  const vendorLineId = String(env.QUO_VENDOR_PHONE_NUMBER_ID || 'PN8cKmhBNc').trim();
+  const vendorFrom = e164(env.QUO_VENDOR_FROM_NUMBER || '+16027803559');
+  return { configured: !!token, phoneNumberId, fromNumber, vendorLineId, vendorFrom, messagesFor };
 }
 
 // Merge the messages from several numbers, newest first.

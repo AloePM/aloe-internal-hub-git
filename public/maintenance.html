@@ -116,6 +116,10 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
 .stk{display:flex;height:22px;border-radius:8px;overflow:hidden;margin:6px 0 10px;background:#E6EFF0}.stk span{display:block;height:100%}
 .leg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--ink2)}.leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px}
 @media (prefers-reduced-motion:reduce){button.ovt{transition:none}}
+.vgrid{display:flex;flex-direction:column;gap:12px}.vcard{background:#fff;border:1px solid var(--rule);border-radius:var(--r);padding:14px 16px;border-left:5px solid #B4C3C3}.vcard.q{border-left-color:var(--red)}
+.vhead{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin-bottom:6px}.vhead b{font-size:16px}.vmeta{font-size:12px;color:var(--muted);margin-top:2px}
+.vchips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.vwo{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:8px 0;border-top:1px solid var(--rule);align-items:center}.vwo:first-of-type{border-top:0}
+.vtext{width:100%;min-height:210px;font:inherit;font-size:14px;line-height:1.45;padding:10px;border:1px solid var(--rule);border-radius:8px;margin-top:8px;resize:vertical}.vtext:focus-visible{outline:3px solid #0A5468}
 </style>
 </head>
 <body>
@@ -129,8 +133,9 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
 <div class="main">
   <div class="kpis" id="kpis"></div>
   <div id="closing"></div>
-  <div class="seg" id="seg" role="group" aria-label="View"><button type="button" class="on" data-mode="overview" aria-pressed="true">Overview</button><button type="button" data-mode="today" aria-pressed="false">Today</button><button type="button" data-mode="home" aria-pressed="false">By home</button><button type="button" data-mode="wo" aria-pressed="false">By work order</button><button type="button" data-mode="units" aria-pressed="false">Unit turns</button></div>
+  <div class="seg" id="seg" role="group" aria-label="View"><button type="button" class="on" data-mode="overview" aria-pressed="true">Overview</button><button type="button" data-mode="today" aria-pressed="false">Today</button><button type="button" data-mode="vendors" aria-pressed="false">Vendors</button><button type="button" data-mode="home" aria-pressed="false">By home</button><button type="button" data-mode="wo" aria-pressed="false">By work order</button><button type="button" data-mode="units" aria-pressed="false">Unit turns</button></div>
   <div id="overviewView"><div id="ovbody"><div class="empty">Loading the overview...</div></div></div>
+  <div id="vendorsView" hidden><div id="vnbody"></div></div>
   <div id="todayView" hidden>
     <div id="tbanner"></div><div class="chips" id="tchips" tabindex="-1"></div><div id="tsecs"><div class="empty">Loading today's list...</div></div>
     <p class="ro">Days are calendar days in Phoenix time. A vendor should be scheduled within 2 days of being assigned; follow up with the vendor at 3 days. Follow-up dates and notes are saved in the hub. Comments, and follow-ups you tick the box for, are also posted on the Aptly card. Nothing is changed in Rentvine. Until individual logins exist, people pick their name.</p>
@@ -336,6 +341,69 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
   function loadToday(fresh) {
     api('/api/maintenance/today' + (fresh ? '?fresh=1' : '')).then(function (d) { TODAY = d; renderToday(); renderOverview(); })
       .catch(function (e) { $('tsecs').textContent = ''; $('tsecs').appendChild(h('div', { 'class': 'err', text: e.message })); $('ovbody').textContent = ''; $('ovbody').appendChild(h('div', { 'class': 'err', text: e.message })); });
+  }
+
+  // ---------- Vendors tab ----------
+  var VEND = null;
+  function loadVendors(fresh) {
+    var box = $('vnbody'); if (!VEND) { box.textContent = ''; box.appendChild(h('div', { 'class': 'empty', text: 'Checking vendor texts... this can take a few seconds.' })); }
+    api('/api/maintenance/vendors' + (fresh ? '?fresh=1' : '')).then(function (d) { VEND = d; renderVendors(); })
+      .catch(function (e) { box.textContent = ''; box.appendChild(h('div', { 'class': 'err', text: e.message })); });
+  }
+  var VR = { no_phone: 'No phone number on file in Rentvine for this vendor.', not_configured: 'Quo is not set up, so texts cannot be checked.', no_texts: 'No texts found with this vendor in Quo.', quo_denied: 'Quo refused the request.', quo_busy: 'Quo is busy, try again in a minute.', quo_error: 'Quo could not be read right now.' };
+  function vendorDraft(v) {
+    var lines = v.open.map(function (o) {
+      var a = o.address + ' (#' + o.number + ')';
+      if (o.state === 'nodate') return a + ': no scheduled date yet. When will you be able to get this scheduled?';
+      if (o.state === 'passed') return a + ': scheduled ' + nice(o.scheduled) + '. Has this been completed?';
+      return a + ': scheduled ' + nice(o.scheduled) + '. Is that still good?';
+    });
+    return 'Hi, this is Aloe Property Management. Can you give me a quick update on these open work orders?\n\n' + lines.map(function (l, i) { return (i + 1) + ') ' + l; }).join('\n') + '\n\nPlease reply with the date for each. Thank you!';
+  }
+  function openVendorDraft(v, opener) {
+    var my = { opener: opener, tx: true }; CM = my; DL = null;
+    var c = $('dcard'); c.textContent = '';
+    c.appendChild(h('h2', { id: 'dtitle', text: 'Text for ' + v.vendor }));
+    c.appendChild(h('div', { 'class': 'note', text: v.open.length + ' open work order' + (v.open.length === 1 ? '' : 's') + '. Read it, change anything you like, then copy it into Quo. Nothing is sent from here.' }));
+    var ta = h('textarea', { 'class': 'vtext', 'aria-label': 'Draft text' }); ta.value = vendorDraft(v); c.appendChild(ta);
+    var row = h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center' });
+    var cp = h('button', { 'class': 'mini', type: 'button', text: 'Copy text' });
+    cp.addEventListener('click', function () { var done = function (ok) { cp.textContent = ok ? 'Copied' : 'Copy failed'; setTimeout(function () { cp.textContent = 'Copy text'; }, 1800); }; try { navigator.clipboard.writeText(ta.value).then(function () { done(true); }, function () { done(false); }); } catch (e) { done(false); } });
+    row.appendChild(cp);
+    if (v.phone) {
+      row.appendChild(h('a', { 'class': 'mini lnkb', href: 'openphone://message?number=' + encodeURIComponent(v.phone) + (VEND && VEND.from ? '&from=' + encodeURIComponent(VEND.from) : ''), text: 'Open in Quo (phone)' }));
+      row.appendChild(h('a', { 'class': 'mini lnkb', href: 'tel:' + v.phone, text: 'Call ' + v.shown }));
+      var cn = h('button', { 'class': 'mini', type: 'button', text: 'Copy number' });
+      cn.addEventListener('click', function () { try { navigator.clipboard.writeText(v.shown); cn.textContent = 'Copied'; setTimeout(function () { cn.textContent = 'Copy number'; }, 1800); } catch (e) { cn.textContent = 'Copy failed'; } });
+      row.appendChild(cn);
+    } else row.appendChild(h('div', { 'class': 'banner', text: VR.no_phone }));
+    c.appendChild(row);
+    c.appendChild(h('div', { 'class': 'note', style: 'margin-top:8px', text: 'On a computer, copy the text, then paste it into Quo on the Maintenance line.' }));
+    var cl = h('button', { 'class': 'mini', type: 'button', style: 'margin-top:12px', text: 'Close' }); cl.addEventListener('click', closeDlg); c.appendChild(cl);
+    $('dlg').classList.add('on'); ta.focus();
+  }
+  function renderVendors() {
+    var box = $('vnbody'); box.textContent = ''; var d = VEND; if (!d) return;
+    var q = d.vendors.filter(function (v) { return v.quiet; }).length;
+    box.appendChild(h('div', { 'class': 'note', style: 'margin-bottom:10px', text: d.vendors.length + ' vendors with open work orders. ' + (q ? q + ' need a check-in (nothing sent or written in 2 business days).' : 'Everyone has been contacted in the last 2 business days.') + ' Home warranty and parked work orders are not listed here.' }));
+    var grid = h('div', { 'class': 'vgrid' });
+    d.vendors.forEach(function (v) {
+      var chips = h('div', { 'class': 'vchips' }, [h('span', { 'class': 'pill p-grey', text: v.counts.open + ' open' })]);
+      if (v.counts.passed) chips.appendChild(h('span', { 'class': 'pill p-red', text: v.counts.passed + ' date passed' }));
+      if (v.counts.nodate) chips.appendChild(h('span', { 'class': 'pill p-amber', text: v.counts.nodate + ' no date' }));
+      var lastTxt = v.last ? 'Last text ' + (v.last.bizDays == null ? 'date unknown' : v.last.bizDays === 0 ? 'today' : v.last.bizDays + ' business day' + (v.last.bizDays === 1 ? '' : 's') + ' ago') + ', ' + (v.last.dir === 'in' ? 'they replied' : 'we sent') : (VR[v.reason] || 'No texts found.');
+      var cardTxt = v.cardTouchBiz == null ? 'No note or contact on their cards.' : 'Last note or contact on a card: ' + (v.cardTouchBiz === 0 ? 'today' : v.cardTouchBiz + ' business day' + (v.cardTouchBiz === 1 ? '' : 's') + ' ago') + '.';
+      var dr = h('button', { 'class': 'mini', type: 'button', text: 'Draft text' }); dr.addEventListener('click', function () { openVendorDraft(v, dr); });
+      var head = h('div', { 'class': 'vhead' }, [h('div', {}, [h('b', { text: v.vendor }), h('div', { 'class': 'vmeta', text: (v.shown || 'No number') + '  |  ' + lastTxt }), h('div', { 'class': 'vmeta', text: cardTxt })]),
+        h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, [h('span', { 'class': 'pill ' + (v.quiet ? 'p-red' : 'p-green'), text: v.quiet ? 'Check in' : 'Contacted' }), dr])]);
+      var card = h('div', { 'class': 'vcard' + (v.quiet ? ' q' : '') }, [head, chips]);
+      v.open.forEach(function (o) {
+        var st = o.state === 'passed' ? h('span', { 'class': 'pill p-red', text: 'Date passed ' + nice(o.scheduled) }) : o.state === 'nodate' ? h('span', { 'class': 'pill p-amber', text: 'No date' }) : h('span', { 'class': 'pill p-green', text: 'Scheduled ' + nice(o.scheduled) });
+        card.appendChild(h('div', { 'class': 'vwo' }, [h('div', {}, [addrEl(o), h('div', { 'class': 'vmeta', text: '#' + o.number + '  ' + (o.summary || '') + '  |  ' + o.stage }), woLinks(o.id, o.cardId)]), st]));
+      });
+      grid.appendChild(card);
+    });
+    box.appendChild(grid);
   }
 
   // ---------- Overview tab ----------
@@ -655,11 +723,12 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
       .catch(function (e) { $('wolist').textContent = ''; $('wolist').appendChild(h('div', { 'class': 'err', text: e.message })); });
   }
   function setMode(m) {
-    MODE = m; $('overviewView').hidden = m !== 'overview'; $('todayView').hidden = m !== 'today'; $('homeView').hidden = m !== 'home'; $('woView').hidden = m !== 'wo'; $('unitView').hidden = m !== 'units';
+    MODE = m; $('overviewView').hidden = m !== 'overview'; $('todayView').hidden = m !== 'today'; $('vendorsView').hidden = m !== 'vendors'; $('homeView').hidden = m !== 'home'; $('woView').hidden = m !== 'wo'; $('unitView').hidden = m !== 'units';
     Array.prototype.forEach.call($('seg').children, function (b) { var on = b.getAttribute('data-mode') === m; b.className = on ? 'on' : ''; b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
     if (m === 'wo' && !WO) loadWO(false);
     if ((m === 'today' || m === 'units' || m === 'overview') && !TODAY) loadToday(false);
     if (m === 'overview') renderOverview();
+    if (m === 'vendors') loadVendors(false);
     if (m === 'units') renderUnits();
   }
   Array.prototype.forEach.call($('seg').children, function (b) { b.addEventListener('click', function () { setMode(b.getAttribute('data-mode')); }); });
@@ -745,7 +814,8 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
   function closePanel() { token++; $('veil').classList.remove('on'); $('panel').classList.remove('on'); if (opener) { try { opener.focus(); } catch (e) {} } }
 
   $('q').addEventListener('input', renderList);
-  $('refresh').addEventListener('click', function () { load(true); if (MODE === 'today' || MODE === 'units' || MODE === 'overview') loadToday(true); else TODAY = null; if (MODE === 'wo') loadWO(true); else WO = null; });
+  $('refresh').addEventListener('click', function () { load(true); if (MODE === 'today' || MODE === 'units' || MODE === 'overview') loadToday(true); else TODAY = null;
+    if (MODE === 'vendors') loadVendors(true); else VEND = null; if (MODE === 'wo') loadWO(true); else WO = null; });
   $('pclose').addEventListener('click', closePanel);
   $('veil').addEventListener('click', closePanel);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $('panel').classList.contains('on')) closePanel(); });
