@@ -8,7 +8,7 @@
 import { addrKey, extractServices, readProperty } from './moveouts-property.js';
 import { groupOpenByProperty, readCategories, applianceRows, warrantyRows, findWarrantyExpires, findNotes, buildHints, whoPays, todayPhoenix, ownerVendors, homeWarrantyInfo, mapHistory, assignCards, buildWorkOrderRows, STAGE_ORDER } from './maintenance-data.js';
 import { loadAriRows, ariForAddress } from './maintenance-ari.js';
-import { indexAptly, aptlyDiag, buildToday, foldFollowups, withNotes, workKind, countKinds, bizDays, phxDate } from './maintenance-today.js';
+import { indexAptly, aptlyDiag, buildToday, foldFollowups, withNotes, workKind, countKinds, bizDays, phxDate, PARKED, tenantWaiting } from './maintenance-today.js';
 import { validateEntry, makeFollowupStore } from './maintenance-followups.js';
 import { makeQuoClient, mergeThreads, e164, showPhone } from './maintenance-quo.js';
 import { pickContacts } from './moveouts-property.js';
@@ -204,13 +204,65 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
     vendorPhoneCache.set(g.vendorId, { at: Date.now(), v: ph }); if (vendorPhoneCache.size > 400) vendorPhoneCache.delete(vendorPhoneCache.keys().next().value);
     return ph.slice(0, 2);
   }
+  // Read-only vendor text history. Only numbers that the Vendors list just showed can be read (a number typed into the address bar is refused).
+  const vendorKnown = new Set();
+  app.get('/api/maintenance/vendor-texts', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const phone = e164(String(req.query.phone || ''));
+    if (!phone || !vendorKnown.has(phone)) return res.status(404).json({ error: 'Open the Vendors tab again, then try this once more.' });
+    if (!quo.configured) return res.json({ available: false, reason: 'not_configured', messages: [], from: quo.vendorFrom });
+    try {
+      const lines = [[quo.vendorLineId, 'Maintenance line'], [quo.phoneNumberId, 'Main Office line']];
+      const all = []; let bad = '';
+      for (const [id, label] of lines) { const r = await quo.messagesFor(phone, 15, id); if (!r.ok) { bad = r.reason; continue; } for (const m of r.items) all.push({ ...m, line: label }); }
+      all.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+      res.json({ available: true, reason: all.length ? '' : (bad || 'no_texts'), messages: all.slice(0, 15), from: quo.vendorFrom, asOf: new Date().toISOString() });
+    } catch (e) { console.error('[maintenance] vendor-texts', e.message); res.status(502).json({ error: 'Could not read the texts right now.' }); }
+  });
+  // Tenants waiting for a reply (read-only). For each open maintenance work order: the newest Quo text with the people on the lease (Maintenance and Main Office lines).
+  // If the newest message is the tenant's and 6 business hours have passed (emergencies: clock hours), it is listed. A call or a text from another Quo line is not seen here.
+  let ttMemo = { at: 0, v: null }, ttPending = null;
+  async function computeTenantTexts(fresh) {
+    if (!fresh && ttMemo.v && Date.now() - ttMemo.at < 5 * 60 * 1000) return ttMemo.v;
+    if (ttPending) return ttPending;
+    ttPending = (async () => {
+      const { t, wo, apt } = await computeToday(false);
+      const now = Date.now(), alerts = []; let checked = 0, noPhone = 0, quoBad = '';
+      const queue = wo.rows.filter((r) => workKind((apt.map.get(String(r.number)) || {}).stage, r.stage, r.statusId) === 'maint' && !PARKED.has((apt.map.get(String(r.number)) || {}).stage || r.stage) && ((apt.map.get(String(r.number)) || {}).stage || r.stage) !== 'Home Warranty');
+      const workers = Array.from({ length: 3 }, async () => { for (let r; (r = queue.shift());) {
+        const { people } = await phonesForWO(r.id, r.leaseId);
+        if (!people.length) { noPhone++; continue; }
+        let lastIn = null, lastOut = null, who = '', text = '';
+        for (const p of people.slice(0, 3)) for (const line of [quo.phoneNumberId, quo.vendorLineId]) {
+          const m = await quo.messagesFor(p.phone, 8, line);
+          if (!m.ok) { quoBad = m.reason; continue; }
+          for (const x of m.items) { const ms = Date.parse(x.at); if (!Number.isFinite(ms)) continue;
+            if (x.dir === 'in') { if (lastIn == null || ms > lastIn) { lastIn = ms; who = p.name; text = x.text || ''; } } else if (lastOut == null || ms > lastOut) lastOut = ms; }
+        }
+        checked++;
+        const w = tenantWaiting(lastIn == null ? NaN : lastIn, lastOut == null ? NaN : lastOut, now, !!r.emergency);
+        if (w.waiting) alerts.push({ id: r.id, number: r.number, propertyId: r.propertyId, address: r.address, stage: (apt.map.get(String(r.number)) || {}).stage || r.stage, vendor: r.vendor, emergency: !!r.emergency, cardId: (apt.map.get(String(r.number)) || {}).cardId || '',
+          tenant: who, at: new Date(lastIn).toISOString(), hours: Math.round(w.hours * 10) / 10, snippet: String(text).replace(/\s+/g, ' ').trim().slice(0, 140) });
+      } });
+      await Promise.all(workers);
+      alerts.sort((a, b) => (b.emergency - a.emergency) || b.hours - a.hours);
+      const v = { available: quo.configured, reason: quo.configured ? (checked || !quoBad ? '' : quoBad) : 'not_configured', alerts, checked, noPhone, asOf: new Date().toISOString() };
+      ttMemo = { at: Date.now(), v }; return v;
+    })().finally(() => { ttPending = null; });
+    return ttPending;
+  }
+  app.get('/api/maintenance/tenant-texts', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try { res.json(await computeTenantTexts(req.query.fresh === '1')); }
+    catch (e) { console.error('[maintenance] tenant-texts', e.message); res.status(502).json({ error: 'Could not check tenant texts right now.' }); }
+  });
   app.get('/api/maintenance/vendors', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
       const { t } = await computeToday(req.query.fresh === '1');
       const today = t.today, out = [];
       const queue = [...t.vendors]; const workers = Array.from({ length: 3 }, async () => { for (let g; (g = queue.shift());) {
-        const phones = await vendorNumbers(g); const phone = phones[0] ? e164(phones[0]) : '';
+        const phones = await vendorNumbers(g); const phone = phones[0] ? e164(phones[0]) : ''; if (phone) vendorKnown.add(phone);
         let last = null, quoReason = '';
         if (phone && quo.configured) {
           for (const line of [quo.vendorLineId, quo.phoneNumberId]) {
@@ -264,14 +316,17 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
   // Texts on Quo for the people on a work order's lease (read-only). Needs sign-in. The tenant phone numbers come from Rentvine; the messages from the
   // Main Office line in Quo. Numbers are shown masked. Any failure comes back as a plain reason, never as an error page.
   const phoneCache = new Map(); const PHONE_TTL = 30 * 60 * 1000;
-  async function phonesForWO(id) {
+  async function phonesForWO(id, knownLeaseId = '') {
     const hit = phoneCache.get(id); if (hit && Date.now() - hit.at < PHONE_TTL) return hit.v;
     let v = { people: [], reason: '' };
     try {
-      const b = await rvFetch('/maintenance/work-orders/' + id, {});
-      if (!b || b.error) throw new Error('wo');
-      const wo = b.workOrder || (Array.isArray(b.data) ? b.data[0] : b.data) || b;
-      const leaseId = String(wo.leaseID || (b.lease && b.lease.leaseID) || '');
+      let leaseId = /^\d{1,9}$/.test(String(knownLeaseId || '')) ? String(knownLeaseId) : '';
+      if (!leaseId) {
+        const b = await rvFetch('/maintenance/work-orders/' + id, {});
+        if (!b || b.error) throw new Error('wo');
+        const wo = b.workOrder || (Array.isArray(b.data) ? b.data[0] : b.data) || b;
+        leaseId = String(wo.leaseID || (b.lease && b.lease.leaseID) || '');
+      }
       if (!/^\d{1,9}$/.test(leaseId)) v = { people: [], reason: 'no_lease' };
       else {
         // The lease export is the read the hub already trusts for tenant contacts (each item is { lease: { tenants: [...] }, ... }).

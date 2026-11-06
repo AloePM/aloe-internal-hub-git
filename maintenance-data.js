@@ -367,7 +367,7 @@ export function buildWorkOrderRows(records, today = todayPhoenix()) {
     const created = day(wo.dateTimeCreated);
     const c = (rec && rec.contact) || {};
     out.push({
-      id: String(wo.workOrderID), number: String(wo.workOrderNumber || ''), propertyId: /^\d{1,9}$/.test(pid) ? pid : '',
+      id: String(wo.workOrderID), number: String(wo.workOrderNumber || ''), leaseId: /^\d{1,9}$/.test(String(wo.leaseID || '')) ? String(wo.leaseID) : '', propertyId: /^\d{1,9}$/.test(pid) ? pid : '',
       address: squash((rec.unit && (rec.unit.address || rec.unit.name)) || (rec.property && rec.property.address) || wo.unitAddress || ''),
       created, ageDays: created ? daysBetween(created, today) : null, statusId: sid, stage: STATUS[sid] || (sid ? 'Status ' + sid : 'Unknown'),
       vendor: squash(c.name), vendorId: /^\d{1,9}$/.test(String(c.contactID || '')) ? String(c.contactID) : '', vendorPhones: vendorPhonesOf(c), summary: summary.length > 200 ? summary.slice(0, 200) + '...' : summary,

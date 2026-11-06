@@ -96,7 +96,7 @@ button.alink{background:none;border:0;padding:4px 0;margin:0;font-family:inherit
 .dlg textarea,.dlg input[type=date],.dlg input[type=text]{width:100%;margin-top:3px;padding:8px 10px;border:1px solid #B4C3C3;border-radius:8px;font:500 14px Manrope,system-ui,sans-serif;min-height:44px}.dlg textarea{min-height:84px;resize:vertical}
 .qd{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}.dlg .acts{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}.dlg .okbox{background:var(--amber-d);border-radius:8px;padding:10px 12px;margin-top:12px;font-size:13px}
 .hist{margin-top:10px;border-top:1px solid var(--rule);padding-top:6px}.hist div{font-size:12px;color:var(--ink2);padding:4px 0;border-bottom:1px solid var(--rule);overflow-wrap:anywhere}
-.ov-tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}@media (max-width:900px){.ov-tiles{grid-template-columns:1fr 1fr}}
+.ov-tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}@media (max-width:900px){.ov-tiles{grid-template-columns:1fr 1fr}}
 button.ovt{font:inherit;text-align:left;cursor:pointer;background:#fff;border:1px solid var(--rule);border-radius:var(--r);padding:14px 16px;min-height:44px;border-left:5px solid #0A5468;color:var(--ink)}
 button.ovt:hover{box-shadow:0 1px 6px rgba(10,84,104,.2)}button.ovt:focus-visible,.dayb:focus-visible,.bar-b:focus-visible{outline:3px solid #0A5468;outline-offset:2px}
 button.ovt.r{border-left-color:var(--red)}button.ovt.a{border-left-color:#B7791F}button.ovt.z{border-left-color:#B4C3C3}
@@ -137,7 +137,7 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
   <div id="overviewView"><div id="ovbody"><div class="empty">Loading the overview...</div></div></div>
   <div id="vendorsView" hidden><div id="vnbody"></div></div>
   <div id="todayView" hidden>
-    <div id="tbanner"></div><div class="chips" id="tchips" tabindex="-1"></div><div id="tsecs"><div class="empty">Loading today's list...</div></div>
+    <div id="tbanner"></div><div class="chips" id="tchips" tabindex="-1"></div><div id="ttbox" tabindex="-1"></div><div id="tsecs"><div class="empty">Loading today's list...</div></div>
     <p class="ro">Days are calendar days in Phoenix time. A vendor should be scheduled within 2 days of being assigned; follow up with the vendor at 3 days. Follow-up dates and notes are saved in the hub. Comments, and follow-ups you tick the box for, are also posted on the Aptly card. Nothing is changed in Rentvine. Until individual logins exist, people pick their name.</p>
   </div>
   <div id="unitView" hidden>
@@ -338,8 +338,33 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
     s.items.forEach(function (it) { list.appendChild(trow(it, s)); });
     sec.appendChild(list); box.appendChild(sec);
   }
+  // Tenants waiting for a reply (read-only check of Quo texts; loads after the list so the page never waits on it).
+  var TT = null, TTERR = '', TTBUSY = false;
+  function loadTT(fresh) {
+    if (TTBUSY) return; TTBUSY = true; if (!TT) { TTERR = ''; renderTT(); }
+    api('/api/maintenance/tenant-texts' + (fresh ? '?fresh=1' : '')).then(function (d) { TT = d; TTERR = ''; TTBUSY = false; renderTT(); renderOverview(); })
+      .catch(function (e) { TTBUSY = false; TTERR = e.message || 'Could not check tenant texts.'; renderTT(); renderOverview(); });
+  }
+  function ttHours(a) { return (a.emergency ? a.hours + ' hours (emergency, clock time)' : a.hours + ' business hours'); }
+  function renderTT() {
+    var box = $('ttbox'); if (!box) return; box.textContent = '';
+    if (TTERR) { box.appendChild(h('div', { 'class': 'banner', text: TTERR })); return; }
+    if (!TT) { box.appendChild(h('div', { 'class': 'note', text: 'Checking tenant texts...' })); return; }
+    if (!TT.available) { box.appendChild(h('div', { 'class': 'banner', text: 'Tenant texts cannot be checked right now (Quo is not set up).' })); return; }
+    if (TT.reason) box.appendChild(h('div', { 'class': 'banner', text: 'Quo could not be read, so this list may be missing tenants (' + TT.reason + ').' }));
+    var n = TT.alerts.length;
+    var sec = h('div', { 'class': 'tsec', id: 'sec-tenants' }, [h('h2', {}, ['Tenants waiting for a reply', h('span', { 'class': 'pill ' + (n ? 'p-red' : 'p-grey'), text: String(n) }), h('small', { text: 'Newest text in Quo is from the tenant and 6 business hours have passed. Only the Main Office and Maintenance lines are checked, so a call or a reply from another line is not seen.' })])]);
+    if (!n) sec.appendChild(h('div', { 'class': 'note', text: 'No tenant is waiting on us. Checked ' + TT.checked + ' work order' + (TT.checked === 1 ? '' : 's') + (TT.noPhone ? '; ' + TT.noPhone + ' had no tenant phone on file' : '') + '.' }));
+    TT.alerts.forEach(function (a) {
+      var tb = h('button', { 'class': 'mini', type: 'button', text: 'Texts' }); tb.addEventListener('click', function () { openTexts(a, tb); });
+      sec.appendChild(h('div', { 'class': 'box', style: 'margin-top:8px;display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;align-items:flex-start' }, [
+        h('div', { style: 'min-width:0;flex:1 1 260px' }, [addrEl(a), h('div', {}, [h('b', { text: '#' + a.number + '  ' }), a.emergency ? h('span', { 'class': 'pill p-emg', text: 'Possible emergency' }) : null, h('span', { 'class': 'pill p-red', text: (a.tenant || 'Tenant') + ' texted, no reply for ' + ttHours(a) })]), woLinks(a.id, a.cardId), h('div', { 'class': 'why', text: 'Last text: ' + (a.snippet || '(no text)') }), h('div', { 'class': 'why', text: [a.stage, a.vendor ? 'Vendor: ' + a.vendor : ''].filter(Boolean).join(' | ') })]),
+        h('div', {}, [tb])]));
+    });
+    box.appendChild(sec);
+  }
   function loadToday(fresh) {
-    api('/api/maintenance/today' + (fresh ? '?fresh=1' : '')).then(function (d) { TODAY = d; renderToday(); renderOverview(); })
+    api('/api/maintenance/today' + (fresh ? '?fresh=1' : '')).then(function (d) { TODAY = d; renderToday(); renderOverview(); loadTT(fresh); })
       .catch(function (e) { $('tsecs').textContent = ''; $('tsecs').appendChild(h('div', { 'class': 'err', text: e.message })); $('ovbody').textContent = ''; $('ovbody').appendChild(h('div', { 'class': 'err', text: e.message })); });
   }
 
@@ -382,6 +407,26 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
     var cl = h('button', { 'class': 'mini', type: 'button', style: 'margin-top:12px', text: 'Close' }); cl.addEventListener('click', closeDlg); c.appendChild(cl);
     $('dlg').classList.add('on'); ta.focus();
   }
+  function openVendorTexts(v, opener) {
+    var my = { opener: opener, tx: true }; CM = my; DL = null;
+    var c = $('dcard'); c.textContent = '';
+    c.appendChild(h('h2', { id: 'dtitle', text: v.vendor + ' texts' }));
+    c.appendChild(h('div', { 'class': 'note', text: (v.shown || '') + '  |  ' + v.open.length + ' open work order' + (v.open.length === 1 ? '' : 's') }));
+    var body = h('div', { style: 'margin-top:10px' }, [h('div', { 'class': 'note', text: 'Looking up texts...' })]); c.appendChild(body);
+    var cl = h('button', { 'class': 'mini', type: 'button', style: 'margin-top:12px', text: 'Close' }); cl.addEventListener('click', closeDlg); c.appendChild(cl);
+    $('dlg').classList.add('on');
+    api('/api/maintenance/vendor-texts?phone=' + encodeURIComponent(v.phone)).then(function (r) {
+      if (CM !== my) return; body.textContent = '';
+      body.appendChild(h('div', { 'class': 'box', style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:space-between' }, [h('div', {}, [h('b', { text: v.vendor }), h('div', { 'class': 'm', text: v.shown })]),
+        h('div', { style: 'display:flex;gap:6px' }, [h('a', { 'class': 'mini lnkb', href: 'tel:' + v.phone, text: 'Call' }), h('a', { 'class': 'mini lnkb', href: 'openphone://message?number=' + encodeURIComponent(v.phone) + (r.from ? '&from=' + encodeURIComponent(r.from) : ''), text: 'Text' })])]));
+      if (!r.messages || !r.messages.length) { body.appendChild(h('div', { 'class': 'banner', style: 'margin-top:10px', text: VR[r.reason] || 'No texts found with this vendor on the Maintenance or Main Office line.' })); return; }
+      body.appendChild(h('div', { 'class': 'note', style: 'margin-top:10px', text: 'Recent texts, newest first. Maintenance and Main Office lines. Read-only.' }));
+      r.messages.forEach(function (m) {
+        var when = new Date(m.at); var ds = isNaN(when) ? m.at : when.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Phoenix' });
+        body.appendChild(h('div', { 'class': 'box', style: 'margin-top:6px' }, [h('div', { 'class': 'm', text: (m.dir === 'in' ? v.vendor : 'We sent') + ' | ' + m.line + ' | ' + ds + (m.status === 'undelivered' ? ' | NOT DELIVERED' : '') }), h('div', { style: 'white-space:pre-wrap;overflow-wrap:anywhere', text: m.text || '(no text, maybe a picture)' })]));
+      });
+    }).catch(function (e) { if (CM !== my) return; body.textContent = ''; body.appendChild(h('div', { 'class': 'err', text: e.message })); });
+  }
   function renderVendors() {
     var box = $('vnbody'); box.textContent = ''; var d = VEND; if (!d) return;
     var q = d.vendors.filter(function (v) { return v.quiet; }).length;
@@ -394,8 +439,9 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
       var lastTxt = v.last ? 'Last text ' + (v.last.bizDays == null ? 'date unknown' : v.last.bizDays === 0 ? 'today' : v.last.bizDays + ' business day' + (v.last.bizDays === 1 ? '' : 's') + ' ago') + ', ' + (v.last.dir === 'in' ? 'they replied' : 'we sent') : (VR[v.reason] || 'No texts found.');
       var cardTxt = v.cardTouchBiz == null ? 'No note or contact on their cards.' : 'Last note or contact on a card: ' + (v.cardTouchBiz === 0 ? 'today' : v.cardTouchBiz + ' business day' + (v.cardTouchBiz === 1 ? '' : 's') + ' ago') + '.';
       var dr = h('button', { 'class': 'mini', type: 'button', text: 'Draft text' }); dr.addEventListener('click', function () { openVendorDraft(v, dr); });
+      var tx = v.phone ? h('button', { 'class': 'mini', type: 'button', text: 'Texts' }) : null; if (tx) tx.addEventListener('click', function () { openVendorTexts(v, tx); });
       var head = h('div', { 'class': 'vhead' }, [h('div', {}, [h('b', { text: v.vendor }), h('div', { 'class': 'vmeta', text: (v.shown || 'No number') + '  |  ' + lastTxt }), h('div', { 'class': 'vmeta', text: cardTxt })]),
-        h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, [h('span', { 'class': 'pill ' + (v.quiet ? 'p-red' : 'p-green'), text: v.quiet ? 'Check in' : 'Contacted' }), dr])]);
+        h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, [h('span', { 'class': 'pill ' + (v.quiet ? 'p-red' : 'p-green'), text: v.quiet ? 'Check in' : 'Contacted' }), tx, dr].filter(Boolean))]);
       var card = h('div', { 'class': 'vcard' + (v.quiet ? ' q' : '') }, [head, chips]);
       v.open.forEach(function (o) {
         var st = o.state === 'passed' ? h('span', { 'class': 'pill p-red', text: 'Date passed ' + nice(o.scheduled) }) : o.state === 'nodate' ? h('span', { 'class': 'pill p-amber', text: 'No date' }) : h('span', { 'class': 'pill p-green', text: 'Scheduled ' + nice(o.scheduled) });
@@ -424,6 +470,7 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
     tile(t.followups, 'Follow-ups due', 'a', function () { goToday(t.followups ? 'sec-followups' : 'tchips'); }, t.followups + ' follow-ups due. Open them.');
     tile(t.today, 'Scheduled today', '', function () { SELDAY = d.today; renderOverview(); jumpTo('ov-sched'); }, t.today + ' jobs scheduled today. Show them.');
     tile(t.quiet, 'Gone quiet', 'a', function () { goToday(d.sections.some(function (s) { return s.key === 'quiet' && s.items.length; }) ? 'sec-quiet' : t.quiet ? 'sec-parked' : 'tchips'); }, t.quiet + ' work orders gone quiet. Open them.');
+    tile(TT && TT.available ? TT.alerts.length : 0, TT ? 'Tenants waiting for a reply' : TTERR ? 'Tenant texts unavailable' : 'Checking tenant texts...', 'r', function () { goToday('ttbox'); }, (TT ? TT.alerts.length : 0) + ' tenants waiting for a reply. Open them.');
     box.appendChild(tiles);
 
     if (!SELDAY || !o.week.some(function (w) { return w.date === SELDAY; }) && !o.jobs.some(function (j) { return j.date === SELDAY; })) SELDAY = d.today;

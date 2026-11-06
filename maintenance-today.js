@@ -89,7 +89,7 @@ export function bizDays(a, b) {
 }
 const hrs = (h) => (h < 1 ? 'under 1 hour' : Math.round(h) === 1 ? '1 hour' : Math.round(h) + ' hours');
 
-const PARKED = new Set(['On Hold', 'Waiting for parts', 'Owner Maintained']);
+export const PARKED = new Set(['On Hold', 'Waiting for parts', 'Owner Maintained']);
 const NO_VENDOR_TIMER = new Set([...PARKED, 'Home Warranty', 'Troubleshooting Steps Sent', 'Internal Work Order Request', 'Unit Turn', 'Scheduled', 'Open', 'Dispatch Work Order']);
 export const SECTION_DEFS = [
   { key: 'followups', title: 'Your follow-ups due', hint: 'You set these. Today or earlier.' },
@@ -199,6 +199,15 @@ export function buildToday(rows, aptly = new Map(), fu = { byWo: {} }, today = t
   const sev = { red: 0, amber: 1, grey: 2 };
   for (const k of Object.keys(sections)) sections[k].sort((x, y) => sev[x.level] - sev[y.level] || (y.emergency ? 1 : 0) - (x.emergency ? 1 : 0) || (y.assignedDays ?? y.daysInStage ?? 0) - (x.assignedDays ?? x.daysInStage ?? 0));
   return { sections: SECTION_DEFS.map((d) => ({ ...d, items: sections[d.key] })), parked, noAssignedDate, today, overview: buildOverview(open, sections, today), vendors: buildVendors(open, today) };
+}
+
+// A tenant text is "waiting" when the newest message in the thread is theirs and 6 hours have passed (business hours Mon-Fri 9-6 Phoenix; emergencies use clock time).
+export const TENANT_WAIT_HOURS = 6;
+export function tenantWaiting(lastInMs, lastOutMs, nowMs, emergency = false) {
+  if (!Number.isFinite(lastInMs)) return { waiting: false, hours: 0 };
+  if (Number.isFinite(lastOutMs) && lastOutMs >= lastInMs) return { waiting: false, hours: 0 };
+  const hours = emergency ? Math.max(0, (nowMs - lastInMs) / 3600000) : bizHoursBetween(lastInMs, nowMs);
+  return { waiting: hours >= TENANT_WAIT_HOURS, hours };
 }
 
 // Vendors tab (pure). One group per vendor that has open work orders. Home warranty and parked work orders are left out (they have their own follow-up).
