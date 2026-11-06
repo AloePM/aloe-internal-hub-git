@@ -28,7 +28,7 @@ export function groupOpenByProperty(openWOs, today = todayPhoenix()) {
     g.openCount++;
     if (statusId === 23) g.moveOutCount = (g.moveOutCount || 0) + 1;
     if (created && (!g.oldest || created < g.oldest)) g.oldest = created;
-    g.items.push({ id: String(wo.workOrderID || ''), number: String(wo.workOrderNumber || ''), created, summary: squash(wo.agentSummary || wo.description).slice(0, 160), statusId, moveOut: statusId === 23 });
+    g.items.push({ id: String(wo.workOrderID || ''), number: String(wo.workOrderNumber || ''), created, summary: (stripHtml(wo.agentSummary) || stripHtml(wo.description)).slice(0, 160), statusId, moveOut: statusId === 23 });
   }
   const rows = [...map.values()].map((g) => ({ ...g, oldestDays: g.oldest ? daysBetween(g.oldest, today) : null }));
   rows.sort((a, b) => (b.oldestDays ?? -1) - (a.oldestDays ?? -1) || a.address.localeCompare(b.address));
@@ -194,7 +194,7 @@ export function mapHistory(raw, now = new Date(), months = 36) {
     const created = day(w.dateTimeCreated);
     if (!created || new Date(created + 'T12:00:00Z') < cutoff) continue;
     const sid = Number(w.workOrderStatusID);
-    const summary = squash(w.agentSummary) || stripHtml(w.description);
+    const summary = stripHtml(w.agentSummary) || stripHtml(w.description);
     const est = parseFloat(w.estimatedAmount);
     out.push({
       id: String(w.workOrderID || ''), number: String(w.workOrderNumber || ''), created, closed: day(w.dateClosed) || null,
@@ -352,7 +352,7 @@ export function buildWorkOrderRows(records, today = todayPhoenix()) {
     if (primary === 3 || primary === 5 || wo.closedDate || wo.dateClosed) continue;
     const pid = String(wo.propertyID || (rec.property && rec.property.propertyID) || '');
     const sid = Number(wo.workOrderStatusID || 0);
-    const summary = squash(wo.agentSummary) || stripHtml(wo.description);
+    const summary = stripHtml(wo.agentSummary) || stripHtml(wo.description);
     const created = day(wo.dateTimeCreated);
     const c = (rec && rec.contact) || {};
     out.push({
