@@ -445,8 +445,9 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
       var card = h('div', { 'class': 'vcard' + (v.quiet ? ' q' : '') }, [head, chips]);
       v.open.forEach(function (o) {
         var st = o.state === 'passed' ? h('span', { 'class': 'pill p-red', text: 'Date passed ' + nice(o.scheduled) }) : o.state === 'nodate' ? h('span', { 'class': 'pill p-amber', text: 'No date' }) : h('span', { 'class': 'pill p-green', text: 'Scheduled ' + nice(o.scheduled) });
-        var cb = h('button', { 'class': 'mini', type: 'button', style: 'margin-top:6px', text: 'Comments' }); cb.addEventListener('click', function () { openComments(o, cb); });
-        card.appendChild(h('div', { 'class': 'vwo' }, [h('div', {}, [addrEl(o), h('div', { 'class': 'vmeta', text: '#' + o.number + '  ' + (o.summary || '') + '  |  ' + o.stage }), woLinks(o.id, o.cardId), cb]), st]));
+        var cb = h('button', { 'class': 'mini', type: 'button', text: 'Comments' }); cb.addEventListener('click', function () { openComments(o, cb); });
+        var db = o.cardId ? h('button', { 'class': 'mini', type: 'button', text: o.state === 'scheduled' ? 'Change date' : 'Add date' }) : null; if (db) db.addEventListener('click', function () { openComments(o, db, true); });
+        card.appendChild(h('div', { 'class': 'vwo' }, [h('div', {}, [addrEl(o), h('div', { 'class': 'vmeta', text: '#' + o.number + '  ' + (o.summary || '') + '  |  ' + o.stage }), woLinks(o.id, o.cardId), h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin-top:6px' }, [cb, db])]), st]));
       });
       grid.appendChild(card);
     });
@@ -655,7 +656,7 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
         pb.disabled = true; pb.textContent = 'Posting...'; var my = CM;
         fetch('/api/maintenance/comments', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'aloe-hub' }, body: JSON.stringify({ woNumber: it.number, authorName: my.name, text: my.text, setStartDate: setD || undefined }) })
           .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('Error ' + r.status)); return j; }); })
-          .then(function (j) { if (CM !== my) return; my.pending = { by: 'Hub', at: new Date().toISOString(), text: j.content || content, auto: false, hub: true }; my.text = ''; my.vc = false; my.step = 'view'; my.dnote = j.dateSet ? (j.dateSet.matches ? 'Scheduled Start Date is now ' + nice(j.dateSet.stored) + ' on the Aptly card.' : 'The date was sent to Aptly, but Aptly shows ' + (j.dateSet.stored ? nice(j.dateSet.stored) : 'a value the hub could not read back') + '. Please open the card in Aptly and check it.') : ''; my.dwarn = !!(j.dateSet && !j.dateSet.matches); my.cerr = j.commentError || ''; renderCm(); loadCm(true); if (TODAY) loadToday(true); })
+          .then(function (j) { if (CM !== my) return; my.pending = { by: 'Hub', at: new Date().toISOString(), text: j.content || content, auto: false, hub: true }; my.text = ''; my.vc = false; my.step = 'view'; my.dnote = j.dateSet ? (j.dateSet.matches ? 'Scheduled Start Date is now ' + nice(j.dateSet.stored) + ' on the Aptly card.' : 'The date was sent to Aptly, but Aptly shows ' + (j.dateSet.stored ? nice(j.dateSet.stored) : 'a value the hub could not read back') + '. Please open the card in Aptly and check it.') : ''; my.dwarn = !!(j.dateSet && !j.dateSet.matches); my.cerr = j.commentError || ''; renderCm(); loadCm(true); if (TODAY) loadToday(true); if (VEND) loadVendors(true); })
           .catch(function (e) { if (CM !== my) return; pb.disabled = false; pb.textContent = 'Confirm and post'; c.appendChild(h('div', { 'class': 'err', text: e.message })); });
       });
       bk.addEventListener('click', function () { CM.step = 'view'; renderCm(); });
