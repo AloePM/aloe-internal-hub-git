@@ -12,7 +12,7 @@ import { indexAptly, aptlyDiag, buildToday, foldFollowups, withNotes, workKind, 
 import { validateEntry, makeFollowupStore } from './maintenance-followups.js';
 import { makeQuoClient, mergeThreads, e164, showPhone } from './maintenance-quo.js';
 import { pickContacts } from './moveouts-property.js';
-import { validateComment, followupComment, formatComment, makeAptlyCommenter, mapComments } from './maintenance-comments.js';
+import { validateComment, validateStartDate, startDateLine, followupComment, formatComment, makeAptlyCommenter, mapComments } from './maintenance-comments.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const LIST_TTL = 2 * 60 * 1000, PROP_TTL = 5 * 60 * 1000, CLOSE_TTL = 15 * 60 * 1000;
@@ -382,11 +382,28 @@ export function installMaintenance(app, rvFetch, fetchOpenWOs, findBillMatched, 
       const apt = await getAptly(true);
       const info = apt.available ? apt.map.get(v.woNumber) : null;
       if (!info || !info.cardId) return res.status(404).json({ error: 'No Aptly card was found for this work order. Nothing was posted.' });
-      const r = await commenter.post(info.cardId, v.content);
-      if (!r.ok) { console.error('[maintenance] comment refused wo=' + v.woNumber + ' reason=' + r.reason + ' ' + (r.detail || '')); return res.status(502).json({ error: postReason(r) }); }
+      // Optional (Vendor confirmed with a date): also set the card's Scheduled Start Date. Done first; if Aptly refuses it, nothing is posted either.
+      let sd = null, dateSet = null, content = v.content;
+      if (req.body && req.body.setStartDate) {
+        sd = validateStartDate(req.body.setStartDate, todayPhoenix());
+        if (sd.error) return res.status(400).json({ error: sd.error });
+        if (typeof commenter.setStartDate !== 'function') return res.status(503).json({ error: 'Setting the date is not available. Nothing was changed or posted.' });
+        const old = info.scheduledStart || '';
+        const fr = await commenter.setStartDate(info.cardId, sd.date);
+        if (!fr.ok) { console.error('[maintenance] start date refused wo=' + v.woNumber + ' reason=' + fr.reason + ' ' + (fr.detail || '')); aptCache.at = 0; return res.status(502).json({ error: 'Aptly did not accept the Scheduled Start Date (' + String(fr.reason || 'error').replace('aptly_', 'error ') + '). Nothing was changed or posted.' }); }
+        dateSet = { requested: sd.date, old, stored: fr.stored, matches: !!fr.matches };
+        console.log('[maintenance] start date set wo=' + v.woNumber + ' by=' + v.authorName + ' new=' + sd.date + ' old=' + (old || 'blank') + ' readback=' + (fr.stored || 'unknown'));
+        content = (v.content + ' ' + startDateLine(sd.date, old)).slice(0, 1400);
+      }
+      const r = await commenter.post(info.cardId, content);
+      if (!r.ok) {
+        console.error('[maintenance] comment refused wo=' + v.woNumber + ' reason=' + r.reason + ' ' + (r.detail || ''));
+        if (dateSet) { aptCache.at = 0; cmCache.delete(info.cardId); return res.json({ ok: true, content, dateSet, commentError: 'The date was set, but the comment was not posted: ' + postReason(r) }); }
+        return res.status(502).json({ error: postReason(r) });
+      }
       cwrites.push(now); aptCache.at = 0; cmCache.delete(info.cardId);
       console.log('[maintenance] comment posted wo=' + v.woNumber + ' by=' + v.authorName + ' chars=' + v.text.length);
-      res.json({ ok: true, content: v.content });
+      res.json({ ok: true, content, dateSet });
     } catch (e) { console.error('[maintenance] comment write', e.message); res.status(502).json({ error: 'Could not post. Nothing was changed.' }); }
   });
 

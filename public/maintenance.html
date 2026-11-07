@@ -639,6 +639,8 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
     c.appendChild(h('h2', { id: 'dtitle', text: 'WO #' + it.number + ' comments' }));
     c.appendChild(h('div', { 'class': 'note', text: [it.address, it.stage, it.vendor].filter(Boolean).join(' | ') }));
     if (CM.err) c.appendChild(h('div', { 'class': 'err', style: 'margin-top:8px', text: CM.err }));
+    if (CM.dnote) c.appendChild(h('div', { 'class': CM.dwarn ? 'banner' : 'okbox', style: 'margin-top:8px', text: CM.dnote }));
+    if (CM.cerr) c.appendChild(h('div', { 'class': 'err', style: 'margin-top:8px', text: CM.cerr }));
     if (d && !d.available) c.appendChild(h('div', { 'class': 'banner', style: 'margin-top:10px', text: 'Aptly cannot be reached right now, so comments cannot be read or posted.' }));
     else if (d && !d.found) c.appendChild(h('div', { 'class': 'banner', style: 'margin-top:10px', text: 'No Aptly card was found for this work order.' }));
     else if (d && !d.canPost) c.appendChild(h('div', { 'class': 'banner', style: 'margin-top:10px', text: 'Posting is not set up, so comments are read-only.' }));
@@ -646,12 +648,14 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
       var content = '[Hub · ' + CM.name + '] ' + CM.text;
       c.appendChild(h('div', { 'class': 'okbox' }, [h('b', { text: 'Please confirm. This will be posted on the Aptly card as:' }), h('div', { style: 'margin-top:6px;white-space:pre-wrap', text: content }),
         h('div', { 'class': 'note', style: 'margin-top:6px', text: 'Everyone who opens the card in Aptly will see it. It can only be removed inside Aptly.' })]));
+      var setD = CM.vcDate && CM.vcSet !== false ? CM.vcDate : '';
+      if (setD) c.appendChild(h('div', { 'class': 'okbox', style: 'margin-top:8px' }, [h('b', { text: 'This will also change the Aptly card: ' }), document.createTextNode('Scheduled Start Date ' + (it.scheduled ? 'from ' + nice(it.scheduled) + ' ' : 'from blank ') + 'to ' + nice(setD) + '. The stage is not changed. The comment above gets a line saying what was changed.')]));
       var pb = h('button', { 'class': 'mini', type: 'button', text: 'Confirm and post' }), bk = h('button', { 'class': 'mini', type: 'button', text: 'Back' });
       pb.addEventListener('click', function () {
         pb.disabled = true; pb.textContent = 'Posting...'; var my = CM;
-        fetch('/api/maintenance/comments', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'aloe-hub' }, body: JSON.stringify({ woNumber: it.number, authorName: my.name, text: my.text }) })
+        fetch('/api/maintenance/comments', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'aloe-hub' }, body: JSON.stringify({ woNumber: it.number, authorName: my.name, text: my.text, setStartDate: setD || undefined }) })
           .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('Error ' + r.status)); return j; }); })
-          .then(function (j) { if (CM !== my) return; my.pending = { by: 'Hub', at: new Date().toISOString(), text: j.content || content, auto: false, hub: true }; my.text = ''; my.vc = false; my.step = 'view'; renderCm(); loadCm(true); if (TODAY) loadToday(true); })
+          .then(function (j) { if (CM !== my) return; my.pending = { by: 'Hub', at: new Date().toISOString(), text: j.content || content, auto: false, hub: true }; my.text = ''; my.vc = false; my.step = 'view'; my.dnote = j.dateSet ? (j.dateSet.matches ? 'Scheduled Start Date is now ' + nice(j.dateSet.stored) + ' on the Aptly card.' : 'The date was sent to Aptly, but Aptly shows ' + (j.dateSet.stored ? nice(j.dateSet.stored) : 'a value the hub could not read back') + '. Please open the card in Aptly and check it.') : ''; my.dwarn = !!(j.dateSet && !j.dateSet.matches); my.cerr = j.commentError || ''; renderCm(); loadCm(true); if (TODAY) loadToday(true); })
           .catch(function (e) { if (CM !== my) return; pb.disabled = false; pb.textContent = 'Confirm and post'; c.appendChild(h('div', { 'class': 'err', text: e.message })); });
       });
       bk.addEventListener('click', function () { CM.step = 'view'; renderCm(); });
@@ -663,6 +667,7 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
         c.appendChild(h('div', { 'class': 'okbox', style: 'margin-top:8px' }, [h('b', { text: 'Vendor confirmed: ' }), document.createTextNode('The vendor (' + (it.vendor || 'vendor') + ') answered. Enter the date they gave, or tick "date not given". This is posted on the Aptly card so everyone sees it.')]));
         c.appendChild(h('label', { 'for': 'vcdate', text: 'Date the vendor gave' })); var vd = h('input', { id: 'vcdate', type: 'date' }); vd.value = CM.vcDate; c.appendChild(vd);
         var vn = h('input', { id: 'vcnone', type: 'checkbox' }); vn.checked = !CM.vcDate && CM.vcNone === true; c.appendChild(h('label', { 'for': 'vcnone', style: 'display:flex;gap:8px;align-items:center;margin-top:6px' }, [vn, document.createTextNode('Date not given yet')]));
+        var vs = h('input', { id: 'vcset', type: 'checkbox' }); vs.checked = CM.vcSet !== false; c.appendChild(h('label', { 'for': 'vcset', style: 'display:flex;gap:8px;align-items:center;margin-top:6px' }, [vs, document.createTextNode('Also set Scheduled Start Date on the Aptly card to this date (only when a date is entered)')]));
         c.appendChild(h('label', { 'for': 'cmtext', text: 'Note (optional)' })); var vta = h('textarea', { id: 'cmtext', maxlength: '400', placeholder: 'For example: will come Friday morning.' }); vta.value = CM.vcNote; c.appendChild(vta);
       } else {
       c.appendChild(h('label', { 'for': 'cmtext', text: 'New comment' })); var ta = h('textarea', { id: 'cmtext', maxlength: '1000', placeholder: 'For example: texted vendor, they will call tenant today.' }); ta.value = CM.text; c.appendChild(ta);
@@ -675,7 +680,7 @@ button.dayb{font:inherit;cursor:pointer;background:#F8FAFC;border:1px solid var(
           var dv = $('vcdate').value, none = $('vcnone').checked;
           if (!dv && !none) { m.textContent = 'Enter the date the vendor gave, or tick "Date not given yet".'; return; }
           if (dv && none) { m.textContent = 'Use either a date or "Date not given yet", not both.'; return; }
-          CM.vcDate = dv; CM.vcNone = none; CM.vcNote = txt; txt = vcText(it.vendor, dv, txt);
+          CM.vcDate = dv; CM.vcNone = none; CM.vcSet = $('vcset').checked; CM.vcNote = txt; txt = vcText(it.vendor, dv, txt);
         }
         if (!txt) { m.textContent = 'Write a comment first.'; return; }
         rememberName(CM.name); CM.text = txt; CM.step = 'review'; renderCm();

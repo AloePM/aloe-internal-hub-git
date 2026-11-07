@@ -70,6 +70,19 @@ export function followupComment(entry) {
   return [head, entry.note || ''].filter(Boolean).join(' ');
 }
 
+// Scheduled Start Date on the Aptly card: a real calendar date (YYYY-MM-DD), from 30 days ago to 1 year ahead.
+export function validateStartDate(s, todayYmd) {
+  const d = String(s == null ? '' : s).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { error: 'The date is not valid.' };
+  const t = Date.parse(d + 'T12:00:00Z');
+  if (!Number.isFinite(t) || new Date(t).toISOString().slice(0, 10) !== d) return { error: 'The date is not valid.' };
+  const base = Date.parse(todayYmd + 'T12:00:00Z');
+  if (t < base - 30 * 86400000 || t > base + 365 * 86400000) return { error: 'The date must be within the last 30 days or the next year.' };
+  return { date: d };
+}
+export const usDate = (ymd) => (/^\d{4}-\d{2}-\d{2}/.test(String(ymd || '')) ? String(ymd).slice(5, 7) + '/' + String(ymd).slice(8, 10) + '/' + String(ymd).slice(0, 4) : '');
+export const startDateLine = (newYmd, oldYmd) => 'Scheduled Start Date on this card set to ' + usDate(newYmd) + ' (' + (oldYmd ? 'was ' + usDate(oldYmd) : 'was blank') + ').';
+
 export function makeAptlyCommenter(env = process.env, fetchImpl = fetch) {
   const token = env.APTLY_UNITS_TOKEN || env.APTLY_TOKEN || '';
   return {
@@ -82,6 +95,21 @@ export function makeAptlyCommenter(env = process.env, fetchImpl = fetch) {
         body: JSON.stringify({ content }), signal: AbortSignal.timeout(15000) });
       if (!r.ok) { let body = ''; try { body = (await r.text()).slice(0, 200); } catch {} return { ok: false, reason: 'aptly_' + r.status, detail: body }; }
       return { ok: true };
+    },
+    // Sets ONLY the Scheduled Start Date (other fields are left as they are), then reads the card back and reports what Aptly now shows.
+    async setStartDate(cardId, ymd) {
+      if (!token) return { ok: false, reason: 'not_configured' };
+      if (!/^[A-Za-z0-9]{8,40}$/.test(String(cardId || ''))) return { ok: false, reason: 'bad_card' };
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ''))) return { ok: false, reason: 'bad_date' };
+      const H = { 'x-token': token, 'Content-Type': 'application/json', Accept: 'application/json' };
+      const r = await fetchImpl('https://core-api.getaptly.com/api/board/workOrder', { method: 'POST', headers: H, body: JSON.stringify({ _id: cardId, scheduledStartDate: ymd }), signal: AbortSignal.timeout(15000) });
+      if (!r.ok) { let body = ''; try { body = (await r.text()).slice(0, 200); } catch {} return { ok: false, reason: 'aptly_' + r.status, detail: body }; }
+      let stored = '';
+      try {
+        const g = await fetchImpl('https://core-api.getaptly.com/api/board/workOrder/' + cardId, { headers: { 'x-token': token, Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+        if (g.ok) { const j = await g.json(); const c = j && j.data ? j.data : j; stored = String((c && (c.scheduledStartDate || c['Scheduled Start Date'])) || '').slice(0, 10); }
+      } catch {}
+      return { ok: true, stored, matches: stored === ymd };
     },
   };
 }
